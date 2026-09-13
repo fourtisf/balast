@@ -649,3 +649,132 @@ never did, so `MarketProvider` never handled it. It does now. No page changed.
   sense that they read the indexer and honestly report nothing in it.
 - **Protocol fee at 10%, cap at 2000 bps.** Unchanged from §12, and the cap is
   still constructor-immutable, so it still needs confirming before P2 deploys.
+
+---
+
+## 15. P1 follow-up: the gaps §14 recorded, closed
+
+Added after an audit of the P1 build. §14 is unchanged; this records what was
+wrong with it and what is now true instead. Four of the six items were defects
+in my own work rather than missing inputs.
+
+### Market cap: §14 was wrong, and it mattered
+
+§14 said market cap "needs a circulating supply, which is not in the log
+stream". True but incomplete: `totalSupply()` is an ERC20 read, it is on chain,
+and `server/chain/abi.ts` already declared it. The figure was available and I
+left it at zero.
+
+It mattered beyond a blank column. **§3.4's `MILESTONE` trigger mode fires at
+market-cap steps**, so with the figure at zero `BalastRouter` could not work in
+that mode at all — a P4 blocker created by being too conservative in P1.
+
+It is now derived, with one honesty consequence carried through: total supply
+includes locked, vested and treasury-held tokens, and none of that is
+distinguishable on chain. That makes the figure **fully diluted value, not
+market cap**, and presenting FDV as market cap overstates every token with a
+vesting schedule, always in the flattering direction. So:
+
+- `pool_state.mc_usd` is `totalSupply x price` of the traded side.
+- `Pool.marketCapIsFdv` says which figure it is.
+- The row marks it `fdv`, and the cell's title explains what is included.
+- A token that will not report a supply shows an em dash, not a guess.
+- Supply is re-read on a cadence, oldest first, a few tokens per pass — a
+  mintable token's supply changes, and a stale supply is wrong in the
+  flattering direction again.
+
+**This is the one place P1's follow-up touched a component.** §8 says the
+phases after P0 do not change components; §7 says a displayed number must be
+labelled for what it is. Where those conflict §7 wins, because §7 is a product
+rule and §8 is about implementation sequencing. The change is a qualifier and a
+tooltip. **ALFA should know the MC column now reads as FDV** — if the intent
+was circulating market cap, that needs a supply source, and §4 bars a
+third-party API from the critical path.
+
+### v3 pools were undiscoverable
+
+`V3_FACTORY_ABI` existed and nothing listened for `PoolCreated`, so v3 pools
+had to be hand-listed in `V3_POOLS`. §4 says some older pools on this chain are
+v3, so the hand-list would have silently omitted every pool nobody thought to
+add. The factory is now followed, discovered pools are reloaded from the
+database on restart, and `V3_FACTORY` needs an address from ALFA.
+
+Finding it surfaced a second bug that the test caught rather than production.
+A v3 pool announced at block 20 whose `Mint` lands at block 30 has both in
+blocks already read past — its own address was not in the log filter when they
+were fetched — and the 32-block re-scan cannot reach back far enough. That mint
+is the pool's entire starting liquidity: miss it and the reserves sum negative
+and the depth is unknown for good. A newly discovered v3 pool is now backfilled
+from its own creation block in the same pass.
+
+### The API was unprotected, and health said nothing useful
+
+`/api/snapshot` is the expensive query and it sat on a public endpoint in front
+of one Postgres; one loop would have taken the site down. It is rate limited
+now, generously — the front end polls every 20s behind the websocket and a
+dozen tabs behind one NAT must not be throttled. The websocket is exempt,
+because after a restart every client reconnects at once and those are exactly
+the clients that most need to get back on.
+
+`/api/health` returned 200 whenever the API answered, which is useless as an
+alert: the indexer could be dead for a day and the endpoint would say ok. It
+**returns 503 when the indexer is stalled or has never started**, so any uptime
+check watching a status code catches it. `deploy/monitor.sh` runs from cron and
+checks the same thing plus PM2, alerting on a change of state rather than every
+five minutes for two days.
+
+This is §8's P3 criterion arriving a phase early. It names the failure
+precisely — "a keeper that dies silently is a vault paying zero while
+displaying a yield" — and the indexer has exactly that shape now.
+
+### Operational gaps that would have bitten
+
+- **Log rotation.** Three processes, six log files, no rotation. The first
+  symptom of a full disk is writes failing everywhere.
+- **Backups.** `deploy/backup.sh`, nightly, 14 days. §9's determinism means
+  the database can be rebuilt from chain, but that is a full re-sync from
+  `START_BLOCK` — hours of climbing lag. The dumps are local, which protects
+  against a bad migration and not against losing the box; getting them off the
+  machine needs credentials, so `BACKUP_SYNC_CMD` is left for whoever has them.
+- **Boot survival.** `bootstrap.sh` now verifies `pm2-balast` is actually
+  enabled and says so loudly if not. Without that unit a reboot leaves nginx
+  serving 502s.
+
+### Verifying the addresses
+
+`npm run verify:chain` checks every §2 address holds code, that the
+PoolManager has emitted the v4 events we subscribe to — **decoded, not
+counted** — and that WETH and USDG answer as ERC20s with the decimals the
+price maths assumes. Run it before the first sync.
+
+The check is worth the script because the failure is invisible: a wrong
+`poolManager` starts cleanly, subscribes to an address that emits nothing, and
+reports a lag that climbs forever. A site that looks like it works and has
+nothing in it.
+
+An earlier version of that script checked the event name against the ABI
+instead of against the log, so it reported every event as found the moment any
+log appeared — it would have passed a wrong address that happened to emit
+something else. It decodes now.
+
+### Token logos
+
+`logo_url` existed and was never populated. §4 permits external sources for
+logos and metadata and forbids them for numbers, so `server/indexer/logos.ts`
+is the only file in `server/` that talks to anything but a node or the
+database, and it reads `logoURI` and nothing else — not price, not supply, and
+not decimals, which are an input to every price. A failure is silent and
+total: no list, an unreachable host or malformed JSON leaves every badge on its
+derived colour and changes not one number. It is opt-in via `TOKEN_LIST_URL`,
+because there is no canonical list for this chain and guessing at one would be
+worse than no logos.
+
+### What is still not built, and is not a defect
+
+P2's contracts, P3's keeper and P4's router are phases, not gaps. §8 orders
+them and §8's P5 puts an external audit in front of any mainnet vault
+deployment. Nothing in this section brings them closer.
+
+The §12 questions are also still open: the six-hours-per-tick simulator clock
+needs sign-off, and `/positions`'s forward-looking *Est. fee yield* needs a
+keep, cap or drop. P1 and this follow-up changed neither.

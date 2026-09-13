@@ -413,6 +413,8 @@ export async function rebuildPoolState(anchors: PriceAnchors): Promise<number> {
         t1.decimals AS dec1,
         t0.address  AS addr0,
         t1.address  AS addr1,
+        t0.total_supply AS supply0,
+        t1.total_supply AS supply1,
         CASE WHEN ls.sqrt_price_x96 IS NULL THEN NULL ELSE
           ${ratioSql('ls.sqrt_price_x96', 't0.decimals', 't1.decimals')}
         END AS ratio,
@@ -482,9 +484,26 @@ export async function rebuildPoolState(anchors: PriceAnchors): Promise<number> {
         whenToken1: 'price1_usd',
         otherwise: '0',
       })}, 0), 0)::numeric(38,18),
-      -- Market cap needs a circulating supply, which is not in the log
-      -- stream. Zero, and the UI shows an em dash, rather than a fabrication.
-      0::numeric(38,18),
+      -- Fully diluted value: the traded token's TOTAL supply times its price.
+      --
+      -- Not market cap. Circulating supply is not distinguishable on chain —
+      -- locked, vested and treasury-held tokens are all inside totalSupply —
+      -- so this figure is FDV and the UI labels it that way (§7). Calling it
+      -- market cap would overstate every token with a vesting schedule.
+      --
+      -- Zero when the supply has not been read, which renders as an em dash.
+      GREATEST(COALESCE(${sane(
+        tradedSide({
+          addr0: 'addr0',
+          addr1: 'addr1',
+          weth,
+          usdg,
+          whenToken0: 'supply0 / power(10::numeric, dec0) * price0_usd',
+          whenToken1: 'supply1 / power(10::numeric, dec1) * price1_usd',
+          otherwise: 'NULL',
+        }),
+        MAX_SANE_TOTAL_USD,
+      )}, 0), 0)::numeric(38,18),
       sqrt_price_x96::numeric(78,0),
       tick,
       liquidity::numeric(78,0),

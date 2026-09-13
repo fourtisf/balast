@@ -14,6 +14,7 @@
     "test:e2e": "playwright test",
     "api": "tsx server/api/main.ts",
     "indexer": "tsx server/indexer/main.ts",
+    "verify:chain": "tsx server/scripts/verify-chain.ts",
     "db:migrate": "prisma migrate deploy",
     "db:dev": "prisma migrate dev",
     "db:studio": "prisma studio",
@@ -22,6 +23,7 @@
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",
+    "@fastify/rate-limit": "^11.2.0",
     "@fastify/websocket": "^11.3.0",
     "@prisma/client": "^6.19.3",
     "fastify": "^5.12.4",

@@ -57,11 +57,13 @@ interface PoolQueryRow {
   name: string;
   decimals: number;
   logo_color: string | null;
+  logo_url: string | null;
   launchpad: string | null;
   quote_symbol: string | null;
   age_hours: number;
   tvl_usd: number;
   price_usd: number;
+  mc_usd: number;
   change_24h_pct: number | null;
   fees_24h_usd: number;
   fees_window_usd: number;
@@ -227,6 +229,7 @@ async function queryPools(usdg: string, asOf: Date): Promise<PoolQueryRow[]> {
       ${side('t0.name', 't1.name')}             AS name,
       ${side('t0.decimals', 't1.decimals')}     AS decimals,
       ${side('t0.logo_color', 't1.logo_color')} AS logo_color,
+      ${side('t0.logo_url', 't1.logo_url')}     AS logo_url,
       ${side('t0.launchpad', 't1.launchpad')}   AS launchpad,
       -- USDG outranks WETH as the quote, matching the rule above.
       CASE
@@ -238,6 +241,7 @@ async function queryPools(usdg: string, asOf: Date): Promise<PoolQueryRow[]> {
       GREATEST(0, EXTRACT(EPOCH FROM (pr.as_of - p.created_at)) / 3600)::float8 AS age_hours,
       COALESCE(ps.tvl_usd, 0)::float8   AS tvl_usd,
       COALESCE(ps.price_usd, 0)::float8 AS price_usd,
+      COALESCE(ps.mc_usd, 0)::float8    AS mc_usd,
 
       -- 24h move, both prices through the same path so the ratio is honest.
       CASE
@@ -319,6 +323,7 @@ function toPool(row: PoolQueryRow): Pool {
       name: row.name,
       decimals: row.decimals,
       logoColor: row.logo_color ?? 'var(--fg-3)',
+      logoUrl: row.logo_url ?? undefined,
       launchpad: row.launchpad ?? undefined,
     },
     quote: (row.quote_symbol ?? 'ETH') as Quote,
@@ -328,9 +333,11 @@ function toPool(row: PoolQueryRow): Pool {
     stakeable: row.stakeable,
     ageHours: row.age_hours,
     priceUsd: row.price_usd,
-    // Market cap needs a circulating supply, which is not in the log stream.
-    // Zero, and the column renders an em dash, rather than a fabricated figure.
-    marketCapUsd: 0,
+    // totalSupply x price. That is fully diluted value, not market cap, and
+    // it is flagged so the row can say which it is (§7). Zero means no supply
+    // has been read yet, and the column renders an em dash.
+    marketCapUsd: row.mc_usd,
+    marketCapIsFdv: row.mc_usd > 0,
     tvlUsd: row.tvl_usd,
     change24hPct: row.change_24h_pct ?? 0,
     fees24hUsd: row.fees_24h_usd,

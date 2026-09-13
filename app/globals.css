@@ -455,3 +455,15 @@ td.fd{animation:fd 1.1s ease-out}
   border:1px solid var(--bd-n);border-radius:14px;background:var(--panel)}
 .aw-in .eyebrow{display:block;margin-bottom:12px}
 .aw-in p{margin:0;font-size:13px;line-height:1.65;color:var(--fg-2)}
+
+/* Marks a market-cap figure that is actually fully diluted value (§7).
+   Deliberately quiet — it is a qualifier on a number, not a status. Same
+   weight as the `est.` qualifier on a young pool's yield. */
+.fdv{display:inline-block;margin-left:5px;font-size:9px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--fg-4);font-style:normal}
+
+/* A token's logo, when a token list supplied one. The badge's derived colour
+   stays painted underneath, so an image that fails to load leaves something
+   deliberate rather than a blank circle. */
+.logo img,.fl img,.mc-logo img{width:100%;height:100%;border-radius:inherit;
+  object-fit:cover;display:block}

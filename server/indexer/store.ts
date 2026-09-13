@@ -173,3 +173,18 @@ export async function loadKnownPools(): Promise<Set<string>> {
   const rows = await prisma.pool.findMany({ select: { id: true } });
   return new Set(rows.map((r) => r.id));
 }
+
+/**
+ * Addresses of the v3 pools we already know about.
+ *
+ * v3 emits from each pool's own contract, so the poller has to name every one
+ * of them in its log filter. Loading them from the database on startup is
+ * what stops a restart quietly ceasing to index pools it discovered earlier.
+ */
+export async function loadV3PoolAddresses(): Promise<string[]> {
+  const rows = await prisma.pool.findMany({
+    where: { protocol: 'v3' },
+    select: { address: true },
+  });
+  return rows.map((r) => r.address.toLowerCase());
+}

@@ -20,9 +20,10 @@
 import { encodeAbiParameters, encodeEventTopics, parseAbiParameters, toHex } from 'viem';
 import { CONTRACTS } from '../../lib/chain';
 import { mulberry32 } from '../../lib/rng';
-import { POOL_MANAGER_ABI } from '../chain/abi';
+import { POOL_MANAGER_ABI, V3_FACTORY_ABI, V3_POOL_ABI } from '../chain/abi';
 import { amountsForLiquidity, getSqrtRatioAtTick } from '../chain/tick-math';
 import type { TokenFacts } from '../indexer/discovery';
+import { poolKey } from '../indexer/events';
 import type { LogSource } from '../indexer/poller';
 
 const MANAGER = CONTRACTS.poolManager.toLowerCase();
@@ -44,20 +45,31 @@ function bytes32(n: number): `0x${string}` {
 export const WETH = CONTRACTS.weth.toLowerCase() as `0x${string}`;
 export const USDG = address(0xd6);
 
+/**
+ * `totalSupply` is set for most tokens and deliberately absent for one, so
+ * both the fully-diluted figure and the "no supply read, show an em dash"
+ * path are exercised. MOONCAT is the one whose contract does not answer.
+ */
 export const FIXTURE_TOKENS: Record<string, TokenFacts> = {
-  [WETH]: { address: WETH, symbol: 'WETH', name: 'Wrapped Ether', decimals: 18 },
-  [USDG]: { address: USDG.toLowerCase(), symbol: 'USDG', name: 'Global Dollar', decimals: 6 },
-  [address(0x01).toLowerCase()]: { address: address(0x01).toLowerCase(), symbol: 'NVDA', name: 'NVIDIA Token', decimals: 18 },
-  [address(0x02).toLowerCase()]: { address: address(0x02).toLowerCase(), symbol: 'PONS', name: 'Pons', decimals: 18 },
-  [address(0x03).toLowerCase()]: { address: address(0x03).toLowerCase(), symbol: 'MOONCAT', name: 'Mooncat', decimals: 18 },
-  [address(0x04).toLowerCase()]: { address: address(0x04).toLowerCase(), symbol: 'TWINE', name: 'Twine', decimals: 18 },
+  [WETH]: { address: WETH, symbol: 'WETH', name: 'Wrapped Ether', decimals: 18, totalSupply: 120_000n * 10n ** 18n },
+  [USDG]: { address: USDG.toLowerCase(), symbol: 'USDG', name: 'Global Dollar', decimals: 6, totalSupply: 900_000_000n * 10n ** 6n },
+  [address(0x01).toLowerCase()]: { address: address(0x01).toLowerCase(), symbol: 'NVDA', name: 'NVIDIA Token', decimals: 18, totalSupply: 112_000n * 10n ** 18n },
+  [address(0x02).toLowerCase()]: { address: address(0x02).toLowerCase(), symbol: 'PONS', name: 'Pons', decimals: 18, totalSupply: 1_000_000_000n * 10n ** 18n },
+  [address(0x03).toLowerCase()]: { address: address(0x03).toLowerCase(), symbol: 'MOONCAT', name: 'Mooncat', decimals: 18, totalSupply: null },
+  [address(0x04).toLowerCase()]: { address: address(0x04).toLowerCase(), symbol: 'TWINE', name: 'Twine', decimals: 18, totalSupply: 1_000_000_000n * 10n ** 18n },
 };
 
-/** The fixture's token reader: no network, exact decimals. */
+/** The fixture's token reader: no network, exact decimals, fixed supplies. */
 export const fixtureTokenReader = async (addr: string): Promise<TokenFacts> => {
   const known = FIXTURE_TOKENS[addr.toLowerCase()];
   if (known) return known;
-  return { address: addr.toLowerCase(), symbol: 'UNKNOWN', name: 'Unknown token', decimals: 18 };
+  return {
+    address: addr.toLowerCase(),
+    symbol: 'UNKNOWN',
+    name: 'Unknown token',
+    decimals: 18,
+    totalSupply: null,
+  };
 };
 
 /**
@@ -529,3 +541,192 @@ export function buildAbsurdPoolChain(): FixtureChain {
 
 /** The absurd pool's id, for asserting what happened to it. */
 export const ABSURD_POOL_ID = `v4:${bytes32(0xff)}`;
+
+// ---------------------------------------------------------------------- v3 --
+
+/** A stand-in v3 factory address for the fixture. */
+export const V3_FACTORY = address(0xfac);
+/** The v3 pool the factory announces. */
+export const V3_POOL = address(0x3001);
+export const V3_POOL_ID = poolKey('v3', V3_POOL);
+
+function poolCreatedLog(args: {
+  token0: `0x${string}`;
+  token1: `0x${string}`;
+  feePips: number;
+  tickSpacing: number;
+  pool: `0x${string}`;
+  block: number;
+  logIndex: number;
+}): RawLog {
+  const topics = encodeEventTopics({
+    abi: V3_FACTORY_ABI,
+    eventName: 'PoolCreated',
+    args: { token0: args.token0, token1: args.token1, fee: args.feePips },
+  });
+  const data = encodeAbiParameters(parseAbiParameters('int24 tickSpacing, address pool'), [
+    args.tickSpacing,
+    args.pool,
+  ]);
+  return {
+    address: V3_FACTORY.toLowerCase(),
+    topics: topics as string[],
+    data,
+    blockNumber: BigInt(args.block),
+    logIndex: args.logIndex,
+    transactionHash: txHash(args.block, args.logIndex),
+  };
+}
+
+function v3SwapLog(args: {
+  amount0: bigint;
+  amount1: bigint;
+  tick: number;
+  block: number;
+  logIndex: number;
+}): RawLog {
+  const topics = encodeEventTopics({
+    abi: V3_POOL_ABI,
+    eventName: 'Swap',
+    args: { sender: address(0x1234), recipient: address(0x1234) },
+  });
+  const data = encodeAbiParameters(
+    parseAbiParameters(
+      'int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick',
+    ),
+    [args.amount0, args.amount1, getSqrtRatioAtTick(args.tick), 10n ** 22n, args.tick],
+  );
+  return {
+    address: V3_POOL.toLowerCase(),
+    topics: topics as string[],
+    data,
+    blockNumber: BigInt(args.block),
+    logIndex: args.logIndex,
+    transactionHash: txHash(args.block, args.logIndex),
+  };
+}
+
+function v3MintLog(args: {
+  tickLower: number;
+  tickUpper: number;
+  amount: bigint;
+  amount0: bigint;
+  amount1: bigint;
+  block: number;
+  logIndex: number;
+}): RawLog {
+  const topics = encodeEventTopics({
+    abi: V3_POOL_ABI,
+    eventName: 'Mint',
+    args: { owner: address(0xbeef), tickLower: args.tickLower, tickUpper: args.tickUpper },
+  });
+  const data = encodeAbiParameters(
+    parseAbiParameters('address sender, uint128 amount, uint256 amount0, uint256 amount1'),
+    [address(0xbeef), args.amount, args.amount0, args.amount1],
+  );
+  return {
+    address: V3_POOL.toLowerCase(),
+    topics: topics as string[],
+    data,
+    blockNumber: BigInt(args.block),
+    logIndex: args.logIndex,
+    transactionHash: txHash(args.block, args.logIndex),
+  };
+}
+
+/**
+ * A chain with a WETH/USDG anchor on v4 and one v3 pool announced by the
+ * factory, so the discovery path §4 requires is actually exercised.
+ *
+ * The v3 pool's swaps come from its own address, which the poller is not
+ * watching until the factory event tells it to — so those swaps land on the
+ * pass AFTER discovery, via the 32-block re-scan. That is the behaviour under
+ * test, not an accident of the fixture.
+ */
+export function buildV3Chain(): FixtureChain {
+  const logs: RawLog[] = [];
+  const anchor = FIXTURE_POOLS[0];
+
+  logs.push(initializeLog(anchor, 1, 0));
+  logs.push(
+    modifyLiquidityLog({
+      poolId: anchor.id,
+      sender: address(0xbeef),
+      tickLower: anchor.tick - 200,
+      tickUpper: anchor.tick + 200,
+      liquidityDelta: anchor.liquidity,
+      block: 1,
+      logIndex: 1,
+    }),
+  );
+  // Price the anchor, so the v3 pool below has a USD path.
+  for (let i = 0; i < 4; i++) {
+    logs.push(
+      swapLog({
+        poolId: anchor.id,
+        sender: address(0x1234),
+        amount0: toUnits(5_000, anchor.currency0),
+        amount1: -((toUnits(5_000, anchor.currency1) * 997n) / 1000n),
+        tick: anchor.tick,
+        liquidity: anchor.liquidity,
+        feePips: anchor.feePips,
+        block: 2 + i,
+        logIndex: 0,
+      }),
+    );
+  }
+
+  // The factory announces a v3 NVDA/WETH pool.
+  const token = address(0x01);
+  logs.push(
+    poolCreatedLog({
+      token0: token,
+      token1: WETH,
+      feePips: 3000,
+      tickSpacing: 60,
+      pool: V3_POOL,
+      block: 20,
+      logIndex: 0,
+    }),
+  );
+
+  // v3 Mint carries its own amounts, unlike v4's ModifyLiquidity.
+  const tick = -25_920;
+  logs.push(
+    v3MintLog({
+      tickLower: tick - 1200,
+      tickUpper: tick + 1200,
+      amount: 25n * 10n ** 21n,
+      amount0: 4_000n * 10n ** 18n,
+      amount1: 300n * 10n ** 18n,
+      block: 30,
+      logIndex: 0,
+    }),
+  );
+  for (let i = 0; i < 8; i++) {
+    logs.push(
+      v3SwapLog({
+        amount0: toUnits(800, token),
+        amount1: -((toUnits(800, WETH) * 997n) / 1000n),
+        tick: tick + i * 60,
+        block: 40 + i * 5,
+        logIndex: 0,
+      }),
+    );
+  }
+
+  logs.sort((a, b) =>
+    a.blockNumber === b.blockNumber
+      ? a.logIndex - b.logIndex
+      : a.blockNumber < b.blockNumber
+        ? -1
+        : 1,
+  );
+
+  return {
+    logs,
+    headBlock: 200,
+    blockTime: (b: number) =>
+      new Date(FIXTURE_GENESIS.getTime() + (b - 1) * FIXTURE_BLOCK_SECONDS * 1000),
+  };
+}

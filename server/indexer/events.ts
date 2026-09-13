@@ -8,7 +8,7 @@
  */
 
 import { decodeEventLog, type Log } from 'viem';
-import { POOL_MANAGER_ABI, V3_POOL_ABI } from '../chain/abi';
+import { POOL_MANAGER_ABI, V3_FACTORY_ABI, V3_POOL_ABI } from '../chain/abi';
 
 export type Protocol = 'v4' | 'v3';
 
@@ -173,6 +173,49 @@ export function decodePoolManagerLog(log: RawLog, blockTime: Date): ChainEvent |
     default:
       return null;
   }
+}
+
+/**
+ * Decode a v3 factory `PoolCreated`.
+ *
+ * v4 announces a pool with `Initialize` on the one PoolManager. v3 announces
+ * it on its factory and then emits everything else from the pool's own
+ * address — so a v3 pool is only discoverable through this event, and without
+ * it every v3 pool has to be listed by hand. §4 says some older pools on this
+ * chain are v3, so that hand-list would silently omit real pools.
+ *
+ * `PoolCreated` carries no initial price, so the pool is registered with
+ * sqrtPrice 0 and priced from its first swap.
+ */
+export function decodeV3FactoryLog(log: RawLog, blockTime: Date): InitializeEvent | null {
+  let decoded;
+  try {
+    decoded = decodeEventLog({ abi: V3_FACTORY_ABI, data: log.data, topics: log.topics });
+  } catch {
+    return null;
+  }
+  if (decoded.eventName !== 'PoolCreated') return null;
+  const args = decoded.args as Record<string, unknown>;
+  const poolAddress = (args.pool as string).toLowerCase();
+
+  return {
+    kind: 'initialize',
+    ...position(log, blockTime),
+    poolId: poolKey('v3', poolAddress),
+    protocol: 'v3',
+    contract: poolAddress,
+    currency0: (args.token0 as string).toLowerCase(),
+    currency1: (args.token1 as string).toLowerCase(),
+    feePips: Number(args.fee),
+    tickSpacing: Number(args.tickSpacing),
+    // v3 has no hooks. Null rather than the zero address, so `launchpadFor`
+    // cannot mistake it for an unrecognised hook.
+    hooks: null,
+    // Unknown until the pool's first swap. Zero reads as "not yet priced"
+    // everywhere downstream, which is the honest state.
+    sqrtPriceX96: 0n,
+    tick: 0,
+  };
 }
 
 /**

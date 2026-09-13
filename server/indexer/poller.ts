@@ -17,18 +17,27 @@ import { POOL_MANAGER_ABI, V3_POOL_ABI } from '../chain/abi';
 import { env } from '../env';
 import type { PriceAnchors } from './aggregate';
 import { rebuildAggregates } from './aggregate';
-import { classifyPools, ensureTokens, findAnchorPool, type TokenReader } from './discovery';
+import {
+  classifyPools,
+  ensureTokens,
+  findAnchorPool,
+  refreshSupplies,
+  type TokenReader,
+} from './discovery';
 import {
   decodePoolManagerLog,
+  decodeV3FactoryLog,
   decodeV3PoolLog,
   sortEvents,
   type ChainEvent,
 } from './events';
 import { planIngest } from './ingest';
+import { refreshLogos } from './logos';
 import {
   loadFeeTiers,
   loadKnownPools,
   loadPriceState,
+  loadV3PoolAddresses,
   readCursor,
   writeCursor,
   writeLiquidity,
@@ -72,6 +81,10 @@ export interface PassResult {
   liquidityWritten: number;
   poolsFound: number;
   tokensFound: number;
+  /** Token supplies re-read this pass, for the fully diluted figure. */
+  suppliesRefreshed: number;
+  /** Token logos picked up from the token list, if one is configured. */
+  logosFound: number;
   /** Seconds between the last indexed block's time and head's. Shown in the top bar (§7). */
   lagSeconds: number;
   caughtUp: boolean;
@@ -81,8 +94,19 @@ export interface PollerOptions {
   source: LogSource;
   /** USDG's address. Required for the one USD anchor path (§4.3). */
   usdgAddress: string;
-  /** v3 pool addresses to follow, if any. v4 needs only the manager. */
+  /**
+   * v3 pool addresses to follow. Usually empty: pools discovered through the
+   * factory are followed automatically and reloaded from the database on
+   * restart. Use it only to follow a pool whose `PoolCreated` predates
+   * START_BLOCK.
+   */
   v3Pools?: string[];
+  /**
+   * The v3 factory. Without it, v3 pools are only those listed above — and
+   * §4 says some older pools on this chain are v3, so a hand-list silently
+   * omits real ones.
+   */
+  v3Factory?: string | null;
   startBlock?: bigint;
   blockRange?: number;
   /** Override for tests; production uses §2's 32. */
@@ -100,7 +124,10 @@ export class Poller {
   private readonly reorgDepth: bigint;
   private readonly log: (message: string) => void;
   private readonly tokenReader?: TokenReader;
+  private readonly v3Factory: string | null;
   private v3Pools: string[];
+  /** Set once the known v3 pools have been loaded from the database. */
+  private v3Loaded = false;
 
   constructor(options: PollerOptions) {
     this.source = options.source;
@@ -109,6 +136,7 @@ export class Poller {
     this.blockRange = BigInt(options.blockRange ?? env.blockRange);
     this.reorgDepth = BigInt(options.reorgDepth ?? CHAIN.reorgDepth);
     this.v3Pools = (options.v3Pools ?? []).map((a) => a.toLowerCase());
+    this.v3Factory = options.v3Factory?.toLowerCase() ?? null;
     this.tokenReader = options.tokenReader;
     this.log = options.log ?? (() => {});
   }
@@ -133,6 +161,13 @@ export class Poller {
    * which the upserts make harmless.
    */
   async runPass(): Promise<PassResult> {
+    // v3 pools discovered on an earlier run have to be followed again after a
+    // restart, or the process would stop indexing them without saying so.
+    if (!this.v3Loaded) {
+      this.followV3Pools(await loadV3PoolAddresses());
+      this.v3Loaded = true;
+    }
+
     const head = await this.source.getHeadBlock();
     const cursor = await readCursor(POOL_MANAGER_CURSOR);
 
@@ -155,16 +190,28 @@ export class Poller {
         liquidityWritten: 0,
         poolsFound: 0,
         tokensFound: 0,
+        // Caught up is exactly when there is room to spend an RPC call on
+        // something other than logs.
+        suppliesRefreshed: await refreshSupplies(head.timestamp, { read: this.tokenReader }),
+        // Caught up is the only time there is room to fetch a token list.
+        // It is also the only network call in this process that is not to a
+        // node, and it is allowed to fail silently (§4 permits logos from
+        // external sources; a missing one changes no number).
+        logosFound: await refreshLogos({ chainId: CHAIN.id, log: this.log }),
         lagSeconds: 0,
         caughtUp: true,
       };
     }
 
-    const addresses = [CONTRACTS.poolManager.toLowerCase(), ...this.v3Pools];
+    const managerAddress = CONTRACTS.poolManager.toLowerCase();
+    const addresses = [
+      managerAddress,
+      ...(this.v3Factory ? [this.v3Factory] : []),
+      ...this.v3Pools,
+    ];
     const logs = await this.source.getLogs({ address: addresses, fromBlock: from, toBlock: to });
     const blockTimes = await this.source.getBlockTimes(from, to);
 
-    const managerAddress = CONTRACTS.poolManager.toLowerCase();
     const events: ChainEvent[] = [];
     for (const raw of logs) {
       const blockTime = blockTimes.get(raw.blockNumber);
@@ -176,10 +223,13 @@ export class Poller {
         data: raw.data as `0x${string}`,
         transactionHash: raw.transactionHash as `0x${string}`,
       };
+      const source = raw.address.toLowerCase();
       const decoded =
-        raw.address.toLowerCase() === managerAddress
+        source === managerAddress
           ? decodePoolManagerLog(log as never, blockTime)
-          : decodeV3PoolLog(log as never, blockTime);
+          : source === this.v3Factory
+            ? decodeV3FactoryLog(log as never, blockTime)
+            : decodeV3PoolLog(log as never, blockTime);
       if (decoded) events.push(decoded);
     }
 
@@ -195,11 +245,43 @@ export class Poller {
     const tokensFound = await ensureTokens(tokenAddresses, head.timestamp, this.tokenReader);
     await writePools(initializePlan);
 
+    // A v3 pool announced by the factory in THIS range emits everything else
+    // from its own address, which we were not watching when the logs above
+    // were fetched — so its first mint and its early swaps are in blocks we
+    // have already read past.
+    //
+    // The 32-block re-scan does NOT cover this. A pool created at block 20
+    // whose Mint lands at block 30 is behind the next pass's window, and that
+    // mint is a pool's entire starting liquidity: miss it and the pool's
+    // reserves are negative and its depth unknown for good. So the range is
+    // re-fetched for exactly those addresses, from each pool's own creation
+    // block, in this same pass.
+    const newV3 = initializePlan.pools.filter((p) => p.protocol === 'v3');
+    let backfilled: ChainEvent[] = [];
+    if (newV3.length > 0) {
+      this.followV3Pools(newV3.map((p) => p.address));
+      const earliest = newV3.reduce(
+        (acc, p) => (p.createdBlock < acc ? p.createdBlock : acc),
+        newV3[0].createdBlock,
+      );
+      backfilled = await this.backfillV3(
+        newV3.map((p) => p.address),
+        earliest,
+        to,
+        blockTimes,
+      );
+      this.log(
+        `  discovered ${newV3.length} v3 pool(s); backfilled ${backfilled.length} ` +
+          `event(s) from block ${earliest}`,
+      );
+    }
+
     // Then the rest, with the carried price state loaded from the database so
     // a restart mid-chain resumes exactly where a full replay would be.
     const known = await loadKnownPools();
-    const usable = ordered.filter((e) => known.has(e.poolId));
-    const skipped = ordered.length - usable.length;
+    const withBackfill = backfilled.length > 0 ? sortEvents([...ordered, ...backfilled]) : ordered;
+    const usable = withBackfill.filter((e) => known.has(e.poolId));
+    const skipped = withBackfill.length - usable.length;
     if (skipped > 0) {
       // Events for a pool whose Initialize predates our start block. Counting
       // their fees would attribute them to a pool that does not exist in our
@@ -224,6 +306,11 @@ export class Poller {
     // token flow, the fee hours valued through the anchor, then pool state
     // built on the flow. Scoped to the hours this range touched.
     const anchors = await this.anchors();
+    // Supplies first: the FDV figure in pool_state is computed from them, so
+    // refreshing after the rebuild would leave it a pass behind.
+    const suppliesRefreshed = await refreshSupplies(head.timestamp, {
+      read: this.tokenReader,
+    });
     await rebuildAggregates(anchors, { fromBlock: from, toBlock: to });
     await classifyPools();
 
@@ -239,14 +326,67 @@ export class Poller {
       fromBlock: from,
       toBlock: to,
       headBlock: head.number,
-      events: ordered.length,
+      events: withBackfill.length,
       swapsWritten,
       liquidityWritten,
       poolsFound: initializePlan.pools.length,
       tokensFound,
+      suppliesRefreshed,
+      // Only when a pool was discovered: a logo list does not change between
+      // blocks, and this is the one call in here that leaves the chain.
+      logosFound:
+        initializePlan.pools.length > 0
+          ? await refreshLogos({ chainId: CHAIN.id, log: this.log })
+          : 0,
       lagSeconds,
       caughtUp: to >= head.number,
     };
+  }
+
+  /**
+   * Re-read a newly discovered v3 pool's own logs from its creation block.
+   *
+   * Block times are reused from the pass where possible and fetched for the
+   * rest, because an event has to carry chain time rather than the time we
+   * happened to read it (§7).
+   */
+  private async backfillV3(
+    addresses: string[],
+    fromBlock: bigint,
+    toBlock: bigint,
+    known: Map<bigint, Date>,
+  ): Promise<ChainEvent[]> {
+    if (addresses.length === 0 || fromBlock > toBlock) return [];
+    const logs = await this.source.getLogs({ address: addresses, fromBlock, toBlock });
+    if (logs.length === 0) return [];
+
+    const times = new Map(known);
+    const missing = [...new Set(logs.map((l) => l.blockNumber))].filter((b) => !times.has(b));
+    if (missing.length > 0) {
+      const lo = missing.reduce((a, b) => (b < a ? b : a), missing[0]);
+      const hi = missing.reduce((a, b) => (b > a ? b : a), missing[0]);
+      for (const [block, time] of await this.source.getBlockTimes(lo, hi)) {
+        times.set(block, time);
+      }
+    }
+
+    const events: ChainEvent[] = [];
+    for (const raw of logs) {
+      const blockTime = times.get(raw.blockNumber);
+      if (!blockTime) continue;
+      const decoded = decodeV3PoolLog(
+        {
+          ...raw,
+          address: raw.address as `0x${string}`,
+          topics: raw.topics as [] | [`0x${string}`, ...`0x${string}`[]],
+          data: raw.data as `0x${string}`,
+          transactionHash: raw.transactionHash as `0x${string}`,
+        } as never,
+        blockTime,
+      );
+      if (decoded) events.push(decoded);
+    }
+    return events;
   }
 
   /** Run passes until caught up to head. Returns the passes it took. */

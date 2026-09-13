@@ -142,11 +142,23 @@ Each pass rebuilds only the hours its block range touched, but rebuilds them
 from every row in those hours — so the result is identical to a full rebuild,
 which is exactly what the test compares.
 
-Two things the indexer will not invent. **Market cap** needs a circulating
-supply, which is not in the log stream, so it is zero and the column shows an
-em dash. **A pool with neither WETH nor USDG on one side** cannot be priced
-through the one allowed path, so it is not listed at all rather than listed at
-zero.
+**Market cap is fully diluted value, and says so.** `totalSupply()` is an
+on-chain read, so the figure is available — but total supply includes locked,
+vested and treasury-held tokens, and none of that is distinguishable on chain.
+That makes it FDV, not market cap, and presenting FDV as market cap overstates
+every token with a vesting schedule. So the figure is marked `fdv`, and a
+token that will not report a supply shows an em dash rather than a guess.
+
+**A pool with neither WETH nor USDG on one side** cannot be priced through the
+one allowed path, so it is not listed at all rather than listed at zero.
+
+**v3 pools are discovered through the factory.** v4 announces every pool on
+one PoolManager; v3 announces it on the factory and then emits from the pool's
+own address. Set `V3_FACTORY` or v3 pools are only the ones hand-listed in
+`V3_POOLS` — and §4 says some older pools on this chain are v3, so a
+hand-list omits real pools. A newly discovered v3 pool is backfilled from its
+own creation block, because its first mint is its entire starting liquidity and
+the 32-block re-scan cannot reach back far enough to find it.
 
 ## Rules the code enforces
 
@@ -171,6 +183,12 @@ These are product rules, not preferences (§1, §7). They live in
   know is wrong.
 - A derived price outside a sane bound leaves the pool **unpriced**, not
   clamped. A clamp would render as a real TVL of ten quintillion dollars.
+- A market cap derived from `totalSupply()` is **fully diluted value** and is
+  labelled `fdv`. Calling FDV market cap overstates every token with a vesting
+  schedule, always in the flattering direction.
+- Token logos may come from an external list; numbers never may (§4). The
+  logo fetcher reads `logoURI` and nothing else — not price, not supply, and
+  not decimals, which are an input to every price and stay an on-chain read.
 
 ## Deploy
 
@@ -212,11 +230,49 @@ Watching it work:
 
 ```bash
 pm2 logs balast-indexer
-curl -s localhost:3001/api/health | head -20
+curl -s localhost:3001/api/health
 ```
 
-`ok: true` there only means the API answered. Whether the numbers are current
-is the `lagSeconds` field's job to say, and the top bar shows it.
+`/api/health` **returns 503 when the indexer is stalled or has never started**,
+so any uptime check that watches a status code catches it with no extra
+plumbing. `status` is the field to read: `ok`, `stalled`, or `never-indexed`.
+
+`deploy/monitor.sh` runs from cron every five minutes and checks the same
+thing plus whether the PM2 processes are online. It alerts on a *change* of
+state, so a stalled indexer sends one message rather than one every five
+minutes for two days. Point it at a person by putting `ALERT_CMD` in
+`/etc/default/balast`:
+
+```bash
+echo 'ALERT_CMD="curl -sS -X POST -d @- https://your-webhook"' >> /etc/default/balast
+```
+
+This exists because §8's P3 criterion names the failure exactly — "a keeper
+that dies silently is a vault paying zero while displaying a yield" — and it
+applies to the indexer a phase early. The lag figure in the top bar is for
+someone who is looking at the page; this is for the hours when nobody is.
+
+`deploy/backup.sh` dumps the database nightly to `/var/backups/balast`, keeping
+14 days. §9's determinism means the database can be rebuilt from the chain, but
+that is a full re-sync from `START_BLOCK` — hours of climbing lag. The dumps are
+**local only**: they protect against a bad migration, not against losing the
+box. Getting them off the machine needs credentials, so `BACKUP_SYNC_CMD` is
+left for whoever has them.
+
+### Before the first sync
+
+```bash
+npm run verify:chain
+```
+
+All seven addresses in §2 are marked unverified in `lib/chain.ts`. This checks
+each one holds code, that the PoolManager has actually emitted the v4 events we
+subscribe to (decoded, not just counted), and that WETH and USDG answer as
+ERC20s with the decimals the price maths assumes.
+
+Run it. If `poolManager` is wrong the indexer starts cleanly, subscribes to an
+address that emits nothing, and reports a lag that climbs forever — a
+working-looking site with an empty table and no error anywhere.
 
 The domain is **balast.xyz**, set in `lib/site.ts` and `deploy/nginx.conf`.
 `www` 301s to the apex so there is one canonical host.
@@ -259,12 +315,14 @@ lib/
 server/               P1 — nothing here is imported by a component
   env.ts db.ts        config read once, one Prisma client per process
   chain/              abi, viem client with failover, price and tick maths
-  indexer/            events, ingest (pure), aggregate (SQL), poller, discovery
+  indexer/            events, ingest (pure), aggregate (SQL), poller,
+                      discovery, logos (the only file that leaves the chain)
   api/                Fastify server, the snapshot query, the tick bus
+  scripts/            verify-chain.ts — run before the first sync
   test/               the deterministic fixture chain and db helpers
 prisma/schema.prisma  the §4 schema, plus the raw-row tables §9 needs
 e2e/                  browser tests, run by `npm run test:e2e`
-deploy/               bootstrap.sh, deploy.sh, nginx configs
+deploy/               bootstrap.sh, deploy.sh, monitor.sh, backup.sh, nginx
 design/depth.html     the approved prototype
 ```
 

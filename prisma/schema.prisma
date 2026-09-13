@@ -29,16 +29,26 @@ datasource db {
 // ---------------------------------------------------------------- discovery --
 
 model Token {
-  address   String   @id
-  symbol    String
-  name      String
-  decimals  Int      @default(18)
-  logoUrl   String?  @map("logo_url")
+  address      String    @id
+  symbol       String
+  name         String
+  decimals     Int       @default(18)
+  /// `totalSupply()`, read from the token contract.
+  ///
+  /// This is TOTAL supply, not circulating: locked, vested and treasury-held
+  /// tokens are all in it, and none of that is distinguishable on chain. So
+  /// the figure it produces is fully diluted value, and it is labelled as
+  /// such rather than called market cap (§7). Null until it has been read.
+  totalSupply  Decimal?  @map("total_supply") @db.Decimal(78, 0)
+  /// When the supply was last read. Mintable tokens change, so it is
+  /// refreshed on a cadence rather than once at discovery.
+  supplyReadAt DateTime? @map("supply_read_at")
+  logoUrl      String?   @map("logo_url")
   /// Brand colour. Metadata, not a design decision (§5).
-  logoColor String?  @map("logo_color")
+  logoColor    String?   @map("logo_color")
   /// Pons, Bags, Bottom.fun — set when the token came from a launchpad (§4).
-  launchpad String?
-  firstSeen DateTime @map("first_seen")
+  launchpad    String?
+  firstSeen    DateTime  @map("first_seen")
 
   poolsAsToken0 Pool[] @relation("token0")
   poolsAsToken1 Pool[] @relation("token1")

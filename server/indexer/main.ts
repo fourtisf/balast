@@ -40,9 +40,18 @@ async function main(): Promise<void> {
   const head = await getHead();
   log(`head is block ${head.number} at ${head.timestamp.toISOString()}`);
 
+  const v3Factory = process.env.V3_FACTORY ?? null;
+  if (!v3Factory) {
+    log(
+      'V3_FACTORY is not set — v3 pools will only be those named in V3_POOLS. ' +
+        '§4 says some older pools on this chain are v3, so this will omit real pools.',
+    );
+  }
+
   const poller = new Poller({
     source: new ViemLogSource(),
     usdgAddress: USDG,
+    v3Factory,
     v3Pools: (process.env.V3_POOLS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
     log,
   });

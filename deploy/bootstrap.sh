@@ -140,10 +140,51 @@ echo "==> migrate"
 as_app npx prisma migrate deploy
 
 echo "==> pm2"
+# Rotate the logs. Three processes writing to six files with no rotation fills
+# a disk eventually, and the first symptom is writes failing everywhere.
+as_app pm2 install pm2-logrotate >/dev/null 2>&1 || true
+as_app pm2 set pm2-logrotate:max_size 20M      >/dev/null 2>&1 || true
+as_app pm2 set pm2-logrotate:retain 14         >/dev/null 2>&1 || true
+as_app pm2 set pm2-logrotate:compress true     >/dev/null 2>&1 || true
+
 as_app pm2 start ecosystem.config.js --update-env || as_app pm2 reload all
 as_app pm2 save
 # Run as root, pm2 installs and enables the systemd unit itself.
 pm2 startup systemd -u "$APP_USER" --hp "/home/$APP_USER"
+# ...and verify it took. Without this unit the box reboots into nginx serving
+# 502s, because nothing brings the three processes back.
+if systemctl is-enabled "pm2-$APP_USER" >/dev/null 2>&1; then
+  echo "   pm2-$APP_USER is enabled — the processes survive a reboot"
+else
+  echo "   !! pm2-$APP_USER is NOT enabled. A reboot will leave nginx serving 502s."
+  echo "      Run: pm2 startup systemd -u $APP_USER --hp /home/$APP_USER"
+fi
+
+echo "==> cron: backups and the indexer monitor"
+# Both are idempotent: the marker comment is what makes re-running safe.
+install -m 755 "$APP_DIR/deploy/backup.sh"  /usr/local/bin/balast-backup
+install -m 755 "$APP_DIR/deploy/monitor.sh" /usr/local/bin/balast-monitor
+mkdir -p /var/lib/balast /var/backups/balast
+chmod 700 /var/backups/balast
+cat > /etc/cron.d/balast <<'CRONEOF'
+# Balast — installed by deploy/bootstrap.sh
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Is the indexer actually indexing? §8's P3 failure mode, one phase early:
+# a dead indexer leaves the site serving old numbers as though they were live.
+# Set ALERT_CMD in /etc/default/balast to have it reach a person.
+*/5 * * * * root [ -r /etc/default/balast ] && . /etc/default/balast; /usr/local/bin/balast-monitor >/dev/null 2>&1
+
+# Nightly dump. Local only — see the note in deploy/backup.sh about getting
+# it off the box.
+0 4 * * * root /usr/local/bin/balast-backup >> /var/log/balast/backup.log 2>&1
+CRONEOF
+chmod 644 /etc/cron.d/balast
+touch /etc/default/balast
+chmod 600 /etc/default/balast
+echo "   monitor every 5 min, dump at 04:00 UTC"
+echo "   to be told when the indexer stalls, put ALERT_CMD in /etc/default/balast"
 
 echo "==> nginx, HTTP only, so certbot has something to answer with"
 # Only add the map if nothing else already defines $connection_upgrade —

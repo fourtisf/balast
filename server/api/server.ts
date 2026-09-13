@@ -15,6 +15,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import websocket from '@fastify/websocket';
 import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
 import { CONTRACTS } from '../../lib/chain';
 import type { MarketSnapshot } from '../../lib/data/types';
 import { prisma } from '../db';
@@ -47,6 +48,41 @@ export async function buildServer(): Promise<FastifyInstance> {
     // is only for local development against `next dev`.
     origin: process.env.CORS_ORIGIN ?? true,
   });
+
+  /**
+   * Rate limit, because `/api/snapshot` is the expensive query and this is a
+   * public endpoint in front of one Postgres. Without it, one person with a
+   * loop takes the site down for everyone.
+   *
+   * The allowance is deliberately generous: the front end polls every 20s as
+   * a safety net behind the websocket, and a page open in a dozen tabs behind
+   * one NAT must not get throttled. This is here to stop a loop, not to
+   * ration users.
+   *
+   * `X-Forwarded-For` is trusted because nginx sets it and nothing else can
+   * reach the port — the API binds 127.0.0.1.
+   */
+  await app.register(rateLimit, {
+    max: env.rateLimitMax,
+    timeWindow: env.rateLimitWindowMs,
+    // The websocket is one request that then stays open for hours. Counting
+    // it against a per-minute budget would drop reconnects after a restart,
+    // which is exactly when every client reconnects at once.
+    allowList: (request) => request.url.startsWith('/api/stream'),
+    keyGenerator: (request) =>
+      (request.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
+      request.ip,
+    // The object returned here is THROWN by the plugin, so it needs a
+    // statusCode of its own — without one Fastify's error handler treats it
+    // as an unhandled error and answers 500, which tells a client to retry
+    // instead of to back off. Caught by the test below.
+    errorResponseBuilder: (_request, context) => ({
+      statusCode: 429,
+      error: 'rate-limited',
+      message: `Too many requests. Try again in ${Math.ceil(context.ttl / 1000)}s.`,
+    }),
+  });
+
   await app.register(websocket);
 
   /**
@@ -75,7 +111,20 @@ export async function buildServer(): Promise<FastifyInstance> {
     return building;
   }
 
-  app.get('/api/health', async () => {
+  /**
+   * Health, and the one thing an uptime monitor can act on.
+   *
+   * A 200 here used to mean only "the API answered", which is useless as an
+   * alert: the indexer can be dead for a day while this endpoint cheerfully
+   * returns ok. §8's P3 criterion names that exact failure — a process that
+   * dies quietly while the site shows its last numbers as though they were
+   * live — and it applies to the indexer now, a phase early.
+   *
+   * So a stalled or never-started indexer returns **503**. Any uptime check
+   * that watches a status code catches it with no extra plumbing, and the
+   * body says which of the two it is.
+   */
+  app.get('/api/health', async (_request, reply) => {
     const cursor = await prisma.indexerCursor.findUnique({
       where: { contract: POOL_MANAGER_CURSOR },
     });
@@ -86,10 +135,20 @@ export async function buildServer(): Promise<FastifyInstance> {
       SELECT (SELECT COUNT(*) FROM pools)::int AS pools,
              (SELECT COUNT(*) FROM swap_events)::int AS swaps
     `;
-    return {
-      // "ok" means the API answered. Whether the numbers are current is the
-      // lag figure's job to say, and the top bar shows it (§7).
-      ok: true,
+
+    const status =
+      cursor === null
+        ? 'never-indexed'
+        : lagSeconds !== null && lagSeconds > env.stallSeconds
+          ? 'stalled'
+          : 'ok';
+
+    const body = {
+      // Kept for anything already reading it, but `status` is the field to
+      // watch: "ok" here has never meant the numbers are current.
+      ok: status === 'ok',
+      status,
+      stallThresholdSeconds: env.stallSeconds,
       indexed: cursor
         ? { lastBlock: cursor.lastIndexedBlock.toString(), at: cursor.lastIndexedAt, lagSeconds }
         : null,
@@ -98,7 +157,16 @@ export async function buildServer(): Promise<FastifyInstance> {
       bus: busKind(),
       weth: CONTRACTS.weth,
       usdg: USDG || null,
+      message:
+        status === 'never-indexed'
+          ? 'The indexer has never written a block. Check USDG_ADDRESS and `pm2 logs balast-indexer`.'
+          : status === 'stalled'
+            ? `The indexer is ${Math.round(lagSeconds ?? 0)}s behind, past the ${env.stallSeconds}s ` +
+              'stall threshold. The site is showing numbers that old.'
+            : undefined,
     };
+
+    return reply.code(status === 'ok' ? 200 : 503).send(body);
   });
 
   app.get('/api/snapshot', async (_request, reply) => {

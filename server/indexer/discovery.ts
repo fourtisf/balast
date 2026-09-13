@@ -7,6 +7,7 @@
  * comes from outside our own tables.
  */
 
+import { Prisma } from '@prisma/client';
 import { getAddress } from 'viem';
 import { CONTRACTS } from '../../lib/chain';
 import { ERC20_ABI } from '../chain/abi';
@@ -82,6 +83,16 @@ export interface TokenFacts {
   symbol: string;
   name: string;
   decimals: number;
+  /**
+   * `totalSupply()`, in the token's smallest units, or null if the contract
+   * did not answer.
+   *
+   * TOTAL, not circulating — locked, vested and treasury-held tokens are all
+   * in it and none of that is distinguishable on chain. What it produces is
+   * fully diluted value, which is why it is labelled that way rather than
+   * called market cap (§7).
+   */
+  totalSupply?: bigint | null;
 }
 
 /**
@@ -95,7 +106,9 @@ export async function readToken(address: string): Promise<TokenFacts> {
   const checksummed = getAddress(address);
   const fallback = `${address.slice(2, 6)}…${address.slice(-4)}`.toUpperCase();
 
-  const read = async <T>(functionName: 'symbol' | 'name' | 'decimals'): Promise<T | null> => {
+  const read = async <T>(
+    functionName: 'symbol' | 'name' | 'decimals' | 'totalSupply',
+  ): Promise<T | null> => {
     try {
       return (await rpc(
         (c) => c.readContract({ address: checksummed, abi: ERC20_ABI, functionName }),
@@ -106,14 +119,16 @@ export async function readToken(address: string): Promise<TokenFacts> {
     }
   };
 
-  const [symbol, name, decimals] = await Promise.all([
+  const [symbol, name, decimals, totalSupply] = await Promise.all([
     read<string>('symbol'),
     read<string>('name'),
     read<number>('decimals'),
+    read<bigint>('totalSupply'),
   ]);
 
   return {
     address: address.toLowerCase(),
+    totalSupply: typeof totalSupply === 'bigint' && totalSupply > 0n ? totalSupply : null,
     // Trim: a token whose symbol is padded or absurdly long would break the
     // table layout, and the ticker is 14px/700 in a fixed column (§5).
     symbol: (symbol ?? fallback).trim().slice(0, 16) || fallback,
@@ -148,7 +163,12 @@ export async function ensureTokens(
     await prisma.token.upsert({
       where: { address: facts.address },
       create: {
-        ...facts,
+        address: facts.address,
+        symbol: facts.symbol,
+        name: facts.name,
+        decimals: facts.decimals,
+        totalSupply: facts.totalSupply ? new Prisma.Decimal(facts.totalSupply.toString()) : null,
+        supplyReadAt: facts.totalSupply ? seenAt : null,
         logoColor: brandColor(facts.address),
         launchpad: null,
         firstSeen: seenAt,
@@ -157,6 +177,49 @@ export async function ensureTokens(
     });
   }
   return missing.length;
+}
+
+/**
+ * Re-read `totalSupply()` for the tokens whose figure is most stale.
+ *
+ * Supply is not immutable — a mintable token's changes, and a fully diluted
+ * value computed from a stale supply is wrong in the direction that flatters
+ * the token. But it is also one RPC call per token, so this refreshes a
+ * bounded few per pass rather than all of them, oldest first.
+ *
+ * A token that stops answering keeps its last known supply and its old
+ * timestamp, so the staleness is recorded rather than reset.
+ */
+export async function refreshSupplies(
+  now: Date,
+  options: { maxAgeMinutes?: number; limit?: number; read?: TokenReader } = {},
+): Promise<number> {
+  const maxAge = options.maxAgeMinutes ?? 60;
+  const limit = options.limit ?? 5;
+  const read = options.read ?? readToken;
+  const cutoff = new Date(now.getTime() - maxAge * 60_000);
+
+  const stale = await prisma.token.findMany({
+    where: { OR: [{ supplyReadAt: null }, { supplyReadAt: { lt: cutoff } }] },
+    orderBy: [{ supplyReadAt: { sort: 'asc', nulls: 'first' } }],
+    take: limit,
+    select: { address: true },
+  });
+
+  let updated = 0;
+  for (const token of stale) {
+    const facts = await read(token.address);
+    if (!facts.totalSupply) continue;
+    await prisma.token.update({
+      where: { address: token.address },
+      data: {
+        totalSupply: new Prisma.Decimal(facts.totalSupply.toString()),
+        supplyReadAt: now,
+      },
+    });
+    updated++;
+  }
+  return updated;
 }
 
 /**

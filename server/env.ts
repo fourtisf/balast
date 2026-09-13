@@ -68,6 +68,29 @@ export const env = {
   streamDebounceMs: int('STREAM_DEBOUNCE_MS', 1_000),
 
   /**
+   * Requests per window per client, for the public API.
+   *
+   * Generous on purpose. The front end polls every 20s behind the websocket,
+   * and a dozen tabs behind one NAT must not get throttled — this exists to
+   * stop a loop hammering the snapshot query, not to ration users.
+   */
+  rateLimitMax: int('RATE_LIMIT_MAX', 120),
+  rateLimitWindowMs: int('RATE_LIMIT_WINDOW_MS', 60_000),
+
+  /**
+   * Lag at which the indexer counts as stalled rather than behind.
+   *
+   * §8's P3 criterion names the failure this exists for: a process that dies
+   * quietly while the site keeps showing its last numbers as though they were
+   * live. The same applies to the indexer now, one phase early.
+   *
+   * Five minutes is roughly 3,000 blocks at this chain's ~100ms (§2), which a
+   * healthy indexer clears in a couple of passes. Sustained lag past that is
+   * a stall, not a busy moment.
+   */
+  stallSeconds: int('INDEXER_STALL_SECONDS', 300),
+
+  /**
    * Pools to index first. Empty means "everything the PoolManager emits",
    * which is correct but slow on a first sync; naming a few gets the boards
    * populated while the rest catches up.

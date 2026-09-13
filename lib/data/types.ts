@@ -17,6 +17,14 @@ export interface TokenMeta {
   decimals: number;
   /** Brand colour from token metadata. Data, not a design decision (§5). */
   logoColor: string;
+  /**
+   * Logo image, when a token list supplied one.
+   *
+   * §4 permits external sources for logos and metadata but not for numbers,
+   * so this is the one field on this type that did not come from a node. The
+   * colour above is always present and is what renders without it.
+   */
+  logoUrl?: string;
   /** Launchpad that minted it, when it came from one. */
   launchpad?: string;
 }
@@ -46,7 +54,23 @@ export interface Pool {
   ageHours: number;
 
   priceUsd: number;
+  /**
+   * The token's total value at the current price.
+   *
+   * `marketCapIsFdv` says which figure it actually is. Zero means the
+   * provider could not establish a supply, and the row shows an em dash.
+   */
   marketCapUsd: number;
+  /**
+   * True when the figure above is fully diluted value rather than market cap.
+   *
+   * The live indexer derives it from `totalSupply()`, which includes locked,
+   * vested and treasury-held tokens — none of which is distinguishable on
+   * chain. That is FDV, and §7 does not allow it to be presented as market
+   * cap: for a token with a vesting schedule the two differ by a lot, always
+   * in the flattering direction.
+   */
+  marketCapIsFdv: boolean;
   tvlUsd: number;
   change24hPct: number;
   fees24hUsd: number;

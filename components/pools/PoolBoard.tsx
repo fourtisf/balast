@@ -195,7 +195,22 @@ function Row({
           </span>
         </button>
       </td>
-      <td className="r num hide-s">{usd(pool.marketCapUsd)}</td>
+      <td
+        className="r num hide-s"
+        title={
+          pool.marketCapUsd <= 0
+            ? 'No token supply read yet, so there is no figure to show.'
+            : pool.marketCapIsFdv
+              ? 'Fully diluted: total supply \u00d7 price. Circulating supply is not ' +
+                'distinguishable on chain, so locked and vested tokens are included.'
+              : undefined
+        }
+      >
+        {/* An FDV is marked, because calling it market cap overstates every
+            token with a vesting schedule (§7). */}
+        {usd(pool.marketCapUsd)}
+        {pool.marketCapIsFdv && pool.marketCapUsd > 0 ? <i className="fdv">fdv</i> : null}
+      </td>
       <FlashTd className="r" text={pool.change24hPct.toFixed(1)}>
         <Change pct={pool.change24hPct} />
       </FlashTd>

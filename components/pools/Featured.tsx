@@ -61,7 +61,8 @@ export function MiniCards() {
           <div>
             <div className="n">{mostTraded.token.symbol}</div>
             <div className="sub">
-              <b>{count(mostTraded.trades24h)} trades</b> · {usd(mostTraded.marketCapUsd)} MC
+              <b>{count(mostTraded.trades24h)} trades</b> ·{' '}
+              {usd(mostTraded.marketCapUsd)} {mostTraded.marketCapIsFdv ? 'FDV' : 'MC'}
             </div>
           </div>
         </div>

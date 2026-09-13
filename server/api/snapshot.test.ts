@@ -167,10 +167,35 @@ describe('buildSnapshot', () => {
     expect(Number.isFinite(snapshot.indexerLagSeconds)).toBe(true);
   });
 
-  it('leaves market cap at zero, because circulating supply is not in the logs', () => {
-    for (const pool of snapshot.pools) {
-      expect(pool.marketCapUsd).toBe(0);
+  it('derives a fully diluted value from totalSupply, and says that is what it is', () => {
+    // totalSupply() is an on-chain read, so this figure IS available — but it
+    // includes locked and vested tokens, so it is FDV and not market cap.
+    // Presenting FDV as market cap overstates every token with a vesting
+    // schedule, always in the flattering direction (§7).
+    const withSupply = snapshot.pools.filter((p) => p.marketCapUsd > 0);
+    expect(withSupply.length).toBeGreaterThan(0);
+    for (const pool of withSupply) {
+      expect(pool.marketCapIsFdv).toBe(true);
+      // Sanity: FDV is supply x price, so it must exceed the pool's own depth
+      // for any token whose supply is not almost entirely in this one pool.
+      expect(pool.marketCapUsd).toBeGreaterThan(0);
     }
+  });
+
+  it('shows no figure at all for a token that will not report its supply', () => {
+    // MOONCAT's contract does not answer totalSupply() in the fixture. Zero,
+    // which the column renders as an em dash — never a guess.
+    const mooncat = snapshot.pools.find((p) => p.token.symbol === 'MOONCAT');
+    expect(mooncat).toBeDefined();
+    expect(mooncat!.marketCapUsd).toBe(0);
+    expect(mooncat!.marketCapIsFdv).toBe(false);
+  });
+
+  it('computes FDV as supply x the traded side\'s price, not the quote\'s', () => {
+    const nvda = snapshot.pools.find((p) => p.token.symbol === 'NVDA');
+    expect(nvda).toBeDefined();
+    // 112,000 NVDA at the pool's price.
+    expect(nvda!.marketCapUsd).toBeCloseTo(112_000 * nvda!.priceUsd, 2);
   });
 
   it('reports no vaults, stakes, positions or payouts before P2 deploys them', () => {
