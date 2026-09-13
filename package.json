@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "brand": "python3 scripts/build-brand.py && node scripts/build-brand-png.mjs"
   },
   "dependencies": {
     "next": "14.2.35",

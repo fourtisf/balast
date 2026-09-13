@@ -128,9 +128,15 @@ export function Mark({
 }
 
 /**
- * Mark plus wordmark. The mark is set to 1.75× the cap height and the gap is
- * half the mark's width, which keeps the two reading as one object rather
- * than a symbol sitting next to some text.
+ * Mark plus wordmark.
+ *
+ * At a font size of 0.62 × the mark's box, JetBrains Mono's cap height puts
+ * the mark's ink at 1.353 × the caps — measured, not guessed. The flex gap
+ * sits between the two boxes, and the mark carries 2.7 units of padding
+ * inside its own, so the optical gap lands near 0.5 × the box.
+ *
+ * The distributable files in brand/ are built from the same numbers by
+ * scripts/build-brand.py, with the wordmark converted to outlines.
  */
 export function Lockup({
   size = 26,
