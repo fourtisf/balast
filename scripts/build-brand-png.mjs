@@ -28,10 +28,10 @@ const PREINSTALLED = [
 /** [source svg, output png, width] */
 const JOBS = [
   // The mark alone, transparent.
-  ['depth-mark.svg', 'depth-mark-512.png', 512],
-  ['depth-mark.svg', 'depth-mark-1024.png', 1024],
-  ['depth-mark-white.svg', 'depth-mark-white-512.png', 512],
-  ['depth-mark-black.svg', 'depth-mark-black-512.png', 512],
+  ['balast-mark.svg', 'balast-mark-512.png', 512],
+  ['balast-mark.svg', 'balast-mark-1024.png', 1024],
+  ['balast-mark-white.svg', 'balast-mark-white-512.png', 512],
+  ['balast-mark-black.svg', 'balast-mark-black-512.png', 512],
 
   // Icons on black, full bleed — no corners, so nothing shows through. This is
   // the cut for an X avatar, Telegram, a wallet's dapp list and the app
@@ -53,9 +53,12 @@ const JOBS = [
   ['favicon.svg', 'favicon-32.png', 32],
   ['favicon.svg', 'favicon-48.png', 48],
 
-  ['depth-lockup.svg', 'depth-lockup-1200.png', 1200],
-  ['depth-lockup-light.svg', 'depth-lockup-light-1200.png', 1200],
-  ['depth-lockup-white.svg', 'depth-lockup-white-1200.png', 1200],
+  // Open Graph: 1200 × 630 is what X, Telegram, Discord and Slack crop from.
+  ['og-card.svg', 'og-card.png', 1200],
+
+  ['balast-lockup.svg', 'balast-lockup-1200.png', 1200],
+  ['balast-lockup-light.svg', 'balast-lockup-light-1200.png', 1200],
+  ['balast-lockup-white.svg', 'balast-lockup-white-1200.png', 1200],
 ];
 
 const browser = await chromium.launch(

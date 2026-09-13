@@ -23,11 +23,11 @@ export function Featured() {
   return (
     <div className="card feat">
       <div className="fh">
-        {/* Depth's own pool, so it carries the mark rather than a monogram. */}
+        {/* Balast's own pool, so it carries the mark rather than a monogram. */}
         <div className="fl" style={{ background: 'var(--ac)' }}>
-          <Mark size={30} color="var(--on-ac)" title="Depth" />
+          <Mark size={30} color="var(--on-ac)" title="Balast" />
         </div>
-        <div className="fn">DEPTH</div>
+        <div className="fn">BALAST</div>
       </div>
       <div className="fg">
         {metrics.map((m) => (

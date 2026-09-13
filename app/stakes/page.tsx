@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { MyStakes } from '@/components/stakes/MyStakes';
 import { VaultGrid } from '@/components/stakes/VaultGrid';
 
-export const metadata: Metadata = { title: 'Stakes — Depth' };
+export const metadata: Metadata = { title: 'Stakes — Balast' };
 
 export default function StakesPage() {
   return (
@@ -16,7 +16,7 @@ export default function StakesPage() {
             Stake once. Fees stream for <em>7 days</em>.
           </h1>
           <p className="lede">
-            Drop in one token and Depth pairs it, places it, and harvests the fees. Your share
+            Drop in one token and Balast pairs it, places it, and harvests the fees. Your share
             arrives as WETH over a rolling week. Claim, compound, or leave whenever you like.
           </p>
         </div>

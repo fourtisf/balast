@@ -61,7 +61,7 @@ export const SEED_GLOBAL = {
 };
 
 export const SEED_FEATURED = {
-  /** Depth's share of all liquidity on the chain. Needs chain-wide data. */
+  /** Balast's share of all liquidity on the chain. Needs chain-wide data. */
   chainSharePct: 2.4,
 };
 

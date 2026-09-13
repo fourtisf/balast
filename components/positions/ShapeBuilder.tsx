@@ -105,7 +105,7 @@ export function ShapeBuilder() {
             <span className="max">Max {MAX_DEPOSIT_ETH}</span>
           </div>
           <p className="hint">
-            Depth swaps part of this into {pool.token.symbol} to fill the shape you choose.
+            Balast swaps part of this into {pool.token.symbol} to fill the shape you choose.
           </p>
         </div>
 

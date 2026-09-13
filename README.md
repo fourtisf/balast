@@ -1,7 +1,8 @@
-# Depth
+# Balast
 
-Liquidity layer for Robinhood Chain (chainId 4663). Users deposit into a token pool
-and collect a proportional share of swap fees, paid in WETH.
+Liquidity layer for Robinhood Chain (chainId 4663), at **balast.xyz**. Users
+deposit into a token pool and collect a proportional share of swap fees, paid
+in WETH.
 
 `CLAUDE.md` is the engineering handoff and the source of truth. `design/depth.html`
 is the approved design prototype. Where the two disagree, `CLAUDE.md` wins.
@@ -27,7 +28,7 @@ npm run test:e2e     # browser — flash, FLIP, focus trap, overflow, the §7 ru
 ```
 
 `npm test` covers `lib/yield.ts` (the §7 rules), `lib/shapes.ts` (bin weights
-must sum to exactly 10,000 or `DepthShaper` reverts), `lib/format.ts`, and
+must sum to exactly 10,000 or `BalastShaper` reverts), `lib/format.ts`, and
 `SimProvider` (determinism, derived totals, the three yield states).
 
 `npm run test:e2e` builds the app, starts it and drives Chromium. It asserts the

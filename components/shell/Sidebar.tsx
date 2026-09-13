@@ -54,8 +54,8 @@ export function Sidebar() {
   return (
     <nav className="rail" aria-label="Primary">
       <div className="logo-m">
-        <Mark size={26} title="Depth" />
-        <span>DEPTH</span>
+        <Mark size={26} title="Balast" />
+        <span>BALAST</span>
       </div>
       {NAV.map((item) => {
         const active = pathname === item.href;

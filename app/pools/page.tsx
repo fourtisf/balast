@@ -4,7 +4,7 @@ import { Featured, MiniCards } from '@/components/pools/Featured';
 import { LivePayouts } from '@/components/pools/LivePayouts';
 import { PoolBoard } from '@/components/pools/PoolBoard';
 
-export const metadata: Metadata = { title: 'Pools — Depth' };
+export const metadata: Metadata = { title: 'Pools — Balast' };
 
 export default function PoolsPage() {
   return (

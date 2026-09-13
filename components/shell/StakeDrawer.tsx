@@ -165,7 +165,7 @@ export function StakeDrawer() {
                     </div>
                     {/* §7: the protocol fee is disclosed here, before signing. */}
                     <div className="disclose">
-                      <span className="muted">Depth fee</span>
+                      <span className="muted">Balast fee</span>
                       <b className="num">10% of fees earned</b>
                     </div>
                     <div className="disclose">

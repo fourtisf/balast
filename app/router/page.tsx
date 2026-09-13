@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { RouterPanel } from '@/components/router/RouterPanel';
 
-export const metadata: Metadata = { title: 'Router — Depth' };
+export const metadata: Metadata = { title: 'Router — Balast' };
 
 export default function RouterPage() {
   return (

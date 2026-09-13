@@ -6,7 +6,7 @@ export function Footer() {
     <footer className="foot">
       <div className="foot-l">
         <Mark size={18} color="var(--fg-4)" />
-        Depth · {CHAIN.name} · chain {CHAIN.id}
+        Balast · {CHAIN.name} · chain {CHAIN.id}
       </div>
       <div className="foot-r">
         <a href="#">Contracts</a>

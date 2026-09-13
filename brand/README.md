@@ -1,4 +1,4 @@
-# Depth — brand assets
+# Balast — brand assets
 
 Generated, not hand-edited. Change the geometry in `components/shell/Logo.tsx`
 and `scripts/build-brand.py`, then rerun:
@@ -23,12 +23,13 @@ being installed**. The generator reads that font out of `.next/`, so
 | Inverted, on accent | `icon-accent-1024.png` |
 | iOS home screen | `apple-touch-icon-180.png` |
 | Browser tab | `favicon.svg`, `favicon-16/32/48.png` |
-| The mark alone, dark ground | `depth-mark.svg`, `depth-mark-1024.png` |
-| The mark alone, light ground | `depth-mark-light.svg` |
-| Inside a React component | `depth-mark-currentcolor.svg`, or `<Mark>` from `components/shell/Logo.tsx` |
-| One colour, dark ink / knocked out | `depth-mark-black.svg` · `depth-mark-white.svg` |
-| Full logo, dark ground | `depth-lockup.svg`, `depth-lockup-1200.png` |
-| Full logo, light ground | `depth-lockup-light.svg`, `depth-lockup-light-1200.png` |
+| The mark alone, dark ground | `balast-mark.svg`, `balast-mark-1024.png` |
+| The mark alone, light ground | `balast-mark-light.svg` |
+| Inside a React component | `balast-mark-currentcolor.svg`, or `<Mark>` from `components/shell/Logo.tsx` |
+| One colour, dark ink / knocked out | `balast-mark-black.svg` · `balast-mark-white.svg` |
+| Full logo, dark ground | `balast-lockup.svg`, `balast-lockup-1200.png` |
+| Full logo, light ground | `balast-lockup-light.svg`, `balast-lockup-light-1200.png` |
+| Link previews on X, Telegram, Discord, Slack | `og-card.png` — 1200 × 630, also served at `/og-card.png` |
 
 **No PNG here has a white pixel in it.** Every one is rasterised with
 `omitBackground`, so whatever the SVG does not paint stays transparent. That
@@ -73,13 +74,17 @@ on a whole pixel in the favicon.
 | Ink box | 23.6 × 21.6, centred on (16, 16) |
 
 Two solid blocks tapering toward a central gap: heavy at the edges, void in
-the middle. That is the bid-ask distribution `DepthShaper` mints, so the shape
+the middle. That is the bid-ask distribution `BalastShaper` mints, so the shape
 says something specific about this product rather than being a generic angular
 mark.
 
 One thing worth knowing, recorded rather than hidden: the silhouette reads as
-the letter M, which is a mismatch for a product called Depth and is why the
+the letter M, which is a mismatch for a product called Balast and is why the
 shape feels familiar — angular M marks are a crowded space.
 
-Full specification: `CLAUDE.md` §5, and the mark's own source in
+Every text outline here — the wordmark and all three rows of the Open Graph
+card — comes from the same `outline()` helper, so nothing in `brand/` needs a
+font installed to render correctly.
+
+Full specification: `CLAUDE.md` §5 and §13, and the mark's own source in
 `components/shell/Logo.tsx`.

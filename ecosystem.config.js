@@ -7,10 +7,10 @@
 module.exports = {
   apps: [
     {
-      name: 'depth-web',
+      name: 'balast-web',
       script: 'node_modules/next/dist/bin/next',
       args: 'start -p 3000',
-      cwd: '/var/www/depth',
+      cwd: '/var/www/balast',
       instances: 1,
       exec_mode: 'fork',
       autorestart: true,
@@ -21,8 +21,8 @@ module.exports = {
         // P1 flips this to "live" once the indexer is up.
         DATA_SOURCE: 'sim',
       },
-      error_file: '/var/log/depth/web.error.log',
-      out_file: '/var/log/depth/web.out.log',
+      error_file: '/var/log/balast/web.error.log',
+      out_file: '/var/log/balast/web.out.log',
       time: true,
     },
   ],

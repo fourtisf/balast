@@ -1,4 +1,4 @@
-# Depth — engineering handoff
+# Balast — engineering handoff
 
 Liquidity layer for Robinhood Chain. Users deposit into a token pool and collect a
 proportional share of swap fees, paid in WETH. Two products: **Stakes** (passive,
@@ -16,7 +16,7 @@ Read this file in full before writing any code. Build P0 only, then stop and rep
 
 ## 1. What is not negotiable
 
-**Depth never takes custody.** Position NFTs are minted to the user's wallet.
+**Balast never takes custody.** Position NFTs are minted to the user's wallet.
 Staked positions sit in a vault contract that only the depositing wallet can
 withdraw from. There is no admin withdraw path, no pause that traps funds, no
 upgradeable proxy on the vault.
@@ -68,7 +68,7 @@ Day-one stablecoin on this chain is **USDG**, not USDC. There is no Aave deploym
 
 Four contracts. Keep them small and separately auditable.
 
-### 3.1 `DepthZap`
+### 3.1 `BalastZap`
 
 Single-token entry. Takes ETH or one side of a pair, swaps the correct fraction,
 mints the position, returns dust.
@@ -91,7 +91,7 @@ function zapMint(
 - Dust below one wei-equivalent of gas is left in the contract; anything above is
   returned to the caller. Never silently keep dust.
 
-### 3.2 `DepthShaper`
+### 3.2 `BalastShaper`
 
 Builds a shaped position across N bins in one transaction. Uniswap v4 has ticks,
 not bins, so a "bin" is one tick-range sub-position with its own weight.
@@ -108,7 +108,7 @@ function mintShaped(PoolKey calldata key, Bin[] calldata bins, ...) external pay
   frontend**, not contract modes. Keep the contract shape-agnostic so new shapes
   ship without a contract change.
 
-### 3.3 `DepthVault`
+### 3.3 `BalastVault`
 
 One vault per pool. Holds staked LP, harvests fees, streams rewards.
 
@@ -135,7 +135,7 @@ max allowed    = 2000   // hard cap in the constructor, cannot be raised
   The cap is constructor-immutable. A governance setter that can raise it to 100%
   is the single most common rug in this product category; do not ship one.
 
-### 3.4 `DepthRouter`
+### 3.4 `BalastRouter`
 
 For token teams: converts an accruing fee stream into pool liquidity.
 
@@ -318,14 +318,14 @@ live tick, flash and FLIP reorder. Deploy. Nothing below changes a component.
 derivation, websocket. `/pools`, `/stakes`, `/portfolio` read real data. Still no
 contracts.
 
-**P2 — contracts on testnet.** `DepthZap`, `DepthShaper`, `DepthVault` with the
+**P2 — contracts on testnet.** `BalastZap`, `BalastShaper`, `BalastVault` with the
 full invariant suite. `/positions` mints for real; `/stakes` stakes for real.
 
 **P3 — keeper.** Harvest scheduler, WETH conversion, `notifyReward`. Monitoring and
 alerting on missed harvests: a keeper that dies silently is a vault paying zero
 while displaying a yield.
 
-**P4 — router.** `DepthRouter` plus the token-team onboarding flow.
+**P4 — router.** `BalastRouter` plus the token-team onboarding flow.
 
 **P5 — audit, then mainnet.** No mainnet deployment of the vault before an external
 audit. This is the one phase that cannot be compressed.
@@ -355,9 +355,9 @@ the UI showed the harvest lag the whole time.
   supply side. Confirm before the constructor is deployed, because the cap is
   immutable.
 - **Minimum pool age before a pool appears in Established.** 7 days is assumed.
-- **Whether Depth seeds its own liquidity in launch pools.** Affects whether the
+- **Whether Balast seeds its own liquidity in launch pools.** Affects whether the
   displayed TVL is honest as "user liquidity" or needs a separate line.
-- **Domain and token.** `Depth` is the working name.
+- **Domain and token.** ~~`Depth` is the working name.~~ **Decided: the product is `Balast`, on `balast.xyz`.** The token is still open — see §12.
 
 ---
 
@@ -368,7 +368,7 @@ Paste this to start:
 > Read `CLAUDE.md` in full before writing any code. Build P0 only, then stop and
 > report.
 >
-> Scaffold a Next.js 14 App Router project in TypeScript for Depth, a liquidity
+> Scaffold a Next.js 14 App Router project in TypeScript for Balast, a liquidity
 > platform on Robinhood Chain (chainId 4663). Put the design tokens from §5 into
 > `globals.css` and build the five pages from `depth.html`: `/pools`, `/stakes`,
 > `/positions`, `/router`, `/portfolio`, plus the fixed labelled sidebar and the
@@ -464,3 +464,41 @@ a placeholder until P2. `lib/chain.ts` holds the §2 addresses, all of them stil
 unverified on the explorer. Deploy configuration (`ecosystem.config.js`,
 `deploy/nginx.conf`) is committed, but nothing has been deployed: that needs
 credentials for the VPS.
+
+
+---
+
+## 13. Naming and domain
+
+**The product is `Balast`. The domain is `balast.xyz`.** §10 left this open; it
+is now settled, and this section records what moved and what did not.
+
+`Depth` was too generic to own: every short `depth.*` on a mainstream TLD is
+registered and in use — `.com` `.org` `.io` `.so` `.xyz` `.fi` `.trade`
+`.exchange` `.network` `.finance` `.ai` `.co` all checked and all taken.
+`Ballast` was chosen for its meaning — weight carried low in a hull that gives
+a vessel stability, which is what this product sells: stability from real fees,
+not from emissions — and registered in its Indonesian spelling.
+
+**The word "depth" stays wherever it is the domain term rather than the brand.**
+Pool depth, market depth, the `Depth` column in the Established board,
+`permanent depth` in the router copy, the `*DepthUsd` fields, `.depth-bar`,
+`reorgDepth`, and `design/depth.html` are all unchanged. Only the brand moved.
+
+The four contracts in §3 are renamed `BalastZap`, `BalastShaper`,
+`BalastVault`, `BalastRouter`. None is deployed, so this costs nothing now and
+would have cost an audit later.
+
+### Still open
+
+- **The token.** §1 forbids emissions, so a token cannot be a reward. That
+  leaves governance or fee-share, and fee-share creates pressure on the one
+  number §3.3 made immutable to protect LPs. Recommendation: ship without one.
+- **`ballast.xyz`** — the English spelling on the same TLD — is registered and
+  parked for sale by a third party. For a front-end that asks people to connect
+  a wallet, a confusable domain someone else controls is a phishing domain
+  pointed at our users. `ballast.fi` and `balast.fi` were both still free at the
+  time of writing; registering them and 301'ing to the apex closes most of the
+  exposure. `deploy/nginx.conf` carries the redirect stanza, commented out.
+- **The mark reads as the letter M.** It was chosen while the product was called
+  Depth, and it is now a mismatch for a B name. Recorded in `brand/README.md`.

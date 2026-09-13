@@ -1,8 +1,8 @@
 /**
- * The Depth mark: two solid blocks tapering toward a central gap.
+ * The Balast mark: two solid blocks tapering toward a central gap.
  *
  * Heavy at the edges, void in the middle — the bid-ask distribution
- * `DepthShaper` mints, drawn at brand scale. The meaning lives in a wide void
+ * `BalastShaper` mints, drawn at brand scale. The meaning lives in a wide void
  * rather than a hairline, which is why this cut needs no small-size variant:
  * the gap is 5 of 32 units, still 2.5px at favicon size.
  *
@@ -98,7 +98,7 @@ export function Lockup({
           lineHeight: 1,
         }}
       >
-        DEPTH
+        BALAST
       </span>
     </span>
   );

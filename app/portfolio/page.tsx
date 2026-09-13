@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { PortfolioBody } from '@/components/portfolio/PortfolioStats';
 
-export const metadata: Metadata = { title: 'Portfolio — Depth' };
+export const metadata: Metadata = { title: 'Portfolio — Balast' };
 
 export default function PortfolioPage() {
   return (

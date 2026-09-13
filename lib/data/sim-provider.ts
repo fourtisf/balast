@@ -234,8 +234,8 @@ export class SimProvider implements DataProvider {
           ((p.fees24hUsd / 24) * SIM_HOURS_PER_TICK -
             (p.feesWindowUsd / p.feeWindowHours) * SIM_HOURS_PER_TICK),
       );
-      // Depth moves too, with price and with LPs arriving and leaving. Yield is
-      // fees over depth, so this is half of why the board reorders at all.
+      // Pool depth moves too, with price and with LPs arriving and leaving.
+      // Yield is fees over depth, so this is half of why the board reorders.
       p.tvlUsd = Math.max(1e4, p.tvlUsd * (1 + (rng() - 0.5) * 0.012));
       p.feeYield = computeFeeYield({
         feesWindowUsd: p.feesWindowUsd,
