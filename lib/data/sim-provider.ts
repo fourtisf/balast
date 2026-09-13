@@ -30,6 +30,8 @@ const MARKET_TICK_MS = 3200;
  * rolls the whole window in about a minute and a half of watching.
  */
 const SIM_HOURS_PER_TICK = 6;
+/** How often the simulated indexer drops behind head: roughly every 38s. */
+const LAG_EVERY_TICKS = 12;
 const SIM_SECONDS_PER_TICK = SIM_HOURS_PER_TICK * 3600;
 /** Fee payouts arrive on their own cadence. */
 const PAYOUT_TICK_MS = 2600;
@@ -278,9 +280,10 @@ export class SimProvider implements DataProvider {
     }
     this.portfolio.claimableWeth = this.portfolio.stakes.reduce((a, s) => a + s.earnedWeth, 0);
 
-    // The indexer is not always at head. Every so often it falls behind, so the
-    // top bar's lag state is a thing you can actually see in P0 (§7).
-    const lagging = this.ticks % 37 === 0;
+    // The indexer is not always at head. It falls behind often enough that the
+    // top bar's lag state is something a reviewer actually sees (§7), rather
+    // than a branch nobody ever exercises.
+    const lagging = this.ticks % LAG_EVERY_TICKS === 0;
     this.lagSeconds = lagging ? 42 + rng() * 50 : Math.max(0.6, 1 + rng() * 1.4);
 
     this.emit();

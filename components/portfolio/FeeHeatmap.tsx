@@ -47,19 +47,25 @@ export function FeeHeatmap({ values }: { values: number[] }) {
         {weth(total)} over {values.length} days · best day {weth(best)}
       </p>
 
-      <table className="sr-only">
-        <caption>Daily fees over the last 8 weeks, oldest first</caption>
-        <tbody>
-          {weeks.map((week, w) => (
-            <tr key={w}>
-              <th scope="row">Days {w * DAYS_PER_ROW + 1}–{w * DAYS_PER_ROW + week.length}</th>
-              {week.map((v, d) => (
-                <td key={d}>{weth(v)}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* A block wrapper does the clipping: overflow:hidden is ignored on a
+          table box, so an unwrapped sr-only table widens the whole page. */}
+      <div className="sr-only">
+        <table>
+          <caption>Daily fees over the last 8 weeks, oldest first</caption>
+          <tbody>
+            {weeks.map((week, w) => (
+              <tr key={w}>
+                <th scope="row">
+                  Days {w * DAYS_PER_ROW + 1}–{w * DAYS_PER_ROW + week.length}
+                </th>
+                {week.map((v, d) => (
+                  <td key={d}>{weth(v)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </>
   );
 }

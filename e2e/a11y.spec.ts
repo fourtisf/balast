@@ -68,7 +68,7 @@ test.describe('keyboard and motion', () => {
 
   test('the fee heatmap exposes its values to a screen reader', async ({ page }) => {
     await page.goto('/portfolio', { waitUntil: 'networkidle' });
-    const table = page.locator('table.sr-only');
+    const table = page.locator('.sr-only table');
     await expect(table).toHaveCount(1);
     await expect(table.locator('td')).toHaveCount(56);
     await expect(page.locator('.cal')).toHaveAttribute('aria-hidden', 'true');
@@ -78,7 +78,8 @@ test.describe('keyboard and motion', () => {
     test('disables the flash and the FLIP, not the data updates', async ({ page }) => {
       await page.emulateMedia({ reducedMotion: 'reduce' });
       await page.goto('/pools', { waitUntil: 'networkidle' });
-      const before = await page.locator('#main table tbody').innerText();
+      const board = page.locator('#main table tbody').first();
+      const before = await board.innerText();
 
       const observed = await page.evaluate(
         () =>
@@ -102,7 +103,7 @@ test.describe('keyboard and motion', () => {
             }, 20_000);
           }),
       );
-      const after = await page.locator('#main table tbody').innerText();
+      const after = await board.innerText();
 
       expect(observed.flash, 'flashed under prefers-reduced-motion').toBe(0);
       expect(observed.transforms, 'transformed under prefers-reduced-motion').toBe(0);

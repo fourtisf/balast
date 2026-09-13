@@ -30,7 +30,7 @@ test.describe('shape builder', () => {
 
     await page.locator('#b-max').fill('-20');
     await expect(mint).toBeDisabled();
-    await expect(page.locator('[role="alert"]')).toContainText('Max must be above Min');
+    await expect(page.locator('.builder p[role="alert"]')).toContainText('Max must be above Min');
 
     await page.locator('#b-max').fill('15');
     await expect(mint).toBeEnabled();
@@ -40,10 +40,10 @@ test.describe('shape builder', () => {
     await page.goto('/positions', { waitUntil: 'networkidle' });
     await page.locator('#b-amount').fill('999');
     await expect(page.getByRole('button', { name: 'Mint position' })).toBeDisabled();
-    await expect(page.locator('[role="alert"]')).toContainText('above your balance');
+    await expect(page.locator('.builder p[role="alert"]')).toContainText('above your balance');
 
     await page.locator('#b-amount').fill('0');
-    await expect(page.locator('[role="alert"]')).toContainText('Enter a deposit amount');
+    await expect(page.locator('.builder p[role="alert"]')).toContainText('Enter a deposit amount');
   });
 
   test('shows the trailing figure the estimate is derived from', async ({ page }) => {
