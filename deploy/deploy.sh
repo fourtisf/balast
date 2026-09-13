@@ -15,13 +15,13 @@ BRANCH=claude/new-session-c0aptv
 [[ $EUID -eq 0 ]] || { echo "run as root"; exit 1; }
 cd "$APP_DIR"
 
-sudo -u "$APP_USER" git fetch origin "$BRANCH"
-sudo -u "$APP_USER" git checkout -B "$BRANCH" "origin/$BRANCH"
-sudo -u "$APP_USER" npm ci
-sudo -u "$APP_USER" env DATA_SOURCE=sim npm run build
+runuser -u "$APP_USER" -- git fetch origin "$BRANCH"
+runuser -u "$APP_USER" -- git checkout -B "$BRANCH" "origin/$BRANCH"
+runuser -u "$APP_USER" -- npm ci
+runuser -u "$APP_USER" -- env DATA_SOURCE=sim npm run build
 
-sudo -u "$APP_USER" pm2 reload balast-web --update-env
-sudo -u "$APP_USER" pm2 save
+runuser -u "$APP_USER" -- pm2 reload balast-web --update-env
+runuser -u "$APP_USER" -- pm2 save
 
 # Only touch nginx if the config in the repo changed.
 if ! diff -q deploy/nginx.conf /etc/nginx/sites-available/balast >/dev/null 2>&1; then
@@ -30,4 +30,4 @@ if ! diff -q deploy/nginx.conf /etc/nginx/sites-available/balast >/dev/null 2>&1
   nginx -t && systemctl reload nginx
 fi
 
-sudo -u "$APP_USER" pm2 status balast-web
+runuser -u "$APP_USER" -- pm2 status balast-web
