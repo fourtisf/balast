@@ -778,3 +778,65 @@ deployment. Nothing in this section brings them closer.
 The §12 questions are also still open: the six-hours-per-tick simulator clock
 needs sign-off, and `/positions`'s forward-looking *Est. fee yield* needs a
 keep, cap or drop. P1 and this follow-up changed neither.
+
+---
+
+## 16. The deploy bug that `.env` never being read caused
+
+Recorded because it broke a real deploy and because the shape of the mistake
+is worth keeping.
+
+`deploy/bootstrap.sh` writes `/var/www/balast/.env` with the generated
+database password and a slot for `USDG_ADDRESS`. **Nothing read it.** Node
+does not read `.env` files — Next.js does, which is why the web process worked
+— and PM2 does not either. The secrets deliberately do not go into
+`ecosystem.config.js`, because that is in the repository. So the file was
+written, nothing opened it, and `balast-api` and `balast-indexer` both died on
+`DATABASE_URL is required` while pointing at a file sitting right there.
+
+`ecosystem.config.js` even carried a comment saying ".env holds DATABASE_URL",
+which was true and useless: it described where the value was, not how it would
+arrive.
+
+Fixed with `server/load-env.ts`, imported as the first line of every server
+entry point. Three properties that matter:
+
+- **The real environment always wins.** A variable already set by PM2, a
+  shell, or CI is never overwritten, so `RATE_LIMIT_MAX=1 npm run api` does
+  what it looks like it does.
+- **The path resolves from the module, not from `cwd`.** PM2 sets a cwd, cron
+  does not, and a deploy script may run from anywhere.
+- **It is imported first in each entry point**, not only from `env.ts`,
+  because several modules read `process.env` at their own top level and module
+  evaluation order would otherwise decide whether they saw the file.
+
+The parser is twenty lines rather than a dependency, and it keeps a `#` inside
+a quoted value — the generated database password plausibly contains one, and
+truncating it there produces an authentication failure that looks nothing like
+its cause.
+
+### And a second fault the same command exposed
+
+`npm run verify:chain` failed on `DATABASE_URL is required` — a variable it
+never uses. It imported `server/env.ts`, which validates every variable at
+import, and the script's entire purpose is to check the chain **before** the
+database matters.
+
+The RPC endpoint list now lives in `server/chain/endpoints.ts`, which has no
+database requirement; `env.ts` re-exports it so there is still one definition,
+and `chain/client.ts` depends on it rather than on `env`. The verify script
+imports neither `env` nor the database.
+
+Eager validation at import is still the right default for the API and the
+indexer — a typo'd variable should stop the process at boot rather than
+produce an indexer quietly following the wrong chain. The lesson is narrower:
+a module that validates everything should not be on the import path of
+something that needs one thing.
+
+### The test that guards the guard
+
+`vitest.setup.ts` asserts `DATABASE_URL` is still the test database after the
+loader has run. The suites truncate every table, and a developer with a real
+`DATABASE_URL` in their `.env` must never have it win. The loader's
+non-overwriting rule is what makes that safe today; the assertion is what
+keeps it safe if the rule ever changes.

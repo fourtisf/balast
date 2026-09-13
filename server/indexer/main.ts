@@ -13,6 +13,10 @@
  * is, and the number grows until someone looks.
  */
 
+// First, so `.env` is in process.env before anything reads it. See
+// server/load-env.ts — Node does not read `.env` files and neither does PM2.
+import '../load-env';
+
 import { assertChainId, getHead } from '../chain/client';
 import { env } from '../env';
 import { prisma } from '../db';

@@ -32,6 +32,8 @@ Three processes in production, and P1 adds the last two:
 ```bash
 cp .env.example .env
 # Set DATABASE_URL, and USDG_ADDRESS — the indexer refuses to start without it.
+# Each server entry point reads .env itself (server/load-env.ts): Node does
+# not read one, and neither does PM2, so nothing else would.
 npm run db:migrate
 npm run indexer      # in one terminal
 npm run api          # in another
@@ -264,6 +266,9 @@ left for whoever has them.
 ```bash
 npm run verify:chain
 ```
+
+It needs no database — deliberately, since its whole point is to check the
+chain before the database matters.
 
 All seven addresses in §2 are marked unverified in `lib/chain.ts`. This checks
 each one holds code, that the PoolManager has actually emitted the v4 events we

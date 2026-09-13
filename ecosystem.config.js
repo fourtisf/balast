@@ -15,8 +15,14 @@
  * the second line of defence, not the first. The lag figure in the top bar is
  * the first.
  *
- * Secrets are NOT here. `cwd`'s .env holds DATABASE_URL and USDG_ADDRESS, and
- * nothing in this repository should ever contain either.
+ * Secrets are NOT here. `/var/www/balast/.env` holds DATABASE_URL and
+ * USDG_ADDRESS, and nothing in this repository should ever contain either.
+ *
+ * PM2 does not read a .env file and neither does Node, so each entry point
+ * imports server/load-env.ts first and reads it itself. That was missing
+ * once: bootstrap.sh wrote the file, nothing opened it, and both of these
+ * processes crash-looped on "DATABASE_URL is required" while pointing at a
+ * file sitting right there.
  */
 module.exports = {
   apps: [

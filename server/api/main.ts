@@ -4,6 +4,11 @@
  *   npm run api
  */
 
+// First, so `.env` is in process.env before anything reads it. Without this
+// the process dies on "DATABASE_URL is required" even though bootstrap.sh
+// wrote the file — Node does not read `.env`, and PM2 does not either.
+import '../load-env';
+
 import { prisma } from '../db';
 import { start } from './server';
 

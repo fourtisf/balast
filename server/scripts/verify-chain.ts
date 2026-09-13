@@ -23,11 +23,17 @@
  * Nothing here writes to the database.
  */
 
+// First, so `.env` is read before anything below looks at process.env.
+import '../load-env';
+
 import { decodeEventLog, getAddress } from 'viem';
 import { CHAIN, CONTRACTS } from '../../lib/chain';
 import { ERC20_ABI, POOL_MANAGER_ABI, V3_FACTORY_ABI } from '../chain/abi';
 import { rpc, withFailover } from '../chain/client';
-import { env } from '../env';
+// Deliberately NOT `../env`: that validates DATABASE_URL at import, and this
+// script's whole purpose is to check the chain before the database matters.
+// It used to import it and died on a variable it never used.
+import { RPC_URLS } from '../chain/endpoints';
 
 const PASS = '  ok   ';
 const FAIL = '  FAIL ';
@@ -119,7 +125,7 @@ async function emitsAny(
 
 async function main(): Promise<void> {
   process.stdout.write(`\nVerifying ${CHAIN.name} (chainId ${CHAIN.id})\n`);
-  process.stdout.write(`Endpoints: ${env.rpcUrls.length}\n\n`);
+  process.stdout.write(`Endpoints: ${RPC_URLS.length}\n\n`);
 
   // 1. Are we even on the right chain? Everything below is meaningless if not.
   process.stdout.write('chain\n');

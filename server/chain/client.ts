@@ -19,17 +19,17 @@ import {
   type Transport,
 } from 'viem';
 import { CHAIN } from '../../lib/chain';
-import { env } from '../env';
+import { RPC_URLS } from './endpoints';
 
 export const robinhoodChain = defineChain({
   id: CHAIN.id,
   name: CHAIN.name,
   nativeCurrency: CHAIN.nativeCurrency,
-  rpcUrls: { default: { http: [...env.rpcUrls] } },
+  rpcUrls: { default: { http: [...RPC_URLS] } },
 });
 
 /** One client per endpoint, so a failover is a different socket, not a retry. */
-const clients: PublicClient<Transport, typeof robinhoodChain>[] = env.rpcUrls.map((url) =>
+const clients: PublicClient<Transport, typeof robinhoodChain>[] = RPC_URLS.map((url) =>
   createPublicClient({
     chain: robinhoodChain,
     transport: http(url, {
@@ -65,9 +65,9 @@ export async function withFailover<T>(
       // Stick with whatever worked; rotating on success would spread load but
       // also spread any single endpoint's stale head across our writes.
       preferred = index;
-      return { value, endpoint: env.rpcUrls[index] };
+      return { value, endpoint: RPC_URLS[index] };
     } catch (error) {
-      errors.push(`${env.rpcUrls[index]}: ${(error as Error).message.split('\n')[0]}`);
+      errors.push(`${RPC_URLS[index]}: ${(error as Error).message.split('\n')[0]}`);
     }
   }
   throw new Error(`${label} failed on all ${clients.length} endpoints:\n  ${errors.join('\n  ')}`);

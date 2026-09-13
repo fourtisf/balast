@@ -23,6 +23,22 @@ if (!/balast_test/.test(url)) {
   );
 }
 
+/**
+ * The server now loads `.env` at import (server/load-env.ts), and a developer
+ * with a real `DATABASE_URL` in theirs must never have it win here — the
+ * suites truncate every table. The loader does not overwrite an existing
+ * variable, which is why this is safe; this assertion is what keeps it safe
+ * if that ever changes.
+ */
+await import('./server/load-env');
+if (process.env.DATABASE_URL !== url) {
+  throw new Error(
+    `Something overrode DATABASE_URL after the test setup set it ` +
+      `(${process.env.DATABASE_URL}). The suite truncates every table, so it ` +
+      'refuses to run against a database it did not choose.',
+  );
+}
+
 /** Apply migrations once per run. Cheap when they are already applied. */
 let migrated = false;
 export function ensureMigrated(): void {

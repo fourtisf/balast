@@ -4,6 +4,12 @@
  * at boot, not produce an indexer that quietly follows the wrong chain.
  */
 
+// Before any value below is read. Also imported first by each entry point,
+// because other modules read process.env at their own top level and module
+// evaluation order would otherwise decide whether they saw the file.
+import '../server/load-env';
+import { RPC_URLS } from './chain/endpoints';
+
 function required(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required. See .env.example.`);
@@ -25,25 +31,15 @@ function int(name: string, fallback: number): number {
   return Math.trunc(n);
 }
 
-/**
- * Public endpoints for Robinhood Chain, from the chain registry
- * (ethereum-lists/chains, eip155-4663). Listed in the order they are tried;
- * override with RPC_URLS to put a paid endpoint first.
- */
-const DEFAULT_RPC_URLS = [
-  'https://rpc.mainnet.chain.robinhood.com',
-  'https://robinhood-rpc.publicnode.com',
-  'https://rpc.arrowrpc.com',
-  'https://rpc.ordofi.network',
-];
-
 export const env = {
   databaseUrl: required('DATABASE_URL'),
   /** Optional: without it the API fans out in-process and a second instance
    *  would not see the first one's ticks. Fine for one box (§2). */
   redisUrl: process.env.REDIS_URL ?? null,
 
-  rpcUrls: list('RPC_URLS', DEFAULT_RPC_URLS),
+  // Defined in chain/endpoints.ts, which has no database requirement — see
+  // the note there. Re-exported so there is still one place to read it from.
+  rpcUrls: RPC_URLS,
 
   /**
    * Block to start indexing from. 0 means "the pool manager's deployment",
