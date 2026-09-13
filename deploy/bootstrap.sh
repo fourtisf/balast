@@ -81,10 +81,18 @@ as_app pm2 save
 pm2 startup systemd -u "$APP_USER" --hp "/home/$APP_USER"
 
 echo "==> nginx, HTTP only, so certbot has something to answer with"
-install -m 644 deploy/upgrade-map.conf /etc/nginx/conf.d/upgrade-map.conf
+# Only add the map if nothing else already defines $connection_upgrade —
+# a duplicate makes `nginx -t` fail and would take every site on the box down
+# on the next reload.
+if ! grep -rqs 'connection_upgrade' /etc/nginx/conf.d /etc/nginx/nginx.conf; then
+  install -m 644 deploy/upgrade-map.conf /etc/nginx/conf.d/upgrade-map.conf
+else
+  echo "   \$connection_upgrade already defined elsewhere — leaving it alone"
+fi
 install -m 644 deploy/nginx-bootstrap.conf /etc/nginx/sites-available/balast
 ln -sf /etc/nginx/sites-available/balast /etc/nginx/sites-enabled/balast
-rm -f /etc/nginx/sites-enabled/default
+# The default site is deliberately left alone. On a server with other vhosts,
+# removing it moves every unmatched request somewhere new.
 nginx -t && systemctl reload nginx
 
 echo "==> certificate"
