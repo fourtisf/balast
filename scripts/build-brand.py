@@ -186,6 +186,46 @@ def main() -> None:
         ),
     )
 
+    # ---------------------------------------------------------------- tiles --
+    # App-icon style: the mark inside a rounded square, which is how a logo
+    # reads as a product rather than as a line drawing. rx 7 of 32 is the
+    # squircle proportion iOS and Android both expect.
+    print('tiles')
+    TILE_R = 7
+    def tile(ground, art, scale=0.8, border=None, glow=False):
+        pad = (32 - 32 * scale) / 2
+        parts = [f'<rect width="32" height="32" rx="{TILE_R}" fill="{ground}"/>']
+        if glow:
+            parts.append(
+                '<defs><radialGradient id="g" cx="30%" cy="22%" r="78%">'
+                f'<stop offset="0" stop-color="{ACCENT}" stop-opacity=".16"/>'
+                f'<stop offset="1" stop-color="{ACCENT}" stop-opacity="0"/>'
+                '</radialGradient></defs>'
+                f'<rect width="32" height="32" rx="{TILE_R}" fill="url(#g)"/>'
+            )
+        if border:
+            parts.append(
+                f'<rect x=".5" y=".5" width="31" height="31" rx="{TILE_R - .5}" '
+                f'fill="none" stroke="{border}" stroke-width="1"/>'
+            )
+        parts.append(f'<g transform="translate({pad:g} {pad:g}) scale({scale:g})">{art}</g>')
+        return '\n  '.join(parts)
+
+    def solid(colour):
+        return (f'<path d="{MINIMAL}" fill="{colour}" stroke="{colour}" stroke-width="1.2" '
+                f'stroke-linejoin="round" stroke-linecap="round"/>')
+
+    TILES = [
+        ('tile-dark-full.svg',     GROUND, strokes(FULL, ACCENT, STROKE_FULL),        0.80, None, False),
+        ('tile-dark-compact.svg',  GROUND, strokes(COMPACT, ACCENT, STROKE_COMPACT),  0.80, None, False),
+        ('tile-dark-solid.svg',    GROUND, solid(ACCENT),                             0.78, None, False),
+        ('tile-panel-full.svg',    '#080D0B', strokes(FULL, ACCENT, STROKE_FULL),     0.80, 'rgba(61,214,140,.22)', True),
+        ('tile-accent-full.svg',   ACCENT, strokes(FULL, INK_DARK, STROKE_FULL),      0.80, None, False),
+        ('tile-accent-solid.svg',  ACCENT, solid(INK_DARK),                           0.78, None, False),
+    ]
+    for name, ground, art, scale, border, glow in TILES:
+        write(name, svg(tile(ground, art, scale, border, glow), '0 0 32 32', 512, 512, 'Depth'))
+
     print('lockups')
     font = load_bold()
     upm = font['head'].unitsPerEm

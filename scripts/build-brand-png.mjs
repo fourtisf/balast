@@ -30,6 +30,16 @@ const JOBS = [
   ['depth-mark-black.svg', 'depth-mark-black-512.png', 512, false],
   ['depth-lockup.svg', 'depth-lockup-1200.png', 1200, false],
   ['depth-lockup-light.svg', 'depth-lockup-light-1200.png', 1200, false],
+  // App icons: the mark on a tile, which is how it reads on a home screen,
+  // an X avatar or a wallet's dapp list.
+  ['tile-dark-full.svg', 'tile-dark-full-512.png', 512, true],
+  ['tile-dark-compact.svg', 'tile-dark-compact-512.png', 512, true],
+  ['tile-dark-solid.svg', 'tile-dark-solid-512.png', 512, true],
+  ['tile-panel-full.svg', 'tile-panel-full-512.png', 512, true],
+  ['tile-accent-full.svg', 'tile-accent-full-512.png', 512, true],
+  ['tile-accent-solid.svg', 'tile-accent-solid-512.png', 512, true],
+  ['tile-dark-full.svg', 'app-icon-1024.png', 1024, true],
+  ['tile-dark-full.svg', 'app-icon-192.png', 192, true],
   ['favicon.svg', 'favicon-16.png', 16, true],
   ['favicon.svg', 'favicon-32.png', 32, true],
   ['favicon.svg', 'favicon-48.png', 48, true],
@@ -54,7 +64,7 @@ for (const [src, out, width, opaque] of JOBS) {
     height: Math.max(height, 320),
   });
   await page.setContent(
-    `<style>html,body{margin:0;padding:0;background:${opaque ? '#050807' : 'transparent'}}
+    `<style>html,body{margin:0;padding:0;background:transparent}
      svg{display:block;width:${width}px;height:${height}px}</style>${svg}`,
   );
   await page.screenshot({
