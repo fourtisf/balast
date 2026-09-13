@@ -1,3 +1,4 @@
+import { PROTOCOL_FEE_BPS, REWARD_WINDOW_SECONDS } from '../chain';
 import { mulberry32, SIM_SEED, type Rng } from '../rng';
 import { computeFeeYield, yieldPct } from '../yield';
 import {
@@ -32,7 +33,6 @@ const SIM_HOURS_PER_TICK = 6;
 const SIM_SECONDS_PER_TICK = SIM_HOURS_PER_TICK * 3600;
 /** Fee payouts arrive on their own cadence. */
 const PAYOUT_TICK_MS = 2600;
-const PROTOCOL_FEE_BPS = 1000; // 10% of harvested fees, disclosed before signing.
 
 function addr(rng: Rng): string {
   let s = '0x';
@@ -70,8 +70,9 @@ export class SimProvider implements DataProvider {
     this.rng = mulberry32(seed);
     this.pools = SEED_POOLS.map((s) => this.buildPool(s));
     this.vaults = this.buildVaults();
+    const fees24h = this.pools.reduce((a, p) => a + p.fees24hUsd, 0);
     this.featuredHistory = Array.from({ length: 14 }, (_, i) =>
-      SEED_FEATURED.fees24hUsd * (0.55 + (i / 13) * 0.5) * (0.9 + this.rng() * 0.2),
+      fees24h * (0.55 + (i / 13) * 0.5) * (0.9 + this.rng() * 0.2),
     );
     this.portfolio = this.buildPortfolio();
     // Seed the payout feed so the first paint is not an empty box.
@@ -139,14 +140,14 @@ export class SimProvider implements DataProvider {
       const stakedUsd = pool.tvlUsd * 0.62;
       // rewardRate = pendingWeth / 7 days, the Synthetix window (§3.3).
       const weeklyWeth =
-        (pool.feesWindowUsd * (1 - PROTOCOL_FEE_BPS / 10_000)) / SEED_GLOBAL.ethPriceUsd;
+        (pool.feesWindowUsd * (1 - PROTOCOL_FEE_BPS / 10_000)) / this.global.ethPriceUsd;
       return {
         id: `vault-${sym}`,
         poolId: pool.id,
         address: addr(this.rng),
         totalStakedUsd: stakedUsd,
         stakers: Math.round(pool.tvlUsd / 1900),
-        rewardRate: weeklyWeth / (7 * 86400),
+        rewardRate: weeklyWeth / REWARD_WINDOW_SECONDS,
         nextHarvestInSeconds: (1 + Math.floor(this.rng() * 5)) * 3600,
         protocolFeeBps: PROTOCOL_FEE_BPS,
       };
@@ -269,10 +270,10 @@ export class SimProvider implements DataProvider {
       }
       stake.streamRemainingSeconds -= SIM_SECONDS_PER_TICK;
       // A stream that runs out is replaced by the next harvest's window.
-      if (stake.streamRemainingSeconds <= 0) stake.streamRemainingSeconds = 7 * 86400;
+      if (stake.streamRemainingSeconds <= 0) stake.streamRemainingSeconds = REWARD_WINDOW_SECONDS;
       stake.streamProgressPct = Math.min(
         100,
-        Math.max(0, 100 - (stake.streamRemainingSeconds / (7 * 86400)) * 100),
+        Math.max(0, 100 - (stake.streamRemainingSeconds / REWARD_WINDOW_SECONDS) * 100),
       );
     }
     this.portfolio.claimableWeth = this.portfolio.stakes.reduce((a, s) => a + s.earnedWeth, 0);
@@ -304,7 +305,27 @@ export class SimProvider implements DataProvider {
     ].slice(0, 5);
   }
 
+  /**
+   * Everything the top bar and the featured card show that can be summed from
+   * the pools is summed from the pools. Two places showing different totals
+   * for the same thing is exactly the kind of dishonesty §7 is about.
+   */
+  private deriveTotals() {
+    const tvlUsd = this.pools.reduce((a, p) => a + p.tvlUsd, 0);
+    const fees24hUsd = this.pools.reduce((a, p) => a + p.fees24hUsd, 0);
+    const volume24hUsd = this.pools.reduce((a, p) => a + p.volume24hUsd, 0);
+    const stakers = this.vaults.reduce((a, v) => a + v.stakers, 0);
+    // The headline 24h move is depth-weighted: a $6M pool moves the number
+    // more than a $90K one.
+    const change24hPct =
+      tvlUsd > 0
+        ? this.pools.reduce((a, p) => a + p.change24hPct * p.tvlUsd, 0) / tvlUsd
+        : 0;
+    return { tvlUsd, fees24hUsd, volume24hUsd, stakers, change24hPct };
+  }
+
   private compose(): MarketSnapshot {
+    const totals = this.deriveTotals();
     return {
       pools: this.pools.map((p) => ({ ...p })),
       vaults: this.vaults.map((v) => ({ ...v })),
@@ -313,8 +334,21 @@ export class SimProvider implements DataProvider {
         stakes: this.portfolio.stakes.map((s) => ({ ...s })),
         positions: this.portfolio.positions.map((p) => ({ ...p })),
       },
-      global: { ...this.global },
-      featured: { ...SEED_FEATURED, history: this.featuredHistory.slice() },
+      global: {
+        totalPositions: this.global.totalPositions,
+        totalFeesUsd: this.global.totalFeesUsd,
+        ethPriceUsd: this.global.ethPriceUsd,
+        tvlUsd: totals.tvlUsd,
+      },
+      featured: {
+        ...SEED_FEATURED,
+        fees24hUsd: totals.fees24hUsd,
+        change24hPct: totals.change24hPct,
+        volume24hUsd: totals.volume24hUsd,
+        liquidityUsd: totals.tvlUsd,
+        stakers: totals.stakers,
+        history: this.featuredHistory.slice(),
+      },
       router: { ...this.router },
       payouts: this.payouts.slice(),
       payoutTotalUsd: this.payoutTotalUsd,

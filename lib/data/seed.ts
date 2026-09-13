@@ -46,19 +46,22 @@ export const quoteFor = (kind: SeedPool['kind']): Quote => (kind === 'stock' ? '
 /** Which pools have a vault, in the prototype's order. */
 export const SEED_VAULT_SYMBOLS = ['NVDA', 'MOONCAT', 'PONS', 'SPY', 'HOODR', 'GOOGL'];
 
+/**
+ * Only the figures that cannot be derived from the pool rows live here. TVL,
+ * fees, volume, the 24h move and the staker count are summed from the pools
+ * and the vaults instead, so the top bar can never contradict the table under
+ * it — the prototype's standalone numbers did.
+ */
 export const SEED_GLOBAL = {
+  /** Positions ever minted. Not derivable from a live snapshot. */
   totalPositions: 27_844,
+  /** Fees paid out since launch. Cumulative, so it only ever grows. */
   totalFeesUsd: 5_142_908,
-  tvlUsd: 4_912_440,
   ethPriceUsd: 2521.08,
 };
 
 export const SEED_FEATURED = {
-  fees24hUsd: 318_402,
-  change24hPct: 11.2,
-  volume24hUsd: 32.4e6,
-  liquidityUsd: 4.91e6,
-  stakers: 6102,
+  /** Depth's share of all liquidity on the chain. Needs chain-wide data. */
   chainSharePct: 2.4,
 };
 

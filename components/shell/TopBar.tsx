@@ -1,5 +1,6 @@
 'use client';
 
+import { usePathname, useRouter } from 'next/navigation';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { count, usdExact } from '@/lib/format';
@@ -7,10 +8,22 @@ import { count, usdExact } from '@/lib/format';
 /** Above this the indexer is behind and the top bar has to say so (§7). */
 const LAG_THRESHOLD_SECONDS = 30;
 
+/** Routes whose content the search query actually filters. */
+const SEARCHABLE = ['/pools', '/stakes', '/portfolio'];
+
 export function TopBar() {
   const { global, indexerLagSeconds } = useMarket();
   const { query, setQuery, wallet, connect } = useUi();
+  const pathname = usePathname();
+  const router = useRouter();
   const behind = indexerLagSeconds > LAG_THRESHOLD_SECONDS;
+  const filtersHere = SEARCHABLE.includes(pathname);
+
+  const onSearch = (value: string) => {
+    setQuery(value);
+    // Typing on a page the query cannot filter takes you to the listing it can.
+    if (value !== '' && !filtersHere) router.push('/pools');
+  };
 
   return (
     <header className="top">
@@ -26,8 +39,8 @@ export function TopBar() {
           <input
             id="q"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search tokens &amp; stakes"
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder={filtersHere ? 'Search tokens & stakes' : 'Search pools & stakes'}
             autoComplete="off"
           />
         </div>

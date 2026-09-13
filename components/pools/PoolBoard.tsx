@@ -74,6 +74,11 @@ export function PoolBoard({
         <span className="sect-h">
           <i />
           {title} <span className="muted">live</span>
+          {variant === 'established' && (
+            <span className="faint" title="A pool needs a full 7 days of fees before its yield is worth ranking.">
+              7d+
+            </span>
+          )}
         </span>
         <div className="row">
           <div className="seg" role="group" aria-label={`${title} quote filter`}>
@@ -177,18 +182,18 @@ function Row({
   return (
     <tr ref={registerRef} className={leader ? 'lead' : undefined} onClick={onOpen}>
       <td>
-        <div className="tok">
+        <button className="tok tok-btn" onClick={(e) => { e.stopPropagation(); onOpen(); }}>
           <span className="rank" aria-hidden="true">
             {rank}
           </span>
           <TokenBadge token={pool.token} />
-          <div>
-            <div className="n">{pool.token.symbol}</div>
-            <div className="s" title={pool.token.name}>
+          <span className="tok-id">
+            <span className="n">{pool.token.symbol}</span>
+            <span className="s" title={pool.token.name}>
               {pool.token.name}
-            </div>
-          </div>
-        </div>
+            </span>
+          </span>
+        </button>
       </td>
       <td className="r num hide-s">{usd(pool.marketCapUsd)}</td>
       <FlashTd className="r" text={pool.change24hPct.toFixed(1)}>

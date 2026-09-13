@@ -2,13 +2,27 @@
 
 import { useRouter } from 'next/navigation';
 import { useMarket } from '@/components/providers/MarketProvider';
+import { useUi } from '@/components/providers/UiProvider';
 import { TokenBadge } from '@/components/ui/TokenBadge';
 import { countdown, usdExact } from '@/lib/format';
 import { SHAPES } from '@/lib/shapes';
 
 export function PositionList() {
   const { portfolio, pools } = useMarket();
+  const { query } = useUi();
   const router = useRouter();
+
+  const q = query.trim().toLowerCase();
+  const matches = (poolId: string) => {
+    if (q === '') return true;
+    const pool = pools.find((p) => p.id === poolId);
+    if (!pool) return false;
+    return (
+      pool.token.symbol.toLowerCase().includes(q) || pool.token.name.toLowerCase().includes(q)
+    );
+  };
+  const positions = portfolio.positions.filter((p) => matches(p.poolId));
+  const stakes = portfolio.stakes.filter((s) => matches(s.poolId));
   const stranded = portfolio.positions.find((p) => !p.inRange);
   const strandedPool = pools.find((p) => p.id === stranded?.poolId);
 
@@ -18,7 +32,7 @@ export function PositionList() {
         Positions
       </h2>
 
-      {portfolio.positions.map((position) => {
+      {positions.map((position) => {
         const pool = pools.find((p) => p.id === position.poolId);
         if (!pool) return null;
         const shape = SHAPES.find((s) => s.id === position.shape)!;
@@ -51,7 +65,7 @@ export function PositionList() {
         );
       })}
 
-      {portfolio.stakes.map((stake) => {
+      {stakes.map((stake) => {
         const pool = pools.find((p) => p.id === stake.poolId);
         if (!pool) return null;
         return (
@@ -77,20 +91,19 @@ export function PositionList() {
         );
       })}
 
-      {stranded && strandedPool && (
+      {positions.length === 0 && stakes.length === 0 && (
+        <div className="empty">
+          <b>No match</b>Nothing in your portfolio matches that search.
+        </div>
+      )}
+
+      {stranded && strandedPool && matches(stranded.poolId) && (
         <div className="alert">
           {strandedPool.token.symbol} left its range {stranded.outOfRangeSinceHours}h ago and has
           earned nothing since.{' '}
-          <b role="button" tabIndex={0} onClick={() => router.push('/positions')}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                router.push('/positions');
-              }
-            }}
-          >
+          <button className="link" onClick={() => router.push('/positions')}>
             Rebalance
-          </b>{' '}
+          </button>{' '}
           to start earning again.
         </div>
       )}

@@ -396,3 +396,71 @@ Paste this to start:
 >
 > When P0 runs and deploys, stop and list what you need from me for P1: RPC
 > endpoint, starting block, and the pool addresses you want to index first.
+
+---
+
+## 12. P0 implementation notes
+
+Added by the P0 build. Everything above this line is ALFA's handoff and is
+unchanged; this section records where the implementation had to make a call, so
+the next phase is not left guessing.
+
+### Deviations from the prototype
+
+The prototype contradicts itself or this document in four places. Per the rule
+at the top of this file, this document won.
+
+1. **Yield basis.** `depth.html` computes `fee*365/tvl` — 24h fees annualised,
+   which §1 forbids. Implemented as `fees_window / tvl_now * 365/7 * 100`, with
+   the window capped at the pool's own age, and the three states from §7
+   (`—` under 24h, `est.` plus age under 7d, plain above).
+2. **Bin-chart legend.** The prototype's legend and its fill code disagree on
+   which side of the price is the token side. The code was taken as correct and
+   the legend corrected to match it.
+3. **Fee heatmap colour.** The prototype fills the portfolio heatmap with
+   `rgba(124,140,255)` — a purple, which breaks the colour rule in §5. It is
+   green, and the caption reads "brighter = more" because that is what it draws.
+4. **Standalone totals.** The prototype's top-bar TVL ($4.91M) and featured
+   fees ($318K) contradict the sum of its own pool rows ($15.1M and $108K).
+   Every figure that can be summed from the pools is now summed from them, so
+   the header cannot disagree with the table beneath it.
+
+### The simulated clock
+
+`SimProvider` advances **six hours of chain time per 3.2s tick**
+(`SIM_HOURS_PER_TICK`). A trailing-7d figure is deliberately slow-moving: with
+a real-time clock, measured over four minutes, the boards never reordered once,
+so the FLIP reorder that §8 requires in P0 was not observable. Six hours a tick
+rolls the window in about ninety seconds of watching. Only the simulated clock
+is compressed; the displayed metric and its arithmetic are unchanged.
+
+**This needs ALFA's sign-off**, because it is the one place P0 does not behave
+like the approved prototype.
+
+### Decisions taken on §10's assumptions
+
+- **Established shows pools with 7+ days of fees.** §10 lists this as assumed;
+  it is implemented and labelled `7d+` in the board header. Consequence: young
+  pools appear only in Trending, so the `est.` and `—` states are visible in
+  the stake drawer and the vault cards rather than on the boards.
+- **Protocol fee is 10%**, with the cap constant at 2000 bps in `lib/chain.ts`.
+  Still needs confirming before the constructor is deployed — the cap is
+  immutable.
+
+### One open product question
+
+`/positions` shows an **Est. fee yield** for a range the user has not entered
+yet: this pool's trailing-7d yield scaled by how tightly the range concentrates
+it, capped at 6×. It is labelled `est. · from N% trailing` so the basis is on
+screen, but it is still a forward-looking number, which sits awkwardly against
+§1's "never display a projected APR". Options are to keep it as is, cap it
+harder, or drop the figure and show only the concentration multiple. **ALFA's
+call.**
+
+### Not in P0
+
+No indexer, no contracts, no keeper, no wallet connector — the wallet button is
+a placeholder until P2. `lib/chain.ts` holds the §2 addresses, all of them still
+unverified on the explorer. Deploy configuration (`ecosystem.config.js`,
+`deploy/nginx.conf`) is committed, but nothing has been deployed: that needs
+credentials for the VPS.

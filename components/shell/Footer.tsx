@@ -1,3 +1,4 @@
+import { CHAIN } from '@/lib/chain';
 import { Mark } from './Sidebar';
 
 export function Footer() {
@@ -5,7 +6,7 @@ export function Footer() {
     <footer className="foot">
       <div className="foot-l">
         <Mark size={18} fill="var(--fg-4)" />
-        Depth · Robinhood Chain · chain 4663
+        Depth · {CHAIN.name} · chain {CHAIN.id}
       </div>
       <div className="foot-r">
         <a href="#">Contracts</a>

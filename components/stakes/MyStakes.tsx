@@ -7,7 +7,17 @@ import { countdown, usd, usdExact, weth } from '@/lib/format';
 
 export function MyStakes() {
   const { portfolio, pools, global } = useMarket();
-  const { showToast } = useUi();
+  const { showToast, query } = useUi();
+
+  const q = query.trim().toLowerCase();
+  const stakes = portfolio.stakes.filter((stake) => {
+    if (q === '') return true;
+    const pool = pools.find((p) => p.id === stake.poolId);
+    if (!pool) return false;
+    return (
+      pool.token.symbol.toLowerCase().includes(q) || pool.token.name.toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div className="card mine" style={{ marginTop: 22 }}>
@@ -46,7 +56,7 @@ export function MyStakes() {
             </tr>
           </thead>
           <tbody>
-            {portfolio.stakes.map((stake) => {
+            {stakes.map((stake) => {
               const pool = pools.find((p) => p.id === stake.poolId);
               if (!pool) return null;
               return (
@@ -99,6 +109,11 @@ export function MyStakes() {
             })}
           </tbody>
         </table>
+        {stakes.length === 0 && (
+          <div className="empty">
+            <b>No match</b>None of your stakes match that search.
+          </div>
+        )}
       </div>
     </div>
   );

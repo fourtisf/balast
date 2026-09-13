@@ -8,11 +8,31 @@ import { FEE_YIELD_LABEL, feeYieldQualifier, feeYieldTitle, feeYieldValue } from
 
 export function VaultGrid() {
   const { vaults, pools } = useMarket();
-  const { openStake } = useUi();
+  const { openStake, query } = useUi();
+
+  const q = query.trim().toLowerCase();
+  const matching = vaults.filter((vault) => {
+    if (q === '') return true;
+    const pool = pools.find((p) => p.id === vault.poolId);
+    if (!pool) return false;
+    return (
+      pool.token.symbol.toLowerCase().includes(q) || pool.token.name.toLowerCase().includes(q)
+    );
+  });
+
+  if (matching.length === 0) {
+    return (
+      <div className="card">
+        <div className="empty">
+          <b>No vault matches</b>Try a ticker, or clear the search.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="vaults">
-      {vaults.map((vault) => {
+      {matching.map((vault) => {
         const pool = pools.find((p) => p.id === vault.poolId);
         if (!pool) return null;
         const age = ageLabel(pool.ageHours);

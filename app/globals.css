@@ -423,3 +423,22 @@ td.fd{animation:fd 1.1s ease-out}
 .bins-wrap{position:relative}
 .bins-now{position:absolute;top:10px;transform:translateX(6px);font-size:12px;font-weight:600;color:var(--red);pointer-events:none;white-space:nowrap}
 .bins-axis{display:flex;justify-content:space-between;font-size:11px;color:var(--fg-3);margin-top:-28px;padding:0 12px;position:relative;pointer-events:none}
+
+/* A row's token cell is a button so every row is keyboard-reachable at every
+   width — the Stake button's column is hidden on a phone. */
+.tok-btn{width:100%;text-align:left;padding:0;background:none;border:0;font:inherit;color:inherit;cursor:pointer}
+.tok-id{display:block;min-width:0}
+.tok-id .n{display:block}
+.tok-id .s{display:block;color:var(--fg-3);font-size:11.5px;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:96px}
+@media (max-width:520px){.tok-id .s{display:none}}
+
+/* An inline action inside a sentence. */
+.link{font:inherit;color:inherit;font-weight:700;text-decoration:underline;padding:0}
+
+/* Loading placeholders: the shape of the content, none of its numbers. */
+.skeleton{position:relative;overflow:hidden;background:var(--panel)}
+.skeleton::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent,var(--ac-dim),transparent);
+  transform:translateX(-100%);animation:sweep 1.4s infinite}
+@keyframes sweep{to{transform:translateX(100%)}}
+@media (prefers-reduced-motion:reduce){.skeleton::after{display:none}}

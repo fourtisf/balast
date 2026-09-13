@@ -15,9 +15,26 @@ No indexer, no contracts, no keeper. See *Build phases* in `CLAUDE.md` §8.
 npm install
 npm run dev          # http://localhost:3000
 npm run build && npm start
+```
+
+## Check it
+
+```bash
 npm run typecheck
 npm run lint
+npm test             # unit — the honest-numbers rules and the bin maths
+npm run test:e2e     # browser — flash, FLIP, focus trap, overflow, the §7 rules
 ```
+
+`npm test` covers `lib/yield.ts` (the §7 rules), `lib/shapes.ts` (bin weights
+must sum to exactly 10,000 or `DepthShaper` reverts), `lib/format.ts`, and
+`SimProvider` (determinism, derived totals, the three yield states).
+
+`npm run test:e2e` builds the app, starts it and drives Chromium. It asserts the
+things a unit test cannot see: values flashing on change, rows animating to a
+new rank, the drawer trapping focus and restoring it on Escape, no horizontal
+overflow at 360 / 760 / 1180 / 1600px, and that the word "APY" appears nowhere.
+CI runs it in a separate job because it needs a browser binary.
 
 ## What P0 ships
 
@@ -68,6 +85,28 @@ These are product rules, not preferences (§1, §7). They live in
 - The 10% protocol fee is disclosed in the stake drawer, before signing.
 - Indexer lag is shown in the top bar whenever the indexer is behind head.
 
+## Deploy
+
+Nothing is deployed yet — that needs credentials for the box. The configuration
+is here:
+
+- `ecosystem.config.js` — PM2 process definition, expects the app at `/var/www/depth`
+- `deploy/nginx.conf` — reverse proxy, security headers, immutable caching for
+  `/_next/static`, and the `Upgrade` header P1's websocket will need
+- `.nvmrc` — Node version, also used by CI
+
+```bash
+# on the VPS, once
+npm ci && npm run build
+pm2 start ecosystem.config.js && pm2 save
+sudo cp deploy/nginx.conf /etc/nginx/sites-available/depth
+sudo ln -s /etc/nginx/sites-available/depth /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d <domain>
+```
+
+Set the domain in `deploy/nginx.conf` once §10's naming decision is made.
+
 ## Design
 
 All tokens live in `app/globals.css`. No component hardcodes a colour. Green is
@@ -82,6 +121,7 @@ disable the data updates.
 
 ```
 app/                  routes + globals.css (the whole design system)
+                      error.tsx / loading.tsx / not-found.tsx
 components/
   providers/          MarketProvider (DataProvider → React), UiProvider
   shell/              sidebar, top bar, stake drawer, footer
@@ -89,9 +129,19 @@ components/
   ui/                 badges, sparklines, flashing cell, toast
 hooks/                useFlip, useFlash, useReducedMotion
 lib/
+  chain.ts            chainId 4663 and the §2 addresses (all unverified)
   data/               types.ts (the interface), sim-provider, live-provider, seed
   yield.ts            the honest-numbers rules
   shapes.ts           spot / curve / bid-ask weight generators
   format.ts rng.ts
+  *.test.ts           unit tests, run by `npm test`
+e2e/                  browser tests, run by `npm run test:e2e`
+deploy/nginx.conf     reverse proxy for the VPS
 design/depth.html     the approved prototype
 ```
+
+## Where the implementation made a call
+
+`CLAUDE.md` §12 records every deviation from the prototype, the compressed
+simulator clock (and why it needs sign-off), the §10 assumptions that were
+implemented, and the one open product question on `/positions`.
