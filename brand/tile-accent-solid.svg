@@ -1,4 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="512" height="512" role="img" aria-label="Depth">
-  <rect width="32" height="32" rx="7" fill="#3DD68C"/>
-  <g transform="translate(3.52 3.52) scale(0.78)"><path d="M 4 7.5 L 4 12.5 A 12 12 0 0 0 28 12.5 L 28 7.5 L 22 7.5 L 22 12.5 A 6 6 0 0 1 10 12.5 L 10 7.5 Z" fill="#04140C" stroke="#04140C" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"/></g>
-</svg>

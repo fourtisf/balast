@@ -16,27 +16,35 @@ being installed**. The generator reads that font out of `.next/`, so
 
 | Use | File |
 |---|---|
-| Anywhere on a dark ground | `depth-mark.svg` |
-| On a light ground | `depth-mark-light.svg` |
-| Inside a React component | `depth-mark-currentcolor.svg`, or `<Mark>` from `components/shell/Logo.tsx` |
-| One-colour print, dark ink | `depth-mark-black.svg` |
-| One-colour print, knocked out | `depth-mark-white.svg` |
-| Between 20 and 32px | `depth-mark-compact.svg` |
-| Below 20px, and token lists | `depth-mark-minimal.svg` |
-| Browser tab | `favicon.svg`, `favicon-16/32/48.png` |
+| X / Telegram avatar, app stores, wallet lists | `icon-black-1024.png` — full bleed, black to every edge |
+| The same, one colour | `icon-black-mono-1024.png` |
+| Where you want the squircle yourself | `icon-black-rounded-1024.png` — corners transparent |
+| On the app's own ground rather than black | `icon-app-ground-1024.png` |
+| Inverted, on accent | `icon-accent-1024.png` |
 | iOS home screen | `apple-touch-icon-180.png` |
+| Browser tab | `favicon.svg`, `favicon-16/32/48.png` |
+| The mark alone, dark ground | `depth-mark.svg`, `depth-mark-1024.png` |
+| The mark alone, light ground | `depth-mark-light.svg` |
+| Inside a React component | `depth-mark-currentcolor.svg`, or `<Mark>` from `components/shell/Logo.tsx` |
+| One colour, dark ink / knocked out | `depth-mark-black.svg` · `depth-mark-white.svg` |
 | Full logo, dark ground | `depth-lockup.svg`, `depth-lockup-1200.png` |
 | Full logo, light ground | `depth-lockup-light.svg`, `depth-lockup-light-1200.png` |
-| Slides, social, partner decks | `depth-mark-1024.png`, `depth-lockup-1200.png` |
 
-Every PNG except the favicons and the Apple icon is transparent. Those three
-carry the `#050807` ground on purpose: iOS composites a touch icon onto white
-and a transparent favicon disappears in a light browser chrome.
+**No PNG here has a white pixel in it.** Every one is rasterised with
+`omitBackground`, so whatever the SVG does not paint stays transparent. That
+is not cosmetic: with a page background behind them, Chromium fills the area
+outside a rounded corner with white, and the icon ships with four white
+notches. It did, once.
+
+Prefer **full bleed** for avatars and stores. Every one of those surfaces
+applies its own rounded mask, and a pre-rounded PNG inside their mask shows a
+sliver of whatever sits behind it.
 
 ## The rules that matter
 
-**Minimum sizes.** Full cut 32px. Compact 20px. Minimal 12px. Below 12px use
-nothing — a smudge is worse than no mark.
+**Minimum size.** 16px. The mark needs no small-size variant: its meaning is
+a 5-unit central void rather than a hairline, so it is still 2.5px of clear
+gap at favicon size.
 
 **Clear space.** Half the mark's height on every side. Nothing intrudes.
 
@@ -45,15 +53,11 @@ nothing — a smudge is worse than no mark.
 spare. Never colour the contours separately: §5 allows one accent, and red
 means a negative number and nothing else.
 
-**Proportion.** In the lockup the mark's ink is **1.353×** the wordmark's cap
-height, and the optical gap is 0.62× cap height. That gap is deliberately
-tighter than a bounding-box measurement would give: the mark's right edge only
-reaches its full extent at the terminals and curves away below them, so
-box-to-box spacing leaves a hole at the middle of the cap band, which is where
-the eye reads the join.
+**Proportion.** In the lockup the mark's ink is **1.491×** the wordmark's cap
+height, and the optical gap is 0.62× cap height.
 
-**Don't** thin the stroke, flip or rotate the mark, or scale it non-uniformly.
-The contours are circular; they only survive uniform scaling.
+**Don't** flip or rotate the mark, close up the central gap, or scale it
+non-uniformly. The gap is the idea.
 
 ## Construction
 
@@ -62,17 +66,20 @@ on a whole pixel in the favicon.
 
 | | |
 |---|---|
-| Surface line | y = 12.5, the shared centre of all three contours |
-| Terminals | rise to y = 7.5, tangent to the arc |
-| Radii | 12 · 7.8 · 3.6, a uniform 4.2 apart |
-| Stroke | 2.6, round caps (compact: 3.2) |
-| Ink box | 26.6 × 19.6, centred on (16, 16) |
+| Outer edges | x = 5 and 27, full height y = 6 to 26 |
+| Inner edges | x = 13.5 and 18.5, starting lower at y = 13 |
+| Central gap | 5 units |
+| Corner softening | a same-colour stroke, width 1.6, round joins |
+| Ink box | 23.6 × 21.6, centred on (16, 16) |
 
-Each contour is a vertical terminal, a true semicircle, and a second terminal.
-A circle's tangent at its leftmost and rightmost point is vertical, so the
-straight sections meet the arc without a kink, and the gaps between contours
-are identical everywhere as a property of the geometry rather than a judgement
-call.
+Two solid blocks tapering toward a central gap: heavy at the edges, void in
+the middle. That is the bid-ask distribution `DepthShaper` mints, so the shape
+says something specific about this product rather than being a generic angular
+mark.
+
+One thing worth knowing, recorded rather than hidden: the silhouette reads as
+the letter M, which is a mismatch for a product called Depth and is why the
+shape feels familiar — angular M marks are a crowded space.
 
 Full specification: `CLAUDE.md` §5, and the mark's own source in
 `components/shell/Logo.tsx`.

@@ -3,10 +3,13 @@
  *
  *   node scripts/build-brand-png.mjs
  *
- * Uses the Chromium that Playwright already has, so there is no ImageMagick or
- * Inkscape dependency. Transparent where a transparent PNG is the right answer
- * and opaque where the platform demands it — iOS composites an apple-touch
- * icon onto white, so that one ships with its own ground.
+ * Uses the Chromium Playwright already has, so there is no ImageMagick or
+ * Inkscape dependency.
+ *
+ * Every PNG is written with omitBackground, so anything the SVG does not paint
+ * stays transparent. That matters for the squircle icons: with a page
+ * background behind them, Chromium fills the area outside the rounded corner
+ * with white and the icon ships with four white notches.
  */
 
 import { chromium } from 'playwright';
@@ -22,32 +25,37 @@ const PREINSTALLED = [
   '/opt/pw-browsers/chromium/chrome-linux/chrome',
 ].find((p) => existsSync(p));
 
-/** [source svg, output png, width, opaque] */
+/** [source svg, output png, width] */
 const JOBS = [
-  ['depth-mark.svg', 'depth-mark-512.png', 512, false],
-  ['depth-mark.svg', 'depth-mark-1024.png', 1024, false],
-  ['depth-mark-white.svg', 'depth-mark-white-512.png', 512, false],
-  ['depth-mark-black.svg', 'depth-mark-black-512.png', 512, false],
-  ['depth-lockup.svg', 'depth-lockup-1200.png', 1200, false],
-  ['depth-lockup-light.svg', 'depth-lockup-light-1200.png', 1200, false],
-  // App icons: the mark on a tile, which is how it reads on a home screen,
-  // an X avatar or a wallet's dapp list.
-  ['tile-dark-full.svg', 'tile-dark-full-512.png', 512, true],
-  ['tile-dark-compact.svg', 'tile-dark-compact-512.png', 512, true],
-  ['tile-dark-solid.svg', 'tile-dark-solid-512.png', 512, true],
-  ['tile-panel-full.svg', 'tile-panel-full-512.png', 512, true],
-  ['tile-accent-full.svg', 'tile-accent-full-512.png', 512, true],
-  ['tile-accent-solid.svg', 'tile-accent-solid-512.png', 512, true],
-  ['tile-blocks-dark.svg', 'tile-blocks-dark-512.png', 512, true],
-  ['tile-blocks-mono.svg', 'tile-blocks-mono-512.png', 512, true],
-  ['tile-blocks-accent.svg', 'tile-blocks-accent-512.png', 512, true],
-  ['depth-blocks.svg', 'depth-blocks-512.png', 512, false],
-  ['tile-dark-full.svg', 'app-icon-1024.png', 1024, true],
-  ['tile-dark-full.svg', 'app-icon-192.png', 192, true],
-  ['favicon.svg', 'favicon-16.png', 16, true],
-  ['favicon.svg', 'favicon-32.png', 32, true],
-  ['favicon.svg', 'favicon-48.png', 48, true],
-  ['apple-touch-icon.svg', 'apple-touch-icon-180.png', 180, true],
+  // The mark alone, transparent.
+  ['depth-mark.svg', 'depth-mark-512.png', 512],
+  ['depth-mark.svg', 'depth-mark-1024.png', 1024],
+  ['depth-mark-white.svg', 'depth-mark-white-512.png', 512],
+  ['depth-mark-black.svg', 'depth-mark-black-512.png', 512],
+
+  // Icons on black, full bleed — no corners, so nothing shows through. This is
+  // the cut for an X avatar, Telegram, a wallet's dapp list and the app
+  // stores, all of which apply their own mask.
+  ['icon-black.svg', 'icon-black-1024.png', 1024],
+  ['icon-black.svg', 'icon-black-512.png', 512],
+  ['icon-black.svg', 'icon-black-192.png', 192],
+  ['icon-black-mono.svg', 'icon-black-mono-1024.png', 1024],
+  ['icon-accent.svg', 'icon-accent-1024.png', 1024],
+
+  // Squircle, for surfaces that do not mask for you.
+  ['icon-black-rounded.svg', 'icon-black-rounded-1024.png', 1024],
+  ['icon-app-ground.svg', 'icon-app-ground-1024.png', 1024],
+
+  // iOS composites a touch icon onto white, so it takes the full-bleed cut.
+  ['icon-black.svg', 'apple-touch-icon-180.png', 180],
+
+  ['favicon.svg', 'favicon-16.png', 16],
+  ['favicon.svg', 'favicon-32.png', 32],
+  ['favicon.svg', 'favicon-48.png', 48],
+
+  ['depth-lockup.svg', 'depth-lockup-1200.png', 1200],
+  ['depth-lockup-light.svg', 'depth-lockup-light-1200.png', 1200],
+  ['depth-lockup-white.svg', 'depth-lockup-white-1200.png', 1200],
 ];
 
 const browser = await chromium.launch(
@@ -55,7 +63,7 @@ const browser = await chromium.launch(
 );
 const page = await browser.newPage({ deviceScaleFactor: 1 });
 
-for (const [src, out, width, opaque] of JOBS) {
+for (const [src, out, width] of JOBS) {
   const svg = readFileSync(join(BRAND, src), 'utf8');
   // Read the intrinsic ratio off the viewBox so the height follows the art.
   const [, , vbW, vbH] = svg.match(/viewBox="([^"]+)"/)[1].trim().split(/\s+/).map(Number);
@@ -73,10 +81,10 @@ for (const [src, out, width, opaque] of JOBS) {
   );
   await page.screenshot({
     path: join(BRAND, out),
-    omitBackground: !opaque,
+    omitBackground: true,
     clip: { x: 0, y: 0, width, height },
   });
-  console.log(`  ${out.padEnd(34)} ${width}×${height}${opaque ? '' : ' transparent'}`);
+  console.log(`  ${out.padEnd(36)} ${width}×${height}`);
 }
 
 await browser.close();

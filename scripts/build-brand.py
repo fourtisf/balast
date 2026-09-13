@@ -9,7 +9,7 @@ on a font being installed anywhere.
     pip install fonttools brotli
     python3 scripts/build-brand.py
 
-Writes to brand/. PNGs are rasterised separately by scripts/build-brand-png.mjs.
+Writes to brand/. PNGs are rasterised by scripts/build-brand-png.mjs.
 """
 
 from __future__ import annotations
@@ -24,66 +24,68 @@ from fontTools.varLib import instancer
 OUT = os.path.join(os.path.dirname(__file__), '..', 'brand')
 
 # ---------------------------------------------------------------- geometry --
-# The mark, on its 32 × 32 grid. See components/shell/Logo.tsx.
-FULL = [
-    'M 4 7.5 L 4 12.5 A 12 12 0 0 0 28 12.5 L 28 7.5',
-    'M 8.2 7.5 L 8.2 12.5 A 7.8 7.8 0 0 0 23.8 12.5 L 23.8 7.5',
-    'M 12.4 7.5 L 12.4 12.5 A 3.6 3.6 0 0 0 19.6 12.5 L 19.6 7.5',
-]
-COMPACT = [
-    'M 4 7.5 L 4 12.5 A 12 12 0 0 0 28 12.5 L 28 7.5',
-    'M 10 7.5 L 10 12.5 A 6 6 0 0 0 22 12.5 L 22 7.5',
-]
-MINIMAL = (
-    'M 4 7.5 L 4 12.5 A 12 12 0 0 0 28 12.5 L 28 7.5 '
-    'L 22 7.5 L 22 12.5 A 6 6 0 0 1 10 12.5 L 10 7.5 Z'
-)
-STROKE_FULL, STROKE_COMPACT = 2.6, 3.2
+# The mark, on a 32 × 32 grid: two solid blocks tapering toward a central gap.
+# Heavy at the edges, void in the middle — the bid-ask distribution
+# DepthShaper mints. See components/shell/Logo.tsx.
+BLOCK_L = 'M 5 6 L 13.5 13 L 13.5 26 L 5 26 Z'
+BLOCK_R = 'M 27 6 L 18.5 13 L 18.5 26 L 27 26 Z'
+# A same-colour stroke with round joins softens the corners to the product's
+# radius language without changing the silhouette.
+JOIN = 1.6
 
-# Ink box: the mark's drawn extent inside its 32 × 32 grid.
-INK_X0, INK_X1 = 2.7, 29.3
-INK_Y0, INK_Y1 = 6.2, 25.8
+# Ink box, including the softening stroke: 23.6 × 21.6, centred on (16, 16).
+INK_X0, INK_X1 = 5 - JOIN / 2, 27 + JOIN / 2
+INK_Y0, INK_Y1 = 6 - JOIN / 2, 26 + JOIN / 2
 
 # ------------------------------------------------------------------ colour --
-ACCENT = '#3DD68C'      # --ac,    on a dark ground
-DEEP = '#1E5E43'        # --ac-3,  on a light ground: 7.0:1 against #F2F5F3
+ACCENT = '#3DD68C'      # --ac,    the near block
+DEEP = '#1E5E43'        # --ac-3,  the far block, and the mark on a light ground
 INK_DARK = '#04140C'    # --on-ac, on an accent fill
 FG = '#E6F2EC'          # --fg,    wordmark on a dark ground
 FG_LIGHT = '#14221B'    # wordmark on a light ground
-GROUND = '#050807'      # --bg,    the favicon tile
+GROUND = '#050807'      # --bg,    the app's own ground
+BLACK = '#000000'       # the icon ground: black, as asked
 
 # The wordmark's relationship to the mark, measured rather than guessed:
-#   font size   = 0.62 × the mark's grid
-#   cap height  = 0.73 × font size          (JetBrains Mono)
-#   mark ink    = 19.6 / 32 of the grid
-# which puts the mark at 1.353 × the cap height.
+#   font size  = 0.62 × the mark's grid
+#   cap height = 0.73 × font size            (JetBrains Mono)
 WORD_SIZE_RATIO = 0.62
 TRACKING_EM = 0.14
-# Optical gap, ink to ink, as a multiple of cap height. Measured tight: the
-# mark's right edge only reaches its full extent at the terminals, and curves
-# away below them, so a bounding-box gap over-spaces it badly at the centre of
-# the cap band where the eye actually reads the join.
+# Optical gap, ink to ink, as a multiple of cap height.
 GAP_CAPS = 0.62
 
+# rx 7 of 32 is the squircle proportion iOS and Android expect. The full-bleed
+# cut uses 0, because every avatar surface applies its own mask, and a rounded
+# PNG inside a rounded mask shows a sliver of whatever sits behind it.
+TILE_R = 7
 
-def strokes(paths: list[str], colour: str, width: float) -> str:
+
+def blocks(near: str, far: str) -> str:
     return '\n  '.join(
-        f'<path d="{d}" fill="none" stroke="{colour}" stroke-width="{width}" '
-        f'stroke-linecap="round"/>'
-        for d in paths
+        f'<path d="{d}" fill="{c}" stroke="{c}" stroke-width="{JOIN}" '
+        f'stroke-linejoin="round" stroke-linecap="round"/>'
+        for d, c in ((BLOCK_L, near), (BLOCK_R, far))
     )
 
 
-def svg(body: str, view: str, w: float, h: float, label: str) -> str:
+def tile(ground: str, art: str, scale: float = 0.84, radius: float = TILE_R) -> str:
+    pad = (32 - 32 * scale) / 2
+    rect = (
+        f'<rect width="32" height="32" fill="{ground}"/>' if radius == 0
+        else f'<rect width="32" height="32" rx="{radius:g}" fill="{ground}"/>'
+    )
+    return f'{rect}\n  <g transform="translate({pad:g} {pad:g}) scale({scale:g})">{art}</g>'
+
+
+def svg(body: str, view: str, w: float, h: float) -> str:
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{view}" width="{w:g}" '
-        f'height="{h:g}" role="img" aria-label="{label}">\n  {body}\n</svg>\n'
+        f'height="{h:g}" role="img" aria-label="Depth">\n  {body}\n</svg>\n'
     )
 
 
 def write(name: str, content: str) -> None:
-    path = os.path.join(OUT, name)
-    with open(path, 'w') as fh:
+    with open(os.path.join(OUT, name), 'w') as fh:
         fh.write(content)
     print(f'  {name:38s} {len(content):6d} B')
 
@@ -105,12 +107,8 @@ def load_bold() -> TTFont:
     )
 
 
-def wordmark(font: TTFont, size: float, baseline_y: float, x0: float) -> tuple[str, float, float]:
-    """
-    "DEPTH" as outlines. Returns the path data and the ink's left and right
-    edges, so the caller can set a gap from the ink rather than from the
-    advance box.
-    """
+def wordmark(font: TTFont, size: float, baseline_y: float, x0: float) -> tuple[str, float]:
+    """"DEPTH" as outlines, plus the ink's right edge."""
     upm = font['head'].unitsPerEm
     glyphs = font.getGlyphSet()
     cmap = font.getBestCmap()
@@ -119,8 +117,7 @@ def wordmark(font: TTFont, size: float, baseline_y: float, x0: float) -> tuple[s
     tracking = TRACKING_EM * size
 
     data: list[str] = []
-    pen_x = x0
-    left = right = None
+    pen_x, right = x0, x0
     for ch in 'DEPTH':
         name = cmap[ord(ch)]
         pen = SVGPathPen(glyphs, ntos=lambda v: f'{v:.2f}')
@@ -129,176 +126,70 @@ def wordmark(font: TTFont, size: float, baseline_y: float, x0: float) -> tuple[s
         d = pen.getCommands()
         if d:
             data.append(d)
-            xs = [pen_x, pen_x + hmtx[name][0] * scale]
-            left = xs[0] if left is None else left
-            right = xs[1]
+            right = pen_x + hmtx[name][0] * scale
         pen_x += hmtx[name][0] * scale + tracking
-    return ' '.join(data), left or x0, right or pen_x
+    return ' '.join(data), right
 
 
 # ----------------------------------------------------------------- build ----
 def main() -> None:
     os.makedirs(OUT, exist_ok=True)
-    print('marks')
 
-    # Every mark file keeps the 32 × 32 grid, so they drop in interchangeably.
-    for name, colour, label in [
-        ('depth-mark.svg', ACCENT, 'Depth'),
-        ('depth-mark-light.svg', DEEP, 'Depth'),
-        ('depth-mark-white.svg', '#FFFFFF', 'Depth'),
-        ('depth-mark-black.svg', INK_DARK, 'Depth'),
-        ('depth-mark-currentcolor.svg', 'currentColor', 'Depth'),
-    ]:
-        write(name, svg(strokes(FULL, colour, STROKE_FULL), '0 0 32 32', 32, 32, label))
-
-    write(
-        'depth-mark-compact.svg',
-        svg(strokes(COMPACT, ACCENT, STROKE_COMPACT), '0 0 32 32', 32, 32, 'Depth'),
-    )
-    write(
-        'depth-mark-minimal.svg',
-        svg(
-            f'<path d="{MINIMAL}" fill="{ACCENT}" stroke="{ACCENT}" stroke-width="1.2" '
-            f'stroke-linejoin="round" stroke-linecap="round"/>',
-            '0 0 32 32', 32, 32, 'Depth',
-        ),
-    )
-
-    # The favicon carries its own tile: the minimal cut at 80% of it, centred.
-    write(
-        'favicon.svg',
-        svg(
-            f'<rect width="32" height="32" rx="7" fill="{GROUND}"/>\n  '
-            f'<g transform="translate(3.2 3.2) scale(0.8)">'
-            f'<path d="{MINIMAL}" fill="{ACCENT}" stroke="{ACCENT}" stroke-width="1.2" '
-            f'stroke-linejoin="round" stroke-linecap="round"/></g>',
-            '0 0 32 32', 32, 32, 'Depth',
-        ),
-    )
-    # Apple wants an opaque square with no corner rounding of its own.
-    write(
-        'apple-touch-icon.svg',
-        svg(
-            f'<rect width="32" height="32" fill="{GROUND}"/>\n  '
-            f'<g transform="translate(4.8 4.8) scale(0.7)">'
-            f'{strokes(COMPACT, ACCENT, STROKE_COMPACT)}</g>',
-            '0 0 32 32', 180, 180, 'Depth',
-        ),
-    )
-
-    # ---------------------------------------------------------------- tiles --
-    # App-icon style: the mark inside a rounded square, which is how a logo
-    # reads as a product rather than as a line drawing. rx 7 of 32 is the
-    # squircle proportion iOS and Android both expect.
-    print('tiles')
-    TILE_R = 7
-    def tile(ground, art, scale=0.8, border=None, glow=False):
-        pad = (32 - 32 * scale) / 2
-        parts = [f'<rect width="32" height="32" rx="{TILE_R}" fill="{ground}"/>']
-        if glow:
-            parts.append(
-                '<defs><radialGradient id="g" cx="30%" cy="22%" r="78%">'
-                f'<stop offset="0" stop-color="{ACCENT}" stop-opacity=".16"/>'
-                f'<stop offset="1" stop-color="{ACCENT}" stop-opacity="0"/>'
-                '</radialGradient></defs>'
-                f'<rect width="32" height="32" rx="{TILE_R}" fill="url(#g)"/>'
-            )
-        if border:
-            parts.append(
-                f'<rect x=".5" y=".5" width="31" height="31" rx="{TILE_R - .5}" '
-                f'fill="none" stroke="{border}" stroke-width="1"/>'
-            )
-        parts.append(f'<g transform="translate({pad:g} {pad:g}) scale({scale:g})">{art}</g>')
-        return '\n  '.join(parts)
-
-    def solid(colour):
-        return (f'<path d="{MINIMAL}" fill="{colour}" stroke="{colour}" stroke-width="1.2" '
-                f'stroke-linejoin="round" stroke-linecap="round"/>')
-
-    TILES = [
-        ('tile-dark-full.svg',     GROUND, strokes(FULL, ACCENT, STROKE_FULL),        0.80, None, False),
-        ('tile-dark-compact.svg',  GROUND, strokes(COMPACT, ACCENT, STROKE_COMPACT),  0.80, None, False),
-        ('tile-dark-solid.svg',    GROUND, solid(ACCENT),                             0.78, None, False),
-        ('tile-panel-full.svg',    '#080D0B', strokes(FULL, ACCENT, STROKE_FULL),     0.80, 'rgba(61,214,140,.22)', True),
-        ('tile-accent-full.svg',   ACCENT, strokes(FULL, INK_DARK, STROKE_FULL),      0.80, None, False),
-        ('tile-accent-solid.svg',  ACCENT, solid(INK_DARK),                           0.78, None, False),
-    ]
-    for name, ground, art, scale, border, glow in TILES:
-        write(name, svg(tile(ground, art, scale, border, glow), '0 0 32 32', 512, 512, 'Depth'))
-
-    # ----------------------------------------------------------- bid-ask ----
-    # Two solid blocks tapering toward a central gap: heavy at the edges, void
-    # in the middle. That is the bid-ask distribution DepthShaper mints, and it
-    # is the boldest shape in the family at small sizes because the meaning
-    # lives in a wide void rather than a hairline.
-    print('bid-ask blocks')
-    BLOCK_L = 'M 5 6 L 13.5 13 L 13.5 26 L 5 26 Z'
-    BLOCK_R = 'M 27 6 L 18.5 13 L 18.5 26 L 27 26 Z'
-
-    def blocks(near, far, round_r=1.6):
-        # fill + a same-colour stroke with round joins softens the corners to
-        # the product's radius language without changing the silhouette.
-        return '\n  '.join(
-            f'<path d="{d}" fill="{c}" stroke="{c}" stroke-width="{round_r}" '
-            f'stroke-linejoin="round" stroke-linecap="round"/>'
-            for d, c in ((BLOCK_L, near), (BLOCK_R, far))
-        )
-
+    print('marks — no ground, transparent')
     for name, near, far in [
-        ('depth-blocks.svg', ACCENT, DEEP),
-        ('depth-blocks-mono.svg', ACCENT, ACCENT),
-        ('depth-blocks-light.svg', DEEP, '#7FA894'),
+        ('depth-mark.svg', ACCENT, DEEP),
+        ('depth-mark-mono.svg', ACCENT, ACCENT),
+        ('depth-mark-light.svg', DEEP, '#7FA894'),
+        ('depth-mark-white.svg', '#FFFFFF', '#FFFFFF'),
+        ('depth-mark-black.svg', INK_DARK, INK_DARK),
+        ('depth-mark-currentcolor.svg', 'currentColor', 'currentColor'),
     ]:
-        write(name, svg(blocks(near, far), '0 0 32 32', 32, 32, 'Depth'))
+        write(name, svg(blocks(near, far), '0 0 32 32', 32, 32))
 
+    print('icons — black ground, full bleed')
+    # Full bleed: black to every edge, no rounding. Nothing shows through.
     for name, ground, near, far in [
-        ('tile-blocks-dark.svg', GROUND, ACCENT, DEEP),
-        ('tile-blocks-accent.svg', ACCENT, INK_DARK, 'rgba(4,20,12,.55)'),
-        ('tile-blocks-mono.svg', GROUND, ACCENT, ACCENT),
+        ('icon-black.svg', BLACK, ACCENT, DEEP),
+        ('icon-black-mono.svg', BLACK, ACCENT, ACCENT),
+        ('icon-accent.svg', ACCENT, INK_DARK, 'rgba(4,20,12,.55)'),
     ]:
-        write(name, svg(tile(ground, blocks(near, far), 0.82), '0 0 32 32', 512, 512, 'Depth'))
+        write(name, svg(tile(ground, blocks(near, far), 0.84, 0), '0 0 32 32', 1024, 1024))
+
+    print('icons — black ground, squircle')
+    for name, ground in [('icon-black-rounded.svg', BLACK), ('icon-app-ground.svg', GROUND)]:
+        write(name, svg(tile(ground, blocks(ACCENT, DEEP)), '0 0 32 32', 1024, 1024))
+
+    # The favicon keeps its ground: a transparent one vanishes into a light
+    # browser chrome.
+    write('favicon.svg', svg(tile(BLACK, blocks(ACCENT, DEEP)), '0 0 32 32', 32, 32))
 
     print('lockups')
     font = load_bold()
-    upm = font['head'].unitsPerEm
-    cap = font['OS/2'].sCapHeight / upm
-
-    size = 32.0                       # the mark's grid
-    word_size = WORD_SIZE_RATIO * size
+    cap = font['OS/2'].sCapHeight / font['head'].unitsPerEm
+    word_size = WORD_SIZE_RATIO * 32
     cap_h = word_size * cap
-    gap = GAP_CAPS * cap_h
-    # Cap band centred on the mark's ink centre.
     baseline = (INK_Y0 + INK_Y1) / 2 + cap_h / 2
-    word_x = INK_X1 + gap
+    d, ink_right = wordmark(font, word_size, baseline, INK_X1 + GAP_CAPS * cap_h)
 
-    d, _, ink_right = wordmark(font, word_size, baseline, word_x)
     pad = 2.0
-    vb_x, vb_y = INK_X0 - pad, INK_Y0 - pad
-    vb_w = (ink_right - INK_X0) + pad * 2
-    vb_h = (INK_Y1 - INK_Y0) + pad * 2
-
-    for name, mark_colour, word_colour in [
-        ('depth-lockup.svg', ACCENT, FG),
-        ('depth-lockup-light.svg', DEEP, FG_LIGHT),
-        ('depth-lockup-white.svg', '#FFFFFF', '#FFFFFF'),
-        ('depth-lockup-black.svg', INK_DARK, INK_DARK),
+    vb = (INK_X0 - pad, INK_Y0 - pad, (ink_right - INK_X0) + pad * 2, (INK_Y1 - INK_Y0) + pad * 2)
+    for name, near, far, word in [
+        ('depth-lockup.svg', ACCENT, DEEP, FG),
+        ('depth-lockup-mono.svg', ACCENT, ACCENT, FG),
+        ('depth-lockup-light.svg', DEEP, '#7FA894', FG_LIGHT),
+        ('depth-lockup-white.svg', '#FFFFFF', '#FFFFFF', '#FFFFFF'),
     ]:
-        body = (
-            strokes(FULL, mark_colour, STROKE_FULL)
-            + f'\n  <path d="{d}" fill="{word_colour}"/>'
-        )
         write(
             name,
             svg(
-                body,
-                f'{vb_x:.2f} {vb_y:.2f} {vb_w:.2f} {vb_h:.2f}',
-                round(vb_w * 4, 2), round(vb_h * 4, 2),
-                'Depth',
+                blocks(near, far) + f'\n  <path d="{d}" fill="{word}"/>',
+                f'{vb[0]:.2f} {vb[1]:.2f} {vb[2]:.2f} {vb[3]:.2f}',
+                round(vb[2] * 4, 2), round(vb[3] * 4, 2),
             ),
         )
 
-    print(f'\nmeasured: cap height {cap_h:.3f}, mark ink {INK_Y1 - INK_Y0:.1f}, '
-          f'ratio {(INK_Y1 - INK_Y0) / cap_h:.3f}x, optical gap {gap:.2f}')
+    print(f'\nink box {INK_X1 - INK_X0:.1f} × {INK_Y1 - INK_Y0:.1f} centred on (16, 16) · '
+          f'cap height {cap_h:.2f} · mark {(INK_Y1 - INK_Y0) / cap_h:.3f}× caps')
 
 
 if __name__ == '__main__':
