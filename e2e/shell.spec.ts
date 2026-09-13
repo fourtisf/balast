@@ -33,6 +33,10 @@ test.describe('shell', () => {
           const doc = document.documentElement;
           const spilling: string[] = [];
           document.querySelectorAll('table').forEach((t) => {
+            // §5 is about the data tables a reader sees. A visually hidden
+            // table sits inside a 1px clip box by design, so it is always
+            // "wider" than its wrapper and is not what the rule means.
+            if (t.closest('.sr-only')) return;
             const wrap = t.parentElement;
             if (wrap && t.scrollWidth > wrap.clientWidth + 1) {
               spilling.push(`${t.scrollWidth}>${wrap.clientWidth}`);
