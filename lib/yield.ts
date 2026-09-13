@@ -1,0 +1,61 @@
+import type { FeeYield } from './data/types';
+
+/** The trailing window. Seven days, everywhere, always (§1). */
+export const YIELD_WINDOW_HOURS = 168;
+/** Below this much data there is no honest number to show (§7). */
+export const MIN_DATA_HOURS = 24;
+
+/** The label that goes next to the figure. Never "APY", never "APR". */
+export const FEE_YIELD_LABEL = 'fee yield, trailing 7d';
+
+/**
+ * fees_window / tvl_now, annualised over the window that actually exists.
+ * Lives next to the provider on purpose — components never compute yield.
+ */
+export function computeFeeYield(args: {
+  feesWindowUsd: number;
+  tvlUsd: number;
+  windowHours: number;
+  ageHours: number;
+}): FeeYield {
+  const { feesWindowUsd, tvlUsd, windowHours, ageHours } = args;
+  if (ageHours < MIN_DATA_HOURS || tvlUsd <= 0 || windowHours <= 0) {
+    return { basis: 'insufficient' };
+  }
+  const pct = (feesWindowUsd / tvlUsd) * ((365 * 24) / windowHours) * 100;
+  if (ageHours < YIELD_WINDOW_HOURS) {
+    return { basis: 'estimate', pct, windowHours };
+  }
+  return { basis: 'trailing7d', pct };
+}
+
+/** "148%" — or an em dash when there is not enough data to say anything. */
+export function feeYieldValue(y: FeeYield): string {
+  return y.basis === 'insufficient' ? '—' : `${y.pct.toFixed(0)}%`;
+}
+
+/** What the figure is qualified with in the row: "est." plus the pool age. */
+export function feeYieldQualifier(y: FeeYield, ageText: string): string | null {
+  if (y.basis === 'insufficient') return null;
+  if (y.basis === 'estimate') return `est. · ${ageText}`;
+  return null;
+}
+
+/** Why a pool shows an em dash, for the title attribute. */
+export function feeYieldTitle(y: FeeYield): string {
+  switch (y.basis) {
+    case 'insufficient':
+      return 'Less than 24h of fee data. No yield figure is honest yet.';
+    case 'estimate':
+      return `Pool is younger than 7 days. Annualised from ${Math.round(
+        y.windowHours,
+      )}h of fees — arithmetic, not a forecast.`;
+    default:
+      return 'Fees earned over the trailing 7 days, annualised. Not a forecast.';
+  }
+}
+
+/** Sortable yield. Pools without enough data rank last rather than first. */
+export function yieldPct(y: FeeYield): number {
+  return y.basis === 'insufficient' ? -1 : y.pct;
+}

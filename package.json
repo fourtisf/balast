@@ -1,0 +1,26 @@
+{
+  "name": "depth",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Depth — liquidity layer for Robinhood Chain. P0: shell and simulated data.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "14.2.35",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "20.14.10",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "eslint": "8.57.1",
+    "eslint-config-next": "14.2.35",
+    "typescript": "5.6.3"
+  }
+}
