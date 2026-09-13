@@ -2,6 +2,7 @@
 
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
+import { Mark } from '@/components/shell/Logo';
 import { AreaChart, AreaSpark } from '@/components/ui/Sparkline';
 import { TokenBadge } from '@/components/ui/TokenBadge';
 import { count, signedPct, usd, usdExact } from '@/lib/format';
@@ -22,8 +23,9 @@ export function Featured() {
   return (
     <div className="card feat">
       <div className="fh">
-        <div className="fl" style={{ background: 'var(--ac)' }} aria-hidden="true">
-          DP
+        {/* Depth's own pool, so it carries the mark rather than a monogram. */}
+        <div className="fl" style={{ background: 'var(--ac)' }}>
+          <Mark size={30} color="var(--on-ac)" title="Depth" />
         </div>
         <div className="fn">DEPTH</div>
       </div>

@@ -26,7 +26,9 @@
   /* accent — the only one */
   --ac:#3DD68C;
   --ac-2:#6FE8AC;
-  --ac-3:#1E5E43;                  /* deep accent: token side of the bin chart */
+  --ac-3:#1E5E43;                  /* deep accent: token side of the bin chart,
+                                      and the logo's ink on a light ground —
+                                      7.0:1 there, so it needs no new colour */
   --ac-dim:rgba(61,214,140,.10);
   --ac-glow:rgba(61,214,140,.35);
   --on-ac:#04140C;                 /* ink on an accent fill */

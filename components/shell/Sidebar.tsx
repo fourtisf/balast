@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { Mark } from './Logo';
 
 const NAV = [
   {
@@ -53,7 +54,7 @@ export function Sidebar() {
   return (
     <nav className="rail" aria-label="Primary">
       <div className="logo-m">
-        <Mark />
+        <Mark size={26} title="Depth" />
         <span>DEPTH</span>
       </div>
       {NAV.map((item) => {
@@ -97,16 +98,5 @@ export function Sidebar() {
         <span>Docs</span>
       </a>
     </nav>
-  );
-}
-
-export function Mark({ size = 26, fill = 'var(--ac)' }: { size?: number; fill?: string }) {
-  return (
-    <svg viewBox="0 0 28 28" width={size} height={size} style={{ fill }} aria-hidden="true">
-      <rect x="3" y="15" width="4" height="10" rx="1.5" />
-      <rect x="9" y="9" width="4" height="16" rx="1.5" />
-      <rect x="15" y="3" width="4" height="22" rx="1.5" />
-      <rect x="21" y="11" width="4" height="14" rx="1.5" />
-    </svg>
   );
 }

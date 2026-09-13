@@ -1,11 +1,11 @@
 import { CHAIN } from '@/lib/chain';
-import { Mark } from './Sidebar';
+import { Mark } from './Logo';
 
 export function Footer() {
   return (
     <footer className="foot">
       <div className="foot-l">
-        <Mark size={18} fill="var(--fg-4)" />
+        <Mark size={18} color="var(--fg-4)" />
         Depth · {CHAIN.name} · chain {CHAIN.id}
       </div>
       <div className="foot-r">
