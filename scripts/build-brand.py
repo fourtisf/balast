@@ -226,6 +226,38 @@ def main() -> None:
     for name, ground, art, scale, border, glow in TILES:
         write(name, svg(tile(ground, art, scale, border, glow), '0 0 32 32', 512, 512, 'Depth'))
 
+    # ----------------------------------------------------------- bid-ask ----
+    # Two solid blocks tapering toward a central gap: heavy at the edges, void
+    # in the middle. That is the bid-ask distribution DepthShaper mints, and it
+    # is the boldest shape in the family at small sizes because the meaning
+    # lives in a wide void rather than a hairline.
+    print('bid-ask blocks')
+    BLOCK_L = 'M 5 6 L 13.5 13 L 13.5 26 L 5 26 Z'
+    BLOCK_R = 'M 27 6 L 18.5 13 L 18.5 26 L 27 26 Z'
+
+    def blocks(near, far, round_r=1.6):
+        # fill + a same-colour stroke with round joins softens the corners to
+        # the product's radius language without changing the silhouette.
+        return '\n  '.join(
+            f'<path d="{d}" fill="{c}" stroke="{c}" stroke-width="{round_r}" '
+            f'stroke-linejoin="round" stroke-linecap="round"/>'
+            for d, c in ((BLOCK_L, near), (BLOCK_R, far))
+        )
+
+    for name, near, far in [
+        ('depth-blocks.svg', ACCENT, DEEP),
+        ('depth-blocks-mono.svg', ACCENT, ACCENT),
+        ('depth-blocks-light.svg', DEEP, '#7FA894'),
+    ]:
+        write(name, svg(blocks(near, far), '0 0 32 32', 32, 32, 'Depth'))
+
+    for name, ground, near, far in [
+        ('tile-blocks-dark.svg', GROUND, ACCENT, DEEP),
+        ('tile-blocks-accent.svg', ACCENT, INK_DARK, 'rgba(4,20,12,.55)'),
+        ('tile-blocks-mono.svg', GROUND, ACCENT, ACCENT),
+    ]:
+        write(name, svg(tile(ground, blocks(near, far), 0.82), '0 0 32 32', 512, 512, 'Depth'))
+
     print('lockups')
     font = load_bold()
     upm = font['head'].unitsPerEm
