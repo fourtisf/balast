@@ -99,13 +99,21 @@ is here:
 # on the VPS, once
 npm ci && npm run build
 pm2 start ecosystem.config.js && pm2 save
-sudo cp deploy/nginx.conf /etc/nginx/sites-available/depth
-sudo ln -s /etc/nginx/sites-available/depth /etc/nginx/sites-enabled/
+sudo cp deploy/nginx.conf /etc/nginx/sites-available/balast
+sudo ln -s /etc/nginx/sites-available/balast /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d <domain>
+sudo certbot --nginx -d balast.xyz -d www.balast.xyz
 ```
 
-Set the domain in `deploy/nginx.conf` once §10's naming decision is made.
+The domain is **balast.xyz**, set in `lib/site.ts` and `deploy/nginx.conf`.
+`www` 301s to the apex so there is one canonical host.
+
+**Open gap:** `ballast.xyz` — the English spelling on the same TLD — is
+registered and parked for sale by a third party. For a front-end that asks
+people to connect a wallet, an unowned confusable is a phishing domain someone
+else controls. `ballast.fi` and `balast.fi` are both still free; registering
+them and 301'ing to the apex closes most of it. `deploy/nginx.conf` has the
+redirect stanza ready, commented out.
 
 ## Design
 

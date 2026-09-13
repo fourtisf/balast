@@ -7,6 +7,7 @@ import { Sidebar } from '@/components/shell/Sidebar';
 import { StakeDrawer } from '@/components/shell/StakeDrawer';
 import { TopBar } from '@/components/shell/TopBar';
 import { Toast } from '@/components/ui/Toast';
+import { SITE_URL } from '@/lib/site';
 import './globals.css';
 
 const mono = JetBrains_Mono({
@@ -25,9 +26,11 @@ const sans = Inter({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: 'Depth — Liquidity layer for Robinhood Chain',
   description:
     'Deposit into any token on Robinhood Chain and collect swap fees in WETH. No lockups, no emissions.',
+  alternates: { canonical: '/' },
 };
 
 export const viewport: Viewport = {
