@@ -502,3 +502,150 @@ would have cost an audit later.
   exposure. `deploy/nginx.conf` carries the redirect stanza, commented out.
 - **The mark reads as the letter M.** It was chosen while the product was called
   Depth, and it is now a mismatch for a B name. Recorded in `brand/README.md`.
+
+---
+
+## 14. P1 implementation notes
+
+Added by the P1 build. §12 and §13 are unchanged. This section records what the
+indexer can know, what it refuses to guess, and the two things it needs from
+ALFA before it can index the real chain.
+
+### What ALFA has to supply
+
+**`USDG_ADDRESS`. The indexer will not start without it.** §2 names USDG as the
+day-one stablecoin and §4.3 allows exactly one path to a USD figure: the
+WETH/USDG pool prices WETH, and everything else prices through WETH. The
+address is not in the handoff. With it unset every USD figure on the site would
+be zero, so the process stops with that explanation rather than running and
+reporting zeros.
+
+**`START_BLOCK`.** The PoolManager's deployment block. Left at 0 the first sync
+scans from genesis, which on ~100ms blocks is a very long time. Worse, a
+`START_BLOCK` set *above* a pool's creation block means the indexer sees that
+pool's outflows without the mint that funded them — see *unknown depth* below.
+
+**`LAUNCHPAD_HOOKS`.** §4 says pre-graduation launchpad liquidity is listed but
+not stakeable, and names Pons, Bags and Bottom.fun. Their hook addresses are
+not in the handoff, so the variable is empty and every pool is currently
+classified stakeable. That is the safe direction for a listing and the **wrong**
+direction for a vault: P2 must not deploy a vault against a pool discovered
+while this was blank.
+
+The chain's own details were verifiable and are configured: chainId 4663 is
+confirmed, and the four public RPC endpoints in `.env.example` come from the
+`ethereum-lists/chains` registry. The §2 contract addresses in `lib/chain.ts`
+are still unverified on the explorer.
+
+### Rebuilt, never incremented
+
+Every aggregate table is recomputed from the raw rows rather than added to.
+This is the single decision the rest of P1 hangs off, and it is what makes §9's
+acceptance criterion reachable at all: §4.1 requires re-scanning the last 32
+blocks every pass, and an incremented total would double-count every one of
+those rows. A rebuild over rows keyed `(tx_hash, log_index)` gives the same
+answer however many times the same logs arrive, in what order, or in what
+range sizes.
+
+The consequence is a staging chain, because rebuilding everything from the raw
+tables on each pass is a full scan:
+
+```
+swap_events, liquidity_events     raw, append-only, keyed by log coordinates
+  -> weth_usd_hourly              the one USD anchor
+  -> pool_flow_hourly             signed token flow, which gives reserves
+  -> pool_fee_hourly              fees and volume per pool per hour
+  -> pool_state                   latest price, reserves, TVL
+```
+
+`pool_flow_hourly` is not in §4's schema sketch and exists for a measured
+reason. On v4 the PoolManager holds every pool's tokens in one balance, so
+reserves can only be derived by summing the pool's own signed event amounts.
+Summing the raw tables directly took 5-9 seconds a pass on a four-thousand-swap
+fixture; staging it hourly brought a full sync to under a second.
+
+**§9 is proven, not asserted.** `server/indexer/replay.test.ts` runs a
+deterministic fixture chain of ABI-encoded logs through the real decoder, the
+real ingest and the real SQL against a real Postgres, and compares every
+numeric column **as text** — comparing Postgres `numeric` through a JavaScript
+float would hide exactly the drift the criterion exists to catch. A block-zero
+run and an incremental run produce identical rows; a forced 32-block reorg
+replay changes not one row, let alone the count; ten replays of a 500-block
+window change nothing.
+
+### v4 emits no amounts for a liquidity change
+
+`ModifyLiquidity` carries a liquidity delta, a tick range and no token amounts,
+and those amounts are what a TVL figure is made of. They are computed at ingest
+from the delta, the range and the pool's price — and the price used is the one
+carried forward from the most recent `Swap` at or before that log's position in
+the `(block, logIndex)` order, loaded from the database rather than held in
+memory. That is deliberate: it makes the derived amounts a pure function of the
+log prefix, so a restart mid-chain resumes with exactly the state a full replay
+would have reached. Held in memory, the two runs would disagree and §9 would be
+unprovable.
+
+The tick maths is the TickMath constant table, ported exactly, with a test
+comparing every constant against `sqrt(1.0001^t) * 2^96` computed
+independently — a mistyped hex digit fails there rather than as a wrong TVL on
+the site.
+
+### What P1 does not know, and says so
+
+- **Market cap.** Needs a circulating supply, which is not in the log stream.
+  It is zero and the column shows an em dash. The prototype's MC figures were
+  generated; there is no honest live equivalent without a token-supply source,
+  and §4 bars a third-party API from the critical path.
+- **Chain share.** The featured card's figure needs the chain's total
+  liquidity to compare against. The PoolManager *is* the chain's v4 liquidity,
+  so our share of what we index is 100% and meaningless. Zero until there is
+  something real to divide by.
+- **Vaults, stakes, positions, harvest payouts.** All need contracts, which are
+  P2. The tables exist and are empty, the snapshot reports them empty, and the
+  components already had empty states for it. Nothing is invented to fill the
+  page.
+- **Unknown depth.** A pool whose reserves sum negative means we never saw its
+  funding mint — `START_BLOCK` was above its creation block. Its depth is
+  *unknown*, not zero. Zero is recorded, and the deliberate consequence is that
+  the yield shows as an em dash (§7) rather than a number divided by a divisor
+  we know is wrong. The poller logs how many events it dropped for pools it
+  does not know, so the cause is findable.
+- **An absurd price.** Nothing stops someone initialising a pool at a tick that
+  derives a price near 1e24 USD. Such a figure is discarded and the pool left
+  unpriced, rather than clamped — a clamped value renders as a real TVL of ten
+  quintillion dollars. It is also why it is discarded rather than allowed to
+  overflow: an overflow throws inside the aggregation and stops the pass for
+  *every* pool.
+
+### Two honest-numbers rules P1 had to add
+
+Neither is in §7, and both follow from it.
+
+**The trailing window ends at the last block indexed, not at wall-clock now.**
+If the indexer is an hour behind, wall clock counts that hour as zero fees and
+quietly deflates every yield on the board. So the window is measured back from
+chain time and the lag is reported separately, which is what the top bar shows.
+
+**`LiveProvider` holds nothing rather than something invented.** If the API is
+down or no block has been indexed, the snapshot stays null and the UI says
+*waiting for the indexer*. It never falls back to `SimProvider`. A site that
+silently swaps generated numbers in when the indexer dies is the exact
+dishonesty §7 is about, and it is the failure mode §8's P3 criterion warns of
+one phase early.
+
+That null state is the one place P1 touched a component. The `DataProvider`
+interface has allowed `getSnapshot()` to return null since P0 — "null if none
+has arrived yet (live, pre-connect)" — but `SimProvider` is synchronous and
+never did, so `MarketProvider` never handled it. It does now. No page changed.
+
+### Still open
+
+- **The §12 questions are still open.** The six-hours-per-tick simulator clock
+  needs sign-off, and `/positions`'s forward-looking *Est. fee yield* still
+  needs a decision. P1 changed neither.
+- **`/stakes`, `/positions` and `/portfolio` have real but empty data.** §8
+  lists `/stakes` and `/portfolio` as reading real data in P1, but both are
+  about vault contracts that do not exist until P2. They read real data in the
+  sense that they read the indexer and honestly report nothing in it.
+- **Protocol fee at 10%, cap at 2000 bps.** Unchanged from §12, and the cap is
+  still constructor-immutable, so it still needs confirming before P2 deploys.

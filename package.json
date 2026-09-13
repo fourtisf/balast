@@ -12,12 +12,24 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "brand": "python3 scripts/build-brand.py && node scripts/build-brand-png.mjs"
+    "api": "tsx server/api/main.ts",
+    "indexer": "tsx server/indexer/main.ts",
+    "db:migrate": "prisma migrate deploy",
+    "db:dev": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "brand": "python3 scripts/build-brand.py && node scripts/build-brand-png.mjs",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@fastify/cors": "^11.3.0",
+    "@fastify/websocket": "^11.3.0",
+    "@prisma/client": "^6.19.3",
+    "fastify": "^5.12.4",
+    "ioredis": "^6.0.0",
     "next": "14.2.35",
     "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react-dom": "18.3.1",
+    "viem": "^2.56.5"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1",
@@ -26,6 +38,8 @@
     "@types/react-dom": "18.3.1",
     "eslint": "8.57.1",
     "eslint-config-next": "14.2.35",
+    "prisma": "^6.19.3",
+    "tsx": "^4.23.13",
     "typescript": "5.6.3",
     "vitest": "^2.1.8"
   }

@@ -1,0 +1,313 @@
+// Balast P1 — the indexer's database (§4).
+//
+// The schema sketch in §4 is followed field for field. Two things are added,
+// and both exist to make §9's acceptance criterion reachable rather than
+// aspirational:
+//
+//   swap_events / liquidity_events — the raw log rows, keyed (tx_hash,
+//   log_index). §4 says "writes raw rows" and "upsert by (txHash, logIndex)";
+//   these are those rows.
+//
+//   pool_fee_hourly is DERIVED from them by aggregation, never incremented.
+//   That is the whole trick behind §9: an increment is order-dependent and a
+//   replay double-counts, but re-aggregating a set of rows keyed by
+//   (tx_hash, log_index) gives byte-identical output no matter how many times
+//   the same logs arrive, in what order, or in what range sizes.
+//
+// Money is Decimal, never Float. A USD figure that drifts by a rounding error
+// every pass would make §9 unprovable and the displayed numbers untrustworthy.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- discovery --
+
+model Token {
+  address   String   @id
+  symbol    String
+  name      String
+  decimals  Int      @default(18)
+  logoUrl   String?  @map("logo_url")
+  /// Brand colour. Metadata, not a design decision (§5).
+  logoColor String?  @map("logo_color")
+  /// Pons, Bags, Bottom.fun — set when the token came from a launchpad (§4).
+  launchpad String?
+  firstSeen DateTime @map("first_seen")
+
+  poolsAsToken0 Pool[] @relation("token0")
+  poolsAsToken1 Pool[] @relation("token1")
+
+  @@index([symbol])
+  @@map("tokens")
+}
+
+model Pool {
+  id           String   @id
+  address      String
+  chainId      Int      @map("chain_id")
+  token0       String
+  token1       String
+  feeTier      Int      @map("fee_tier")
+  tickSpacing  Int      @map("tick_spacing")
+  hooks        String?
+  /// "v4" or "v3" — some older pools on this chain are v3 (§4).
+  protocol     String
+  createdBlock BigInt   @map("created_block")
+  /// Set from the block timestamp of Initialize, so pool age is chain time.
+  createdAt    DateTime @map("created_at")
+  /// Pre-graduation launchpad liquidity is listed but NOT stakeable (§4).
+  stakeable    Boolean  @default(true)
+
+  tokenA Token @relation("token0", fields: [token0], references: [address])
+  tokenB Token @relation("token1", fields: [token1], references: [address])
+
+  swaps            SwapEvent[]
+  liquidity        LiquidityEvent[]
+  feeHours         PoolFeeHourly[]
+  state            PoolState?
+  vault            Vault?
+  positions        Position[]
+  poolFlowHourlies PoolFlowHourly[]
+
+  @@unique([address, chainId])
+  @@index([protocol])
+  @@map("pools")
+}
+
+// -------------------------------------------------------------- raw events --
+// Upserted by (tx_hash, log_index). Re-scanning the last 32 blocks every pass
+// (§4.1) therefore costs nothing and changes nothing.
+
+model SwapEvent {
+  txHash    String   @map("tx_hash")
+  logIndex  Int      @map("log_index")
+  poolId    String   @map("pool_id")
+  blockNum  BigInt   @map("block_num")
+  blockTime DateTime @map("block_time")
+  /// Signed, in token units as emitted. amount0 < 0 means token0 left the pool.
+  amount0   Decimal  @db.Decimal(78, 0)
+  amount1   Decimal  @db.Decimal(78, 0)
+  sqrtPrice Decimal  @map("sqrt_price_x96") @db.Decimal(78, 0)
+  liquidity Decimal  @db.Decimal(78, 0)
+  tick      Int
+  /// Fee charged on this swap, in the input token's smallest unit.
+  feeAmount Decimal  @map("fee_amount") @db.Decimal(78, 0)
+  /// Which side the fee was taken in: 0 or 1.
+  feeToken  Int      @map("fee_token")
+  sender    String
+
+  pool Pool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  @@id([txHash, logIndex])
+  @@index([poolId, blockTime])
+  @@index([blockNum])
+  /// For "the pool's latest state": a DISTINCT ON (pool_id) ordered by
+  /// position. Without it that query is a sort of the whole table on every
+  /// pass, which is the difference between a second and a minute once the
+  /// chain has a few million swaps in it.
+  @@index([poolId, blockNum, logIndex])
+  @@map("swap_events")
+}
+
+model LiquidityEvent {
+  txHash         String   @map("tx_hash")
+  logIndex       Int      @map("log_index")
+  poolId         String   @map("pool_id")
+  blockNum       BigInt   @map("block_num")
+  blockTime      DateTime @map("block_time")
+  tickLower      Int      @map("tick_lower")
+  tickUpper      Int      @map("tick_upper")
+  /// Signed: negative is a burn. v3 Mint/Burn are normalised to this.
+  liquidityDelta Decimal  @map("liquidity_delta") @db.Decimal(78, 0)
+  amount0        Decimal  @db.Decimal(78, 0)
+  amount1        Decimal  @db.Decimal(78, 0)
+  owner          String
+
+  pool Pool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  @@id([txHash, logIndex])
+  @@index([poolId, blockTime])
+  @@index([blockNum])
+  @@map("liquidity_events")
+}
+
+/// One row per contract the poller follows, so a restart resumes rather than
+/// rescanning the chain.
+model IndexerCursor {
+  contract         String   @id
+  lastIndexedBlock BigInt   @map("last_indexed_block")
+  /// Block time of that block: the honest input to the lag shown in the top bar (§7).
+  lastIndexedAt    DateTime @map("last_indexed_at")
+  updatedAt        DateTime @map("updated_at")
+
+  @@map("indexer_cursors")
+}
+
+// ------------------------------------------------------------- aggregations --
+
+/// Derived from swap_events by aggregation. Never incremented — see the header.
+model PoolFeeHourly {
+  poolId     String   @map("pool_id")
+  /// Truncated to the hour, UTC.
+  hour       DateTime
+  feesToken0 Decimal  @map("fees_token0") @db.Decimal(78, 0)
+  feesToken1 Decimal  @map("fees_token1") @db.Decimal(78, 0)
+  feesUsd    Decimal  @map("fees_usd") @db.Decimal(38, 18)
+  volumeUsd  Decimal  @map("volume_usd") @db.Decimal(38, 18)
+  swaps      Int
+
+  pool Pool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  @@id([poolId, hour])
+  @@index([hour])
+  @@map("pool_fee_hourly")
+}
+
+/**
+ * Signed token flow per pool per hour, derived from swap and liquidity events.
+ * A pool's reserves are the sum of every signed amount it ever emitted — on v4
+ * that is the only way to get them, since the PoolManager holds every pool's
+ * tokens in one balance. Summing the raw event tables directly is correct and
+ * completely unscalable: it is a full scan of both tables, for every pool, on
+ * every pass.
+ * So the sum is staged. This table is rebuilt only for the hours a pass
+ * touched, and reserves are then a sum over it — 24 rows a day per pool
+ * instead of every swap ever. It stays an aggregation rather than a running
+ * total, so it replays as cleanly as pool_fee_hourly does (§9).
+ */
+model PoolFlowHourly {
+  poolId String   @map("pool_id")
+  hour   DateTime
+  delta0 Decimal  @db.Decimal(78, 0)
+  delta1 Decimal  @db.Decimal(78, 0)
+
+  pool Pool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  @@id([poolId, hour])
+  @@map("pool_flow_hourly")
+}
+
+/**
+ * WETH in USD, per hour, from the one WETH/USDG anchor pool (§4.3).
+ * Materialised for the same reason as the table above: every fee in every
+ * pool is valued through this series, and recomputing it from the anchor's
+ * whole swap history on each pass made the fee rebuild quadratic in the
+ * number of hours indexed.
+ * An hour with no anchor swap has no row. Readers carry the last price
+ * forward rather than treating the gap as zero — a quiet hour in the anchor
+ * pool is not WETH becoming worthless.
+ */
+model WethUsdHourly {
+  hour    DateTime @id
+  wethUsd Decimal  @map("weth_usd") @db.Decimal(38, 18)
+
+  @@map("weth_usd_hourly")
+}
+
+/// Latest snapshot per pool. Overwritten, not appended.
+model PoolState {
+  poolId    String   @id @map("pool_id")
+  tvlUsd    Decimal  @map("tvl_usd") @db.Decimal(38, 18)
+  priceUsd  Decimal  @map("price_usd") @db.Decimal(38, 18)
+  mcUsd     Decimal  @map("mc_usd") @db.Decimal(38, 18)
+  /// sqrtPriceX96 at the last swap: the input to every derived price (§4.3).
+  sqrtPrice Decimal  @map("sqrt_price_x96") @db.Decimal(78, 0)
+  tick      Int
+  liquidity Decimal  @db.Decimal(78, 0)
+  updatedAt DateTime @map("updated_at")
+
+  pool Pool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  @@map("pool_state")
+}
+
+// ------------------------------------------------------------------ product --
+
+model Vault {
+  poolId         String   @id @map("pool_id")
+  address        String   @unique
+  totalStaked    Decimal  @map("total_staked") @db.Decimal(78, 0)
+  totalStakedUsd Decimal  @map("total_staked_usd") @db.Decimal(38, 18)
+  /// WETH per second out of the current 7-day window (§3.3).
+  rewardRate     Decimal  @map("reward_rate") @db.Decimal(78, 0)
+  periodFinish   DateTime @map("period_finish")
+  stakers        Int
+  protocolFeeBps Int      @map("protocol_fee_bps")
+  updatedAt      DateTime @map("updated_at")
+
+  pool   Pool    @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  stakes Stake[]
+
+  @@map("vaults")
+}
+
+model Stake {
+  wallet      String
+  vaultId     String   @map("vault_id")
+  shares      Decimal  @db.Decimal(78, 0)
+  claimedWeth Decimal  @map("claimed_weth") @db.Decimal(78, 0)
+  updatedAt   DateTime @map("updated_at")
+
+  vault Vault @relation(fields: [vaultId], references: [poolId], onDelete: Cascade)
+
+  @@id([wallet, vaultId])
+  @@index([wallet])
+  @@map("stakes")
+}
+
+model Position {
+  tokenId   String   @id @map("token_id")
+  wallet    String
+  poolId    String   @map("pool_id")
+  tickLower Int      @map("tick_lower")
+  tickUpper Int      @map("tick_upper")
+  liquidity Decimal  @db.Decimal(78, 0)
+  /// spot / curve / bidask — the frontend weight generator used at mint (§3.2).
+  shape     String?
+  status    String
+  updatedAt DateTime @map("updated_at")
+
+  pool Pool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  @@index([wallet])
+  @@map("positions")
+}
+
+model RouterConfig {
+  id             String   @id
+  token          String
+  feeSource      String   @map("fee_source")
+  /// CADENCE or MILESTONE (§3.4).
+  mode           String
+  cadenceS       Int?     @map("cadence_s")
+  milestonesJson Json?    @map("milestones_json")
+  paused         Boolean  @default(false)
+  updatedAt      DateTime @map("updated_at")
+
+  routes RouterRoute[]
+
+  @@index([token])
+  @@map("router_configs")
+}
+
+model RouterRoute {
+  id             String   @id @default(uuid())
+  configId       String   @map("config_id")
+  txHash         String   @unique @map("tx_hash")
+  wethIn         Decimal  @map("weth_in") @db.Decimal(78, 0)
+  liquidityAdded Decimal  @map("liquidity_added") @db.Decimal(78, 0)
+  /// The 30-minute TWAP it routed at, never spot (§3.4).
+  twapPrice      Decimal  @map("twap_price") @db.Decimal(38, 18)
+  routedAt       DateTime @map("routed_at")
+
+  config RouterConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@index([configId, routedAt])
+  @@map("router_routes")
+}

@@ -37,7 +37,8 @@ apt_update_tolerant() {
 
 echo "==> packages"
 apt_update_tolerant
-apt-get install -y -qq curl git nginx certbot ca-certificates gnupg
+apt-get install -y -qq curl git nginx certbot ca-certificates gnupg \
+  postgresql postgresql-client redis-server
 
 echo "==> node ${NODE_MAJOR}"
 if ! command -v node >/dev/null || [[ "$(node -v)" != v${NODE_MAJOR}* ]]; then
@@ -59,6 +60,34 @@ command -v pm2 >/dev/null || npm install -g pm2 >/dev/null
 echo "==> app user (the front-end does not run as root)"
 id -u "$APP_USER" >/dev/null 2>&1 || useradd --system --create-home --shell /bin/bash "$APP_USER"
 
+echo "==> postgres"
+# The cluster Ubuntu creates on install is fine; all this does is make the
+# role and database, idempotently. The password is generated here and written
+# only to the app's .env — it is never echoed and never in this repository.
+systemctl enable --now postgresql
+DB_NAME=balast
+DB_USER=balast
+if ! runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1; then
+  DB_PASS="$(openssl rand -hex 24)"
+  runuser -u postgres -- psql -qc "CREATE ROLE $DB_USER LOGIN PASSWORD '$DB_PASS'"
+  echo "   created role $DB_USER"
+else
+  DB_PASS=""
+  echo "   role $DB_USER already exists — leaving its password alone"
+fi
+if ! runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1; then
+  runuser -u postgres -- createdb -O "$DB_USER" "$DB_NAME"
+  echo "   created database $DB_NAME"
+fi
+
+echo "==> redis"
+# Only on localhost. Redis with no password on a public interface is how a
+# box gets owned; it carries nothing secret here, but it is still a shell.
+systemctl enable --now redis-server
+if ! grep -qE '^bind 127\.0\.0\.1' /etc/redis/redis.conf; then
+  echo "   !! /etc/redis/redis.conf does not bind to 127.0.0.1 — check it"
+fi
+
 echo "==> clone"
 mkdir -p "$APP_DIR" /var/www/certbot /var/log/balast
 chown -R "$APP_USER:$APP_USER" "$APP_DIR" /var/log/balast
@@ -69,13 +98,49 @@ else
   as_app git clone --branch "$BRANCH" "$REPO" "$APP_DIR"
 fi
 
+echo "==> env"
+# Written once and then left alone: a redeploy must not regenerate the
+# database password or wipe the USDG address someone looked up by hand.
+if [[ ! -f "$APP_DIR/.env" ]]; then
+  if [[ -z "$DB_PASS" ]]; then
+    echo "!! $APP_DIR/.env is missing but the $DB_USER role already exists, so"
+    echo "   its password is not known here. Reset it with:"
+    echo "     sudo -u postgres psql -c \"ALTER ROLE $DB_USER PASSWORD '...'\""
+    echo "   then write $APP_DIR/.env yourself from .env.example."
+    exit 1
+  fi
+  cat > "$APP_DIR/.env" <<ENVEOF
+DATA_SOURCE=live
+DATABASE_URL="postgresql://$DB_USER:$DB_PASS@127.0.0.1:5432/$DB_NAME?schema=public"
+REDIS_URL="redis://127.0.0.1:6379"
+API_PORT=3001
+API_HOST=127.0.0.1
+START_BLOCK=0
+INDEXER_BLOCK_RANGE=2000
+# THE INDEXER WILL NOT START WITHOUT THIS.
+# USDG is the day-one stablecoin on this chain, not USDC, and the WETH/USDG
+# pool is the site's one USD anchor. Look it up on the explorer and set it.
+USDG_ADDRESS=
+LAUNCHPAD_HOOKS=
+V3_POOLS=
+ENVEOF
+  chown "$APP_USER:$APP_USER" "$APP_DIR/.env"
+  chmod 600 "$APP_DIR/.env"
+  echo "   wrote $APP_DIR/.env"
+else
+  echo "   $APP_DIR/.env already exists — left alone"
+fi
+
 echo "==> build"
 cd "$APP_DIR"
 as_app npm ci
-as_app env DATA_SOURCE=sim npm run build
+as_app npm run build
+
+echo "==> migrate"
+as_app npx prisma migrate deploy
 
 echo "==> pm2"
-as_app pm2 start ecosystem.config.js --update-env || as_app pm2 reload balast-web
+as_app pm2 start ecosystem.config.js --update-env || as_app pm2 reload all
 as_app pm2 save
 # Run as root, pm2 installs and enables the systemd unit itself.
 pm2 startup systemd -u "$APP_USER" --hp "/home/$APP_USER"
@@ -109,3 +174,14 @@ nginx -t && systemctl reload nginx
 echo
 echo "done — https://$DOMAIN"
 echo "prove the renewal path works:  certbot renew --dry-run"
+echo
+if ! grep -qE '^USDG_ADDRESS=.+' "$APP_DIR/.env"; then
+  echo "!! USDG_ADDRESS is still blank in $APP_DIR/.env."
+  echo "   balast-indexer will refuse to start until it is set — deliberately,"
+  echo "   because without the WETH/USDG anchor every USD figure reads zero."
+  echo "   Find USDG on the explorer, set it, then:"
+  echo "     pm2 restart balast-indexer --update-env"
+  echo
+fi
+echo "watch it index:   pm2 logs balast-indexer"
+echo "check the lag:    curl -s localhost:3001/api/health | head -20"

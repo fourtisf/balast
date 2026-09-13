@@ -133,9 +133,35 @@ describe('subscription', () => {
 });
 
 describe('LiveProvider', () => {
-  it('throws rather than quietly returning simulated data (P1)', () => {
+  // P0 asserted this threw "not implemented". P1 implements it, and the
+  // contract it now has to keep is narrower and more important: it may hold
+  // nothing, but it must never hold something made up.
+  it('holds nothing until the indexer answers, rather than simulated data', () => {
     const live = new LiveProvider();
-    expect(() => live.getSnapshot()).toThrow(/not implemented/i);
-    expect(() => live.subscribe(() => {})).toThrow(/not implemented/i);
+    // Null, not a throw and not a zeroed snapshot. MarketProvider renders
+    // "waiting for the indexer" for this, so the state has to be reachable.
+    expect(live.getSnapshot()).toBeNull();
+  });
+
+  it('does not start a fetch or a socket on the server', () => {
+    // There is no `window` in this environment, which is how a server render
+    // is detected. Subscribing must be inert rather than reaching for fetch.
+    expect(typeof globalThis.window).toBe('undefined');
+    const live = new LiveProvider();
+    let calls = 0;
+    const off = live.subscribe(() => {
+      calls++;
+    });
+    // No snapshot yet, so the listener is not called on subscribe either —
+    // SimProvider calls it immediately because it always has one.
+    expect(calls).toBe(0);
+    expect(live.getSnapshot()).toBeNull();
+    off();
+  });
+
+  it('is never the simulator', () => {
+    // The one thing that must stay true: a live provider that cannot reach
+    // the indexer shows nothing, not generated numbers (§7).
+    expect(new LiveProvider().kind).toBe('live');
   });
 });
