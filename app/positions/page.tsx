@@ -14,7 +14,7 @@ export default function PositionsPage() {
             Shape your liquidity <em>by hand</em>.
           </>
         }
-        lede="Choose a range, pick a shape, deposit one token. Balast splits it across bins and mints a single Uniswap v4 position straight to your wallet."
+        lede="Choose a range, pick a shape, set a deposit. Balast splits it across bins and mints them through Uniswap's PositionManager straight to your wallet, in one transaction. Nothing is held by Balast."
       />
       <ShapeBuilder />
     </section>
