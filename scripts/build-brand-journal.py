@@ -169,6 +169,16 @@ def main() -> None:
     write('icon-ink.svg', svg(tile(ink_ground, blocks(PAPER, PAPER)), '0 0 32 32', 1024, 1024))
     write('icon-paper-rounded.svg', svg(tile(paper(32, 32, TILE_R), blocks(INK, INK), TILE_R), '0 0 32 32', 1024, 1024))
 
+    # The favicon: the same cut, flat paper (a gradient is invisible at 16px
+    # and one more thing a browser can get wrong), written straight to the
+    # app, where Next.js serves it as /icon.svg — the tab, and the icon
+    # WalletConnect shows a phone.
+    favicon = svg(tile(f'<rect width="32" height="32" fill="{PAPER}"/>', blocks(INK, INK)), '0 0 32 32', 32, 32)
+    write('favicon-paper.svg', favicon)
+    with open(os.path.join(ROOT, 'app', 'icon.svg'), 'w') as fh:
+        fh.write(favicon)
+    print('  app/icon.svg                     written')
+
     print('lockup — the navigation\'s, as outlines')
     cap_h = (INK_Y1 - INK_Y0) / MARK_TO_CAP
     word_size = cap_h / cap_ratio(serif)

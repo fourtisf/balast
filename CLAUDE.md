@@ -1838,6 +1838,14 @@ is the page's own: `--bg` lit faintly from the centre, `--raise` at the
 corners. In the lockup the mark's ink stands 1.1 × the cap height, centred
 on it, a touch larger than the navigation sets it, because a logo on its
 own carries its weight in the mark. The three faces are fetched from the
-google/fonts repository into an ignored `.fonts` folder on first run; the
-favicon keeps its dark ground, which a browser tab wants.
+google/fonts repository into an ignored `.fonts` folder on first run.
+
+**The favicon is paper too.** The owner pointed at the tab, still showing
+the green mark on black beside a paper site, and asked for the paper icon.
+`app/icon.svg` — the file Next.js serves as `/icon.svg`, so also the icon
+WalletConnect shows a phone — is now written by the same script: the
+full-bleed cut on flat paper, because a gradient is invisible at 16px. It
+was checked at 16 and 32px on a light and a dark tab strip; the ink mark
+carries it on both. The dark favicon files stay in `brand/` for anyone who
+wants them.
 

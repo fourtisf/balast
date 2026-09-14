@@ -35,7 +35,8 @@ being installed**. The generator reads that font out of `.next/`, so
 | On the app's own ground rather than black | `icon-app-ground-1024.png` |
 | Inverted, on accent | `icon-accent-1024.png` |
 | iOS home screen | `apple-touch-icon-180.png` |
-| Browser tab | `favicon.svg`, `favicon-16/32/48.png` |
+| **Browser tab** | `journal/favicon-paper.svg` — flat paper, ink mark; the same file is `app/icon.svg`, which Next.js serves as `/icon.svg` |
+| Browser tab, the earlier dark cut | `favicon.svg`, `favicon-16/32/48.png` |
 | The mark alone, dark ground | `balast-mark.svg`, `balast-mark-1024.png` |
 | The mark alone, light ground | `balast-mark-light.svg` |
 | Inside a React component | `balast-mark-currentcolor.svg`, or `<Mark>` from `components/shell/Logo.tsx` |
