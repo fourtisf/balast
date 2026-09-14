@@ -21,7 +21,7 @@
  * no harvest payouts — the components already have empty states for that.
  */
 
-import { CONTRACTS, PROTOCOL_FEE_BPS, REWARD_WINDOW_SECONDS } from '../../lib/chain';
+import { CONTRACTS, PROTOCOL_FEE_BPS, REWARD_WINDOW_SECONDS, NATIVE_ETH } from '../../lib/chain';
 import type {
   FeeYield,
   MarketSnapshot,
@@ -62,6 +62,12 @@ interface PoolQueryRow {
   address: string;
   protocol: string;
   fee_tier: number;
+  token0: string;
+  token1: string;
+  tick_spacing: number;
+  hooks: string | null;
+  decimals0: number;
+  decimals1: number;
   stakeable: boolean;
   token_address: string;
   symbol: string;
@@ -261,6 +267,12 @@ async function queryPools(usdg: string, asOf: Date, minFdvUsd: number): Promise<
       p.address,
       p.protocol,
       p.fee_tier,
+      p.token0,
+      p.token1,
+      p.tick_spacing,
+      p.hooks,
+      t0.decimals AS decimals0,
+      t1.decimals AS decimals1,
       p.stakeable,
       -- The traded side, by the one rule in aggregate.ts. Using a different
       -- rule here is how the WETH/USDG row once read "WETH · $1.00".
@@ -366,6 +378,19 @@ function toPool(row: PoolQueryRow): Pool {
     quote: (row.quote_symbol ?? 'ETH') as Quote,
     // Pool fees are in hundredths of a bip on chain; the UI wants bips.
     feeTierBps: Math.round(row.fee_tier / 100),
+    // The on-chain key, so /positions can mint into the pool (v4 only).
+    key:
+      row.protocol === 'v4'
+        ? {
+            currency0: row.token0,
+            currency1: row.token1,
+            fee: row.fee_tier,
+            tickSpacing: row.tick_spacing,
+            hooks: row.hooks ?? NATIVE_ETH,
+            decimals0: row.decimals0,
+            decimals1: row.decimals1,
+          }
+        : undefined,
     protocol: row.protocol === 'v3' ? 'v3' : 'v4',
     stakeable: row.stakeable,
     ageHours: row.age_hours,

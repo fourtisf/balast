@@ -22,17 +22,35 @@ export const CHAIN = {
 } as const;
 
 /**
- * Deployed contracts. VERIFY EACH ON THE EXPLORER BEFORE MAINNET (§2).
+ * Deployed contracts.
+ *
+ * The §2 handoff addresses were unverified for a long time. They are now
+ * checked against Uniswap's own registry — `sdks/sdk-core/src/addresses.ts`
+ * and `universal-router-sdk/src/utils/constants.ts` in github.com/Uniswap/sdks,
+ * which list Robinhood Chain (chainId 4663) — and every v4 address below
+ * matches it byte for byte. The registry also supplied the two the handoff
+ * did not have: the v4 PositionManager, which is what mints a position to a
+ * wallet, and the v3 factory §14 asked for. `npm run verify:chain` still
+ * checks that each holds code on the chain itself.
  */
 export const CONTRACTS = {
   /** aeWETH proxy — the token every fee is paid in. */
   weth: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73',
+  /** Universal Router v2.1.1, created at block 18127 per the registry. */
   universalRouter: '0x8876789976dEcBfCbBbe364623C63652db8C0904',
   poolManager: '0x8366a39CC670B4001A1121B8F6A443A643e40951',
+  /**
+   * Uniswap's PositionManager for v4: one `modifyLiquidities` call mints,
+   * settles and sweeps, and the position NFT goes to the owner it names.
+   * Balast mints through it rather than through a contract of its own.
+   */
+  positionManager: '0x58daEc3116aae6D93017bAaEA7749052E8a04FA7',
   v4Quoter: '0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94',
   stateView: '0xF3334192D15450CdD385c8B70e03f9A6bD9E673b',
   permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
   multicall3: '0xcA11bde05977b3631167028862bE2a173976CA11',
+  /** Uniswap v3 factory on this chain, per the same registry (§14, §15). */
+  v3Factory: '0x1F7d7550B1B028f7571E69A784071F0205fd2Efa',
 } as const;
 
 export type ContractName = keyof typeof CONTRACTS;

@@ -64,7 +64,7 @@ export function WalletModal() {
         const address = await silentAccount(restored);
         if (cancelled || !address) return;
         setSession(restored);
-        setWallet({ address, name: restored.info.name, rdns });
+        setWallet({ address, name: restored.info.name, rdns, provider: restored.provider });
       });
       return () => {
         cancelled = true;
@@ -75,7 +75,7 @@ export function WalletModal() {
     void silentAccount(found).then((address) => {
       if (!cancelled && address) {
         setSession(found);
-        setWallet({ address, name: found.info.name, rdns });
+        setWallet({ address, name: found.info.name, rdns, provider: found.provider });
       }
     });
     return () => {
@@ -146,7 +146,7 @@ export function WalletModal() {
   const finish = async (candidate: AnnouncedWallet) => {
     const address = await connectWallet(candidate);
     setSession(candidate);
-    setWallet({ address, name: candidate.info.name, rdns: candidate.info.rdns });
+    setWallet({ address, name: candidate.info.name, rdns: candidate.info.rdns, provider: candidate.provider });
     showToast(`Connected to ${candidate.info.name}`);
     closeWallet();
   };

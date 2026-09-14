@@ -42,12 +42,35 @@ export type FeeYield =
   /** The real thing: fees_7d / tvl_now * 365/7. */
   | { basis: 'trailing7d'; pct: number };
 
+/**
+ * A v4 pool's identity on chain: what PositionManager needs to mint into it.
+ *
+ * `currency0 < currency1` by address, native ether as the zero address, fee
+ * in hundredths of a bip (pips), hooks as the zero address for none. The
+ * decimals ride along because both sides are needed to size a deposit.
+ */
+export interface PoolKeyInfo {
+  currency0: string;
+  currency1: string;
+  fee: number;
+  tickSpacing: number;
+  hooks: string;
+  decimals0: number;
+  decimals1: number;
+}
+
 export interface Pool {
   id: string;
   address: string;
   token: TokenMeta;
   quote: Quote;
   feeTierBps: number;
+  /**
+   * Present for a live v4 pool, so /positions can mint into it through
+   * Uniswap's PositionManager. Absent for v3 pools and for simulated ones,
+   * which have nothing on chain to mint into.
+   */
+  key?: PoolKeyInfo;
   protocol: Protocol;
   /** Pre-graduation launchpad liquidity is listed but cannot be staked (§4). */
   stakeable: boolean;

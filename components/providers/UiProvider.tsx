@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import type { Eip1193Provider } from '@/lib/wallet';
 
 export interface ConnectedWallet {
   /** Checksummed. */
@@ -17,6 +18,8 @@ export interface ConnectedWallet {
   name: string;
   /** EIP-6963 reverse-DNS id, for the quiet reconnect on reload. */
   rdns: string;
+  /** The wallet's provider, for the transactions /positions sends through it. */
+  provider: Eip1193Provider;
 }
 
 interface UiState {

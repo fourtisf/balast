@@ -46,10 +46,12 @@ async function main(): Promise<void> {
   const head = await getHead();
   log(`head is block ${head.number} at ${head.timestamp.toISOString()}`);
 
-  const v3Factory = process.env.V3_FACTORY ?? null;
+  // Uniswap's registry names the v3 factory on this chain (lib/chain.ts);
+  // V3_FACTORY still overrides it, and an explicit empty value disables it.
+  const v3Factory = process.env.V3_FACTORY === undefined ? CONTRACTS.v3Factory : process.env.V3_FACTORY || null;
   if (!v3Factory) {
     log(
-      'V3_FACTORY is not set — v3 pools will only be those named in V3_POOLS. ' +
+      'V3_FACTORY is empty — v3 pools will only be those named in V3_POOLS. ' +
         '§4 says some older pools on this chain are v3, so this will omit real pools.',
     );
   }

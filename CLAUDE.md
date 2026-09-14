@@ -1849,3 +1849,112 @@ was checked at 16 and 32px on a light and a dark tab strip; the ink mark
 carries it on both. The dark favicon files stay in `brand/` for anyone who
 wants them.
 
+---
+
+## 20. Mainnet through Uniswap, not through contracts of our own
+
+ALFA's call, in four words: *lempar semua ke Uniswap*. No contract of
+Balast's own goes to mainnet; every on-chain action runs through Uniswap
+v4's deployed, audited contracts, and Balast's surface is the calldata it
+builds and the honesty of what it shows. This section records what that
+means product by product, what is built, and what it does not cover.
+
+### The addresses are verified now
+
+Uniswap's own registry — `sdks/sdk-core/src/addresses.ts` and
+`universal-router-sdk/src/utils/constants.ts` in github.com/Uniswap/sdks —
+lists Robinhood Chain (chainId 4663). Every v4 address in §2 matches it
+byte for byte: PoolManager, StateView, V4Quoter, and the Universal Router
+(v2.1.1, created at block 18127). It also supplied the two the handoff did
+not have: the **PositionManager**, `0x58daEc3116aae6D93017bAaEA7749052E8a04FA7`,
+and the **v3 factory**, `0x1F7d7550B1B028f7571E69A784071F0205fd2Efa`, which
+§14 had been waiting on and the indexer now follows by default.
+
+### Positions: built, through PositionManager
+
+`/positions` mints for real. The shape builder's inputs — a deposit in the
+quote, a range as a percentage around the token's price, a bin count and
+a shape — become one `modifyLiquidities` transaction: one `MINT_POSITION`
+per bin, each with the liquidity its weight of the deposit buys at the
+live price, then `SETTLE_PAIR` to pay for all of them and, for an ether
+pool, `SWEEP` to return the unspent ether. Each bin is a position NFT in
+the person's wallet; Balast holds nothing at any point.
+
+The pieces, all in `lib/v4/`:
+
+- **Tick and liquidity maths.** `tick-math.ts` moved here from the
+  indexer (which still imports it), and `liquidity.ts` sizes a bin by
+  value: at sqrt price P one unit of liquidity in a range is worth
+  `amount1 + amount0·P²` in currency1, linear in liquidity, so the
+  liquidity for a share of the deposit is one division. Every amount that
+  reaches a transaction is bigint from the sqrt price the chain reported.
+- **The encoder.** `actions.ts` carries the action ids from
+  `Actions.sol` and the parameter layouts from `PositionManager
+  ._handleAction`. Its test builds the same actions with Uniswap's own
+  `V4Planner` and asserts the bytes are identical, and `poolId` is
+  asserted against the SDK's `Pool.getPoolId`. The SDK is a dev
+  dependency only: it carries ethers v5 and would double the page.
+- **The plan.** `mint.ts` maps the token's percent range onto pool ticks
+  (mirrored when the token is currency1, whose price is the pool's
+  inverse), splits the range into whole tick spacings as evenly as the
+  arithmetic allows, reverses the shape's weights when the pool runs the
+  other way, and caps every position at its own share plus one percent.
+- **The flow.** `flow.ts` reads slot0 from StateView, balances from the
+  tokens, and the two allowances PositionManager's `_pay` needs — the
+  token's to Permit2 and Permit2's to PositionManager — then
+  `eth_estimateGas` runs the exact calldata against the node before the
+  wallet is asked to sign. A mint that would revert is refused before any
+  signature, with the reason in words.
+
+Two honest limits, both on screen. **The deposit is two-sided for now.**
+A bin that straddles the price needs both currencies, and without a swap
+the wallet has to hold both; the builder shows exactly how much of each
+the plan takes and refuses if the wallet is short, naming the shortfall.
+The single-token zap — a Universal Router swap of the token side in the
+same transaction — is the next slice. **The price is the chain's, not the
+indexer's.** The builder polls slot0 every twelve seconds and plans
+against it; the indexer, which can be days behind (§7), supplies only the
+trailing-yield estimate, labelled as before.
+
+Nothing sends from simulated data: a pool with no on-chain key gets the
+old button and a toast that says so.
+
+### Stakes: what the model makes of them, for ALFA
+
+Under "everything to Uniswap" a Stake is a position the person holds —
+one full-range mint into the pool, fees accruing in the position, a
+`DECREASE_LIQUIDITY` of zero to collect them, `BURN_POSITION` to leave.
+Three things §3.3 promised do not survive that: the seven-day stream
+(a vault's behaviour), the anti-snipe property the stream gave, and the
+protocol fee taken at harvest. **Without a vault there is no protocol
+revenue.** That is a product decision, not an engineering one, and
+`/stakes` is unchanged until ALFA makes it: keep the honest empties, or
+rebuild the page as self-custodied full-range positions with the
+consequence above written on it.
+
+### Router: cannot be delegated
+
+A fee stream routed into permanent depth on a TWAP is logic no Uniswap
+contract performs. `BalastRouter` stays P4 and stays a contract, with the
+audit that implies; the page keeps its copy and its honest empty.
+
+### Portfolio: next
+
+PositionManager is an ERC721. The indexer will follow its `Transfer`
+logs into the `positions` table and read each token's key and liquidity,
+so `/portfolio` can show what a wallet holds with in-range status and
+collected fees. Not built in this slice.
+
+### What "fully audited" does and does not mean here
+
+Uniswap's contracts are audited; Balast deploys none. What Balast can
+still get wrong is the calldata, and that is guarded three ways: the
+encoder is byte-compared with Uniswap's SDK, every plan is dry-run by the
+node before signing, and each position's take is capped at its own
+share. What this session could not do is run a fork test against the
+real chain — the sandbox reaches no RPC — so **the first mint on the live
+site should be a small one**, watched on the explorer, before anything is
+announced. A pool with a hook can refuse outside liquidity; the dry run
+catches that and says so, and `LAUNCHPAD_HOOKS` (§14) still needs
+setting so such pools are not offered at all.
+
