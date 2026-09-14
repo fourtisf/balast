@@ -95,8 +95,10 @@ export async function refreshLogos(
 ): Promise<number> {
   // The list shipped with the repository is the default: it carries ether,
   // which no aggregator can be asked about, so a box that never set
-  // TOKEN_LIST_URL still gets that one right.
-  const url = options.url ?? process.env.TOKEN_LIST_URL ?? DEFAULT_TOKEN_LIST;
+  // TOKEN_LIST_URL — or set it to nothing — still gets that one right.
+  // `none` is the way to say "no list".
+  const configured = options.url ?? (process.env.TOKEN_LIST_URL?.trim() || DEFAULT_TOKEN_LIST);
+  const url = configured === 'none' ? null : configured;
   const log = options.log ?? (() => {});
   if (!url) return 0;
   // A URL has to be http(s); a path is taken as a path. Anything else — a

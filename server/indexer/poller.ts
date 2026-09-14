@@ -475,6 +475,10 @@ export class Poller {
       if (reasked.count > 0) {
         this.log(`  ${reasked.count} token(s) without a logo will be asked about again`);
       }
+      // And the token list is applied now, not only when a pool is
+      // discovered or the sync catches up: on a first sync the list's
+      // tokens — ether above all — should not wait on either.
+      await refreshLogos({ chainId: CHAIN.id, log: this.log });
       this.nativeRepaired = true;
     }
 

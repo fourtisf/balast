@@ -1,5 +1,13 @@
+import { isEther } from '@/lib/chain';
 import { monogram, tokenMark } from '@/lib/token-mark';
 import type { TokenMeta } from '@/lib/data/types';
+
+/**
+ * Ether's own logo, served by this site. Ether has no contract for any
+ * source to look up, so it is the one token whose logo the front end knows
+ * without asking the indexer — and the ether market is on every board.
+ */
+const ETHER_LOGO = '/tokens/eth.svg';
 
 /**
  * The circular token badge.
@@ -30,7 +38,8 @@ export function TokenBadge({
   className?: string;
 }) {
   const mark = tokenMark(token.address);
-  const background = token.logoUrl ? token.logoColor || mark.bg : mark.bg;
+  const logoUrl = token.logoUrl ?? (isEther(token.address) ? ETHER_LOGO : undefined);
+  const background = logoUrl ? token.logoColor || mark.bg : mark.bg;
 
   return (
     <span
@@ -41,14 +50,14 @@ export function TokenBadge({
       style={{ backgroundColor: background, color: mark.ink }}
       aria-hidden="true"
     >
-      {token.logoUrl ? (
+      {logoUrl ? (
         /* next/image would proxy these through our own server and needs every
            remote host whitelisted in `images.remotePatterns` up front. The
            host comes from a third-party source, so it is not knowable in
            advance — and there is nothing to optimise about a 40px badge. */
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={token.logoUrl}
+          src={logoUrl}
           alt=""
           loading="lazy"
           decoding="async"
