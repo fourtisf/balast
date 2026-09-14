@@ -104,9 +104,11 @@ else
   }
 
   if [[ -z "$USDG" ]]; then
-    # Not a warning. The indexer will not start, by design.
-    bad "USDG_ADDRESS is empty — the indexer refuses to start without it"
-    also "cd $APP_DIR && npm run find:tokens   # then ./deploy/set-env.sh USDG_ADDRESS 0x..."
+    # Not a fault since §17: the anchor is discovered from the tokens the
+    # indexer finds, and an empty override is the normal state. Reporting it
+    # as BAD sent the operator off to look up an address the box was already
+    # looking for itself.
+    ok "USDG_ADDRESS unset — the USD anchor is discovered from indexed tokens"
   elif [[ ! "$USDG" =~ ^0x[0-9a-fA-F]{40}$ ]]; then
     bad "USDG_ADDRESS is not an address: $USDG"
     also "cd $APP_DIR && ./deploy/set-env.sh USDG_ADDRESS 0x..."
@@ -271,7 +273,10 @@ else
         warn "no USD anchor yet — first sync at ${PCT:-?}% of the chain. This resolves itself."
       else
         bad "caught up, and no ETH/USDG pool found — every page is on the waiting panel"
-        also "runuser -u $APP_USER -- npm run --prefix $APP_DIR find:tokens"
+        # The indexer's own tables are the authoritative list of what this
+        # chain trades; a chain scan from head only sees pools created in the
+        # window it scans, and the anchor pool was created once, long ago.
+        also "runuser -u $APP_USER -- npm run --prefix $APP_DIR tokens:indexed"
       fi
       ;;
     misconfigured)

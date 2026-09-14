@@ -30,6 +30,7 @@ import { decodeEventLog, getAddress } from 'viem';
 import { CHAIN, CONTRACTS } from '../../lib/chain';
 import { ERC20_ABI, POOL_MANAGER_ABI, V3_FACTORY_ABI } from '../chain/abi';
 import { rpc, withFailover } from '../chain/client';
+import { scanLogsBackwards } from '../chain/logs';
 // Deliberately NOT `../env`: that validates DATABASE_URL at import, and this
 // script's whole purpose is to check the chain before the database matters.
 // It used to import it and died on a variable it never used.
@@ -77,50 +78,45 @@ async function emitsAny(
   eventNames: string[],
   windows = 40,
   windowSize = 5_000n,
-): Promise<{ found: string[]; logs: number; scanned: bigint }> {
+): Promise<{ found: string[]; logs: number; scanned: bigint; gaveUp: string | null }> {
   const head = await rpc((c) => c.getBlockNumber(), 'getBlockNumber');
   const found = new Set<string>();
-  let to = head;
-  let scanned = 0n;
   let seen = 0;
 
-  for (let i = 0; i < windows && to > 0n; i++) {
-    const from = to > windowSize ? to - windowSize + 1n : 0n;
-    let logs: { data: `0x${string}`; topics: string[] }[] = [];
-    try {
-      logs = (await rpc(
-        (c) => c.getLogs({ address: getAddress(address), fromBlock: from, toBlock: to }),
-        `getLogs(${from}-${to})`,
-      )) as never;
-    } catch (error) {
-      warn(`getLogs failed for ${address} at ${from}-${to}: ${(error as Error).message}`);
-      break;
-    }
-
-    scanned += to - from + 1n;
-    seen += logs.length;
-    for (const log of logs) {
-      try {
-        const decoded = decodeEventLog({
-          abi: abi as never,
-          data: log.data,
-          topics: log.topics as never,
-        });
-        // `abi as never` loses the event-name type, so narrow it back here
-        // rather than trusting it.
-        const name = decoded.eventName as string | undefined;
-        if (typeof name === 'string' && eventNames.includes(name)) found.add(name);
-      } catch {
-        // A log this contract emits that is not in our ABI. Not a problem —
-        // it just is not one of the events we subscribe to.
+  // The walk narrows on a refusal rather than giving up — an earlier version
+  // asked for 5,000 blocks, was refused by every endpoint, and reported "no
+  // logs in the last 0 blocks" as a FAILURE of the address. It was a failure
+  // of the request.
+  const result = await scanLogsBackwards({
+    address,
+    head,
+    maxWindows: windows,
+    startWindow: windowSize,
+    onRefusal: (width, message) =>
+      warn(`endpoints refused ${width} blocks (${message}) — narrowing`),
+    onWindow: (logs) => {
+      seen += logs.length;
+      for (const log of logs) {
+        try {
+          const decoded = decodeEventLog({
+            abi: abi as never,
+            data: log.data,
+            topics: log.topics as never,
+          });
+          // `abi as never` loses the event-name type, so narrow it back here
+          // rather than trusting it.
+          const name = decoded.eventName as string | undefined;
+          if (typeof name === 'string' && eventNames.includes(name)) found.add(name);
+        } catch {
+          // A log this contract emits that is not in our ABI. Not a problem —
+          // it just is not one of the events we subscribe to.
+        }
       }
-    }
-    // Stop once every event we care about has been seen at least once.
-    if (found.size === eventNames.length) break;
-    if (from === 0n) break;
-    to = from - 1n;
-  }
-  return { found: [...found], logs: seen, scanned };
+      // Stop once every event we care about has been seen at least once.
+      return found.size < eventNames.length;
+    },
+  });
+  return { found: [...found], logs: seen, scanned: result.scanned, gaveUp: result.gaveUp };
 }
 
 async function main(): Promise<void> {
@@ -177,6 +173,13 @@ async function main(): Promise<void> {
         'but NONE of them decode as v4 PoolManager events. This is almost certainly ' +
         'the wrong contract.',
     );
+  } else if (manager.gaveUp) {
+    // Nothing was served at any width. That says something about the
+    // endpoints, not the address, and must not be reported as the address.
+    fail(
+      `could not read logs from any endpoint even at the narrowest window: ${manager.gaveUp}. ` +
+        'Set RPC_URLS to an endpoint that serves eth_getLogs and run this again.',
+    );
   } else {
     fail(
       `no logs at all from ${CONTRACTS.poolManager} in the last ${manager.scanned} blocks. ` +
@@ -191,9 +194,13 @@ async function main(): Promise<void> {
   const tokens: [string, string, number][] = [['WETH', CONTRACTS.weth, 18]];
   if (usdg) tokens.push(['USDG', usdg, 6]);
   else
-    fail(
-      'USDG_ADDRESS is not set. The WETH/USDG pool is the only path to a USD ' +
-        'figure (§4.3); without it every dollar amount on the site reads zero.',
+    // Not a failure since §17: the indexer discovers the anchor from the tokens
+    // it indexes, so an unset override is the normal state. This script once
+    // failed on it and told the operator not to start the sync — over a value
+    // the sync itself would have found.
+    warn(
+      'USDG_ADDRESS is not set — the USD anchor will be discovered from indexed tokens. ' +
+        'Set it only to pin a specific token; `npm run tokens:indexed` lists the candidates.',
     );
 
   for (const [label, address, expectedDecimals] of tokens) {

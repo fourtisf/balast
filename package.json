@@ -17,6 +17,7 @@
     "doctor": "bash deploy/doctor.sh",
     "verify:chain": "tsx server/scripts/verify-chain.ts",
     "find:tokens": "tsx server/scripts/find-tokens.ts",
+    "tokens:indexed": "tsx server/scripts/indexed-tokens.ts",
     "db:migrate": "prisma migrate deploy",
     "db:dev": "prisma migrate dev",
     "db:studio": "prisma studio",

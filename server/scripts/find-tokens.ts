@@ -26,9 +26,13 @@ import { decodeEventLog, getAddress } from 'viem';
 import { CHAIN, CONTRACTS, NATIVE_ETH } from '../../lib/chain';
 import { ERC20_ABI, POOL_MANAGER_ABI } from '../chain/abi';
 import { rpc } from '../chain/client';
+import { scanLogsBackwards } from '../chain/logs';
 import { RPC_URLS } from '../chain/endpoints';
 
-/** Blocks per getLogs call; public endpoints cap this well below 10k. */
+/**
+ * First width asked for. Public endpoints cap `eth_getLogs` well below this
+ * and none say where; the walk halves on each refusal until one answers.
+ */
 const WINDOW = 5_000n;
 /** How many windows to walk back before giving up. */
 const MAX_WINDOWS = Number(process.env.FIND_WINDOWS ?? 60);
@@ -50,71 +54,70 @@ async function main(): Promise<void> {
   const head = await rpc((c) => c.getBlockNumber(), 'getBlockNumber');
   const seen = new Map<string, TokenSeen>();
   let earliestInitialize: bigint | null = null;
-  let to = head;
   let scanned = 0n;
   let pools = 0;
 
-  for (let i = 0; i < MAX_WINDOWS && to > 0n; i++) {
-    const from = to > WINDOW ? to - WINDOW + 1n : 0n;
-    let logs: { data: `0x${string}`; topics: string[]; blockNumber: bigint }[] = [];
-    try {
-      logs = (await rpc(
-        (c) =>
-          c.getLogs({
-            address: getAddress(CONTRACTS.poolManager),
-            fromBlock: from,
-            toBlock: to,
-          }),
-        `getLogs(${from}-${to})`,
-      )) as never;
-    } catch (error) {
-      process.stdout.write(`  getLogs failed at ${from}-${to}: ${(error as Error).message}\n`);
-      break;
-    }
-    scanned += to - from + 1n;
-
-    for (const log of logs) {
-      let decoded;
-      try {
-        decoded = decodeEventLog({
-          abi: POOL_MANAGER_ABI,
-          data: log.data,
-          topics: log.topics as never,
-        });
-      } catch {
-        continue;
-      }
-      if (decoded.eventName !== 'Initialize') continue;
-      pools++;
-      if (earliestInitialize === null || log.blockNumber < earliestInitialize) {
-        earliestInitialize = log.blockNumber;
-      }
-      const args = decoded.args as Record<string, unknown>;
-      for (const key of ['currency0', 'currency1'] as const) {
-        const address = (args[key] as string).toLowerCase();
-        const entry = seen.get(address);
-        if (entry) {
-          entry.pools++;
-          if (log.blockNumber < entry.firstBlock) entry.firstBlock = log.blockNumber;
-        } else {
-          seen.set(address, { address, pools: 1, firstBlock: log.blockNumber });
+  const walk = await scanLogsBackwards({
+    address: CONTRACTS.poolManager,
+    head,
+    maxWindows: MAX_WINDOWS,
+    startWindow: WINDOW,
+    onRefusal: (width, message) =>
+      process.stdout.write(`  endpoints refused ${width} blocks (${message}) — narrowing\n`),
+    onWindow: (logs, from, to) => {
+      for (const log of logs) {
+        let decoded;
+        try {
+          decoded = decodeEventLog({
+            abi: POOL_MANAGER_ABI,
+            data: log.data,
+            topics: log.topics as never,
+          });
+        } catch {
+          continue;
+        }
+        if (decoded.eventName !== 'Initialize') continue;
+        pools++;
+        if (earliestInitialize === null || log.blockNumber < earliestInitialize) {
+          earliestInitialize = log.blockNumber;
+        }
+        const args = decoded.args as Record<string, unknown>;
+        for (const key of ['currency0', 'currency1'] as const) {
+          const address = (args[key] as string).toLowerCase();
+          const entry = seen.get(address);
+          if (entry) {
+            entry.pools++;
+            if (log.blockNumber < entry.firstBlock) entry.firstBlock = log.blockNumber;
+          } else {
+            seen.set(address, { address, pools: 1, firstBlock: log.blockNumber });
+          }
         }
       }
-    }
-
-    process.stdout.write(
-      `\r  scanned ${scanned} blocks, ${pools} pool(s), ${seen.size} token(s)   `,
-    );
-    if (from === 0n) break;
-    to = from - 1n;
-  }
+      scanned = head - from + 1n;
+      process.stdout.write(
+        `\r  scanned ${scanned} blocks (${from}-${to}), ${pools} pool(s), ${seen.size} token(s)   `,
+      );
+    },
+  });
   process.stdout.write('\n\n');
 
+  if (walk.gaveUp) {
+    // Nothing was served at any width: a fact about the endpoints, and it
+    // must not be reported as a fact about the chain.
+    process.stdout.write(
+      `Could not read logs from any endpoint even at the narrowest window: ${walk.gaveUp}\n` +
+        'Set RPC_URLS to an endpoint that serves eth_getLogs and run this again.\n\n',
+    );
+    process.exitCode = 1;
+    return;
+  }
   if (seen.size === 0) {
     process.stdout.write(
       `No Initialize events in the last ${scanned} blocks.\n\n` +
         'Either the PoolManager address is wrong — run `npm run verify:chain` —\n' +
-        'or there is no v4 activity in that window. Widen it with FIND_WINDOWS=200.\n\n',
+        'or no pool was CREATED in that window. This scan only sees pool creation;\n' +
+        'once the indexer has run, `npm run tokens:indexed` lists every token it has\n' +
+        'seen, from its own tables, without touching an endpoint.\n\n',
     );
     process.exitCode = 1;
     return;

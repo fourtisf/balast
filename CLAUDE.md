@@ -1179,3 +1179,43 @@ Unchanged and still open: `V3_FACTORY` and `LAUNCHPAD_HOOKS` (§14), the
 six-hours-per-tick simulator clock and `/positions`'s forward-looking *Est.
 fee yield* (§12), and the protocol fee's immutable cap before P2 deploys.
 
+### Postscript: the deploy that deployed the wrong branch, and two tools that lied
+
+The first deploy after §18 changed nothing on the site, and the reason is
+worth keeping. `deploy.sh` on the box hardcoded the previous session's
+branch, so `bash deploy.sh` fetched, built and reloaded that branch and
+reported success. The version of `deploy.sh` that reads `BRANCH` from the
+environment only helps once it is on disk — so the first deploy of any new
+branch is a manual `git checkout` followed by `deploy.sh`, and the doc says
+so now rather than assuming.
+
+The same box then showed what the first sync actually looks like: block
+3,079,887 of ~62.6 million, chain time seventy days behind head, 665 pools
+and 44k swaps already in the tables. That is the `syncing` case §18 added
+the progress bar for, and it means the anchor may simply not have been
+reached yet — waiting is correct, and the native-ether fix is what makes the
+wait end when it is.
+
+Two operator tools then invented failures. `verify:chain` and `find:tokens`
+each asked every endpoint for 5,000 blocks of logs, were refused by all four
+— the caps differ and none are announced — gave up on the first refusal, and
+reported "no events in the last 0 blocks" as a fact about the PoolManager
+address. `verify:chain` also still failed on an unset `USDG_ADDRESS`, a
+value the indexer had been discovering for itself since §17, and told the
+operator not to start the sync. `deploy/doctor.sh` did the same. A
+diagnostic that reports its own limitation as the patient's fault is the
+worst kind (§17), and both did.
+
+`server/chain/logs.ts` is now the one backwards walk, and it narrows on a
+refusal the way the poller does — the same range, retried at half the width,
+nothing skipped — with a test against a capped fake endpoint. Both scripts
+use it, and a walk that is refused even at the floor is reported as an
+endpoint problem, never as an address problem.
+
+And a scan from head can only ever see pools *created* in the window it
+scans; the anchor pool was created once, months ago. `npm run tokens:indexed`
+reads the indexer's own tables instead — every token it has met, ranked the
+way the anchor search ranks — and prints exactly the resolution the indexer
+and the API would make. It touches no endpoint, so it works when every public
+RPC is refusing, which on this chain is the normal state.
+
