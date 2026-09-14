@@ -208,10 +208,10 @@ function Row({
       >
         {/* An FDV is marked, because calling it market cap overstates every
             token with a vesting schedule (§7). */}
-        {usd(pool.marketCapUsd)}
+        {pool.marketCapUsd > 0 ? usd(pool.marketCapUsd) : '—'}
         {pool.marketCapIsFdv && pool.marketCapUsd > 0 ? <i className="fdv">fdv</i> : null}
       </td>
-      <FlashTd className="r" text={pool.change24hPct.toFixed(1)}>
+      <FlashTd className="r" text={pool.change24hPct === null ? '—' : pool.change24hPct.toFixed(1)}>
         <Change pct={pool.change24hPct} />
       </FlashTd>
 
@@ -244,7 +244,7 @@ function Row({
       <td className="r num hide-a muted">{age}</td>
       <td className="r hide-m">
         <div style={{ position: 'relative' }}>
-          <AreaSpark values={pool.feeHistory} negative={pool.change24hPct < 0} />
+          <AreaSpark values={pool.feeHistory} negative={(pool.change24hPct ?? 0) < 0} />
           <button
             className="stake-btn"
             onClick={(e) => {

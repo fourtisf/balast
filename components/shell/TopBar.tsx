@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
-import { count, duration, usdExact } from '@/lib/format';
+import { count, duration, usdExact, usdHeadline } from '@/lib/format';
 
 /** Above this the indexer is behind and the top bar has to say so (§7). */
 const LAG_THRESHOLD_SECONDS = 30;
@@ -50,11 +50,11 @@ export function TopBar() {
             <path d="M12 3l9 5-9 5-9-5 9-5z" />
             <path d="M3 13l9 5 9-5" />
           </Stat>
-          <Stat label="Total fees" value={usdExact(global.totalFeesUsd)}>
+          <Stat label="Total fees" value={usdHeadline(global.totalFeesUsd)}>
             <path d="M9 15l6-6M8 8h.01M16 16h.01" />
             <circle cx="12" cy="12" r="9" />
           </Stat>
-          <Stat label="TVL" value={usdExact(global.tvlUsd)}>
+          <Stat label="TVL" value={usdHeadline(global.tvlUsd)}>
             <path d="M12 3s6 6.5 6 10a6 6 0 11-12 0c0-3.5 6-10 6-10z" />
           </Stat>
           <Stat label="ETH price" value={usdExact(global.ethPriceUsd, 2)}>

@@ -230,3 +230,26 @@ describe('buildSnapshot', () => {
     expect(tiers).toEqual([5, 30, 30, 100]);
   });
 });
+
+describe('the listing bar', () => {
+  it('hides a token with no readable supply below the bar, and never the ether market', async () => {
+    // MOONCAT's contract does not answer totalSupply(), so its FDV is zero;
+    // at any positive bar it is unlisted — still indexed, just not shown.
+    // The anchor pool's traded side is ether, whose FDV is zero by
+    // construction (§15) rather than by size, so it is listed regardless.
+    const filtered = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 1_000_000 });
+    expect(filtered).not.toBeNull();
+    const symbols = filtered!.pools.map((p) => p.token.symbol);
+    expect(symbols).not.toContain('MOONCAT');
+    expect(symbols).toContain('WETH');
+    expect(filtered!.pools.length).toBeLessThan(snapshot.pools.length);
+
+    // The bar is a listing rule, not a data rule: the header sums the pools
+    // it shows (§12), so it moves with the list rather than contradicting it.
+    expect(filtered!.global.tvlUsd).toBeLessThanOrEqual(snapshot.global.tvlUsd);
+
+    // And a bar of zero is the full board.
+    const everything = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0 });
+    expect(everything!.pools.length).toBe(snapshot.pools.length);
+  });
+});

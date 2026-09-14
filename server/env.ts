@@ -67,6 +67,19 @@ export const env = {
   /** Seconds between passes when already caught up to head. */
   pollIntervalMs: int('INDEXER_POLL_MS', 1_000),
 
+  /**
+   * Minimum fully diluted value, in USD, for a pool's token to be listed.
+   *
+   * A young chain's PoolManager is mostly dust — thousands of launchpad
+   * tokens with a few dollars of depth — and a board that lists all of it
+   * buries the pools anyone would stake into. Pools below this are still
+   * indexed, still counted in /api/health, and reappear the moment they
+   * cross it. The ether/USDG pools are exempt: ether has no supply to read,
+   * so its FDV is zero by construction (§15), and it is the chain's main
+   * market. Set to 0 to list everything.
+   */
+  listingMinFdvUsd: int('LISTING_MIN_FDV_USD', 1_000_000),
+
   apiPort: int('API_PORT', 3001),
   apiHost: process.env.API_HOST ?? '127.0.0.1',
 

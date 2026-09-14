@@ -15,6 +15,9 @@ const url =
   'postgresql://postgres@127.0.0.1:5433/balast_test?schema=public';
 
 process.env.DATABASE_URL = url;
+// The fixture's tokens are small; the listing threshold is exercised by the
+// one test that sets it, and must not silently thin every other suite's board.
+process.env.LISTING_MIN_FDV_USD ??= '0';
 // Never allow a test run to migrate or truncate a real database.
 if (!/balast_test/.test(url)) {
   throw new Error(

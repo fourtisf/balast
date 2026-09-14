@@ -33,6 +33,7 @@ import type {
 } from '../../lib/data/types';
 import { MIN_DATA_HOURS, YIELD_WINDOW_HOURS } from '../../lib/yield';
 import { prisma } from '../db';
+import { env } from '../env';
 import { resolveUsdg } from '../indexer/anchor';
 import { isEtherSql, tradedSide } from '../indexer/aggregate';
 import { POOL_MANAGER_CURSOR } from '../indexer/poller';
@@ -49,6 +50,11 @@ export interface SnapshotOptions {
    * own tokens, the same way the indexer does it.
    */
   usdgAddress?: string | null;
+  /**
+   * Minimum fully diluted value for a pool's token to be listed. Defaults to
+   * `LISTING_MIN_FDV_USD`; ether/USDG pools are always listed (see env.ts).
+   */
+  minFdvUsd?: number;
 }
 
 interface PoolQueryRow {
@@ -87,11 +93,14 @@ interface PoolQueryRow {
  * measured back from it, so the figures describe a consistent moment rather
  * than a mixture of chain time and wall time.
  */
-async function queryPools(usdg: string, asOf: Date): Promise<PoolQueryRow[]> {
+async function queryPools(usdg: string, asOf: Date, minFdvUsd: number): Promise<PoolQueryRow[]> {
   const weth = CONTRACTS.weth.toLowerCase();
   const usdgLower = usdg.toLowerCase();
   if (!/^0x[0-9a-fA-F]{40}$/.test(usdgLower)) {
     throw new Error(`USDG_ADDRESS is not an address: ${JSON.stringify(usdg)}`);
+  }
+  if (!Number.isFinite(minFdvUsd) || minFdvUsd < 0) {
+    throw new Error(`minFdvUsd must be a non-negative number, got ${String(minFdvUsd)}`);
   }
 
   /** Pick a column from whichever side of the pool is the traded one. */
@@ -289,8 +298,16 @@ async function queryPools(usdg: string, asOf: Date): Promise<PoolQueryRow[]> {
     LEFT JOIN priced pthen ON pthen.pool_id = p.id AND pthen.moment = pr.since_24h
     -- A pool with neither WETH nor USDG on a side cannot be priced through
     -- the one allowed path, so it is not listed rather than listed at zero.
-    WHERE ${isEtherSql('p.token0', weth)} OR lower(p.token0) = '${usdgLower}'
-       OR ${isEtherSql('p.token1', weth)} OR lower(p.token1) = '${usdgLower}'
+    WHERE (${isEtherSql('p.token0', weth)} OR lower(p.token0) = '${usdgLower}'
+       OR ${isEtherSql('p.token1', weth)} OR lower(p.token1) = '${usdgLower}')
+      -- The listing bar (env.ts LISTING_MIN_FDV_USD): dust stays indexed and
+      -- unlisted. The ether/USDG market is exempt — ether's FDV is zero by
+      -- construction, not by size.
+      AND (
+        COALESCE(ps.mc_usd, 0) >= ${minFdvUsd}
+        OR (${isEtherSql('p.token0', weth)} AND lower(p.token1) = '${usdgLower}')
+        OR (lower(p.token0) = '${usdgLower}' AND ${isEtherSql('p.token1', weth)})
+      )
     ORDER BY COALESCE(ps.tvl_usd, 0) DESC
   `;
 
@@ -344,7 +361,8 @@ function toPool(row: PoolQueryRow): Pool {
     marketCapUsd: row.mc_usd,
     marketCapIsFdv: row.mc_usd > 0,
     tvlUsd: row.tvl_usd,
-    change24hPct: row.change_24h_pct ?? 0,
+    // Null stays null: no price a day ago is "unknown", and the row says so.
+    change24hPct: row.change_24h_pct,
     fees24hUsd: row.fees_24h_usd,
     feesWindowUsd: row.fees_window_usd,
     feeWindowHours: row.window_hours,
@@ -481,7 +499,7 @@ export async function buildSnapshot(
 
   const asOf = cursor.lastIndexedAt;
   const [rows, vaults, portfolio] = await Promise.all([
-    queryPools(anchor.address, asOf),
+    queryPools(anchor.address, asOf, options.minFdvUsd ?? env.listingMinFdvUsd),
     queryVaults(),
     queryPortfolio(options.wallet ?? null),
   ]);
@@ -495,8 +513,14 @@ export async function buildSnapshot(
   const fees24hUsd = pools.reduce((a, p) => a + p.fees24hUsd, 0);
   const volume24hUsd = pools.reduce((a, p) => a + p.volume24hUsd, 0);
   const stakers = vaults.reduce((a, v) => a + v.stakers, 0);
+  // Depth-weighted over the pools whose change is KNOWN. A pool with no
+  // price a day ago is left out of the average rather than counted as 0%.
+  const known = pools.filter((p) => p.change24hPct !== null);
+  const knownTvl = known.reduce((a, p) => a + p.tvlUsd, 0);
   const change24hPct =
-    tvlUsd > 0 ? pools.reduce((a, p) => a + p.change24hPct * p.tvlUsd, 0) / tvlUsd : 0;
+    knownTvl > 0
+      ? known.reduce((a, p) => a + (p.change24hPct as number) * p.tvlUsd, 0) / knownTvl
+      : 0;
 
   const [totals] = await prisma.$queryRaw<{ fees_usd: number; positions: number }[]>`
     SELECT

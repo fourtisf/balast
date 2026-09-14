@@ -213,6 +213,8 @@ td.fd{animation:fd 1.1s ease-out}
 .tok .s{color:var(--fg-3);font-size:11.5px;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:96px}
 .chg{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;white-space:nowrap}
 .chg.up{color:var(--ac)}.chg.down{color:var(--red)}
+/* Unknown: no colour, because colour here means a direction (§5). */
+.chg.none{color:var(--fg-3);font-weight:500}
 .depth-bar{display:inline-block;width:52px;height:3px;background:var(--raise);border-radius:2px;overflow:hidden;vertical-align:middle;margin-right:8px}
 .depth-bar i{display:block;height:100%;background:var(--ac);border-radius:2px}
 .mini{width:58px;height:28px;vertical-align:middle;display:block;margin-left:auto}

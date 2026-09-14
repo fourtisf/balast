@@ -121,7 +121,12 @@ export function AwaitingIndexer() {
             // the moment that pool is indexed.
             health?.status === 'no-anchor'
             ? 'Looking for the USD anchor'
-            : 'Waiting for the indexer';
+            : // Blocks are indexed and priced; the page simply has not
+              // received its first snapshot yet. Saying "no indexed blocks"
+              // here contradicted the progress line directly beneath it.
+              health?.status === 'syncing' || health?.status === 'behind' || health?.status === 'ok'
+              ? 'Loading the snapshot'
+              : 'Waiting for the indexer';
 
   return (
     <div className="awaiting" role="status">
@@ -132,9 +137,12 @@ export function AwaitingIndexer() {
             ? 'Blocks are being indexed, but no WETH/USDG pool has turned up yet, ' +
               'so nothing has a dollar figure. This resolves itself as soon as one ' +
               'is indexed — no placeholder numbers in the meantime.'
-            : 'No indexed blocks yet, so there is nothing honest to show. The boards ' +
-              'appear as soon as the first swap is attributed — no placeholder ' +
-              'numbers in the meantime.'}
+            : health?.status === 'syncing' || health?.status === 'behind' || health?.status === 'ok'
+              ? 'The indexer has priced data; the first snapshot is on its way. The ' +
+                'boards appear as soon as it arrives — no placeholder numbers in the meantime.'
+              : 'No indexed blocks yet, so there is nothing honest to show. The boards ' +
+                'appear as soon as the first swap is attributed — no placeholder ' +
+                'numbers in the meantime.'}
         </p>
         {health?.message ? <p className="aw-why">{health.message}</p> : null}
         <SyncProgress health={health} />

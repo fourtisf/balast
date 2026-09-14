@@ -21,9 +21,20 @@ export function usdExact(n: number, fractionDigits = 0): string {
   })}`;
 }
 
-/** A signed percentage, e.g. +11.2% / −4.0%. */
-export function signedPct(n: number, digits = 1): string {
+/** A signed percentage, e.g. +11.2% / −4.0%. Unknown is an em dash, never +0.0%. */
+export function signedPct(n: number | null, digits = 1): string {
+  if (n === null || !Number.isFinite(n)) return '—';
   return `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(digits)}%`;
+}
+
+/**
+ * A headline figure: exact with separators while it fits, compact once it
+ * would not. The prototype's top bar is exact ("$4,912,440"); at $3.8M the
+ * TVL stat clipped to "$3,801,09" in a 44px pill, which reads as a number
+ * that is simply wrong.
+ */
+export function usdHeadline(n: number): string {
+  return Math.abs(n) >= 1e6 ? usd(n) : usdExact(n);
 }
 
 export function count(n: number): string {

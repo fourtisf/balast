@@ -76,7 +76,11 @@ export function MiniCards() {
             <div className="n">{mostTraded.token.symbol}</div>
             <div className="sub">
               <b>{count(mostTraded.trades24h)} trades</b> ·{' '}
-              {usd(mostTraded.marketCapUsd)} {mostTraded.marketCapIsFdv ? 'FDV' : 'MC'}
+              {/* Zero means no supply was read — ether has none to read — and
+                  §15 says that is an em dash, not a dollar figure. */}
+              {mostTraded.marketCapUsd > 0
+                ? `${usd(mostTraded.marketCapUsd)} ${mostTraded.marketCapIsFdv ? 'FDV' : 'MC'}`
+                : '— MC'}
             </div>
           </div>
         </div>

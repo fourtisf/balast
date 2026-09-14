@@ -72,7 +72,12 @@ export interface Pool {
    */
   marketCapIsFdv: boolean;
   tvlUsd: number;
-  change24hPct: number;
+  /**
+   * Null when there is no price 24h ago to compare with — a pool younger
+   * than a day, or an anchor that did not exist yet. Rendered as an em dash;
+   * coercing it to zero painted "+0.0%" in green over an unknown (§7).
+   */
+  change24hPct: number | null;
   fees24hUsd: number;
   /** Fees over the trailing 7d, or over the pool's whole life if younger. */
   feesWindowUsd: number;

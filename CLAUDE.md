@@ -1286,3 +1286,44 @@ read as a dead poller.
 first sync logs every pass for forty hours, and without rotation the first
 symptom of that is a full disk.
 
+### The first board: dust, `0000…0000`, and three figures that claimed too much
+
+With the boards rendering, the listing showed what a young chain's
+PoolManager actually contains, and four things needed saying.
+
+**The listing bar.** 2,343 pools, most of them launchpad dust with a few
+dollars of depth, sorted by volume — the pools anyone would stake into were
+buried. `LISTING_MIN_FDV_USD` (env, default $1M, `set-env.sh` to tune) is
+the bar for a pool's token to be listed. Below it a pool stays indexed and
+counted in `/api/health`, and reappears the moment it crosses. The
+ether/USDG market is exempt: ether has no supply to read, so its FDV is zero
+by construction (§15), not by size. The bar is applied in the snapshot query,
+so the header still sums the pools it shows (§12). **This is ALFA's number**;
+$1M is a first guess at "big", not a measurement.
+
+**`0000…0000 / Unknown token` as the most-traded market.** That row is ether.
+It was written by the version of `readToken` that did not know address(0)
+(§18), and `tokens` rows are written once and left alone — right for a
+contract's facts, wrong for a row that was wrong. `repairNativeToken` asserts
+the constants on every start.
+
+**Three claims about unknowns.** `$0 MC` for ether, where §15 says an em
+dash; `▲ +0.0%` in green for a pool with no price a day ago — the anchor was
+younger than a day in chain time, so *every* row said it — where the honest
+figure is a dash in no colour; and the top bar clipping `$3,801,09x` to
+`$3,801,09`, a number that is simply wrong. `change24hPct` is nullable now
+and rendered as a dash, the headline average is weighted over the pools
+whose change is known, and headline figures go compact past $1M.
+
+**The panel said "no indexed blocks" over a line saying which block.** The
+first page load can arrive before the first snapshot does; with the indexer
+priced and syncing, the copy now says the snapshot is loading rather than
+that nothing has been indexed.
+
+**Logos.** Every token has its derived mark; real logos come only from a
+token list (§4, §17). Robinhood Chain has none, and this session cannot
+verify whether any aggregator carries the chain, so nothing is wired to a
+guessed URL. With the bar in place the listed set is small enough to curate:
+`config/tokens.json`, Uniswap token-list shape, `logoURI` only, picked up on
+the indexer's next pass.
+

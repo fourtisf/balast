@@ -22,6 +22,7 @@ import {
   ensureTokens,
   findAnchorPool,
   refreshSupplies,
+  repairNativeToken,
   type TokenReader,
 } from './discovery';
 import {
@@ -146,6 +147,8 @@ export class Poller {
    * rather than for the hours this pass touched. See the pass body.
    */
   private lastAnchorAddress: string | null = null;
+  /** The native-ether row is asserted once per process; see repairNativeToken. */
+  private nativeRepaired = false;
   private readonly startBlock: bigint;
   /**
    * Blocks per pass, which ADAPTS as it goes.
@@ -419,6 +422,11 @@ export class Poller {
       read: this.tokenReader,
     });
     const bounds = { fromBlock: from, toBlock: to };
+
+    if (!this.nativeRepaired) {
+      await repairNativeToken();
+      this.nativeRepaired = true;
+    }
 
     // Token flow needs no anchor — it is amounts, not dollars — so it is
     // staged every pass. It used to be skipped along with the priced tables

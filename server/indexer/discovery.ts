@@ -152,6 +152,28 @@ export async function readToken(address: string): Promise<TokenFacts> {
   };
 }
 
+/**
+ * Put the native ether row right, whatever an earlier version wrote there.
+ *
+ * Rows in `tokens` are written once and left alone (`ensureTokens`), which
+ * is correct for a contract's own facts and wrong for a row that was written
+ * by a `readToken` that did not know address(0) is ether: that version
+ * recorded `0000…0000 / Unknown token`, and the live site showed exactly that
+ * as its most-traded market. The facts here are constants, not reads, so
+ * they are asserted on every start rather than fetched once.
+ */
+export async function repairNativeToken(): Promise<void> {
+  await prisma.token.updateMany({
+    where: { address: NATIVE_ETH },
+    data: {
+      symbol: CHAIN.nativeCurrency.symbol,
+      name: CHAIN.nativeCurrency.name,
+      decimals: CHAIN.nativeCurrency.decimals,
+      totalSupply: null,
+    },
+  });
+}
+
 /** How a token's facts are obtained. Injectable for the same reason the log
  *  source is: §9's replay proof needs a chain it can reproduce exactly, token
  *  decimals included — and decimals are an input to every price. */
