@@ -89,6 +89,16 @@ if ! grep -qE '^bind 127\.0\.0\.1' /etc/redis/redis.conf; then
 fi
 
 echo "==> clone"
+# Let root use git in this tree too.
+#
+# The checkout is owned by $APP_USER, and git refuses to operate on a
+# repository owned by somebody else — "detected dubious ownership". The
+# scripts all run git as the owner, so they do not need this; a person
+# SSH'd in as root does, and without it their first `git pull` fails in a
+# way that looks like a broken repository rather than a permissions rule.
+git config --global --get-all safe.directory 2>/dev/null | grep -qx "$APP_DIR" \
+  || git config --global --add safe.directory "$APP_DIR"
+
 mkdir -p "$APP_DIR" /var/www/certbot /var/log/balast
 chown -R "$APP_USER:$APP_USER" "$APP_DIR" /var/log/balast
 if [[ -d "$APP_DIR/.git" ]]; then

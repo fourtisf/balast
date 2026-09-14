@@ -34,7 +34,9 @@ if [[ "${BALAST_DEPLOY_STAGE:-}" != "run" ]]; then
   as_app git fetch origin "$BRANCH"
   as_app git checkout -B "$BRANCH" "origin/$BRANCH"
   export BALAST_DEPLOY_STAGE=run
-  echo "==> running $(git rev-parse --short HEAD)"
+  # As the owner: git refuses a repository owned by somebody else, and this
+  # script runs as root against a tree owned by $APP_USER.
+  echo "==> running $(as_app git rev-parse --short HEAD)"
   exec bash "$APP_DIR/deploy/deploy.sh" "$@"
 fi
 

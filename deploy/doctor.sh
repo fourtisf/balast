@@ -41,12 +41,24 @@ pg_url() { printf '%s' "${1%%\?*}"; }
 
 # ---------------------------------------------------------------- the code --
 head_ "code"
+# Every git call runs as the user that owns the checkout.
+#
+# Git refuses to operate on a repository owned by somebody else — "detected
+# dubious ownership" — and this script runs as root against a tree owned by
+# the app user. Run as root it reported a perfectly good checkout as missing,
+# which is a diagnostic tool lying about the first thing it checks.
+git_app() { as_app git -C "$APP_DIR" "$@"; }
+
 if [[ -d "$APP_DIR/.git" ]]; then
-  HEAD_SHA=$(git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null)
-  BRANCH=$(git -C "$APP_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)
-  ok "$APP_DIR on $BRANCH at $HEAD_SHA"
-  git -C "$APP_DIR" fetch --quiet origin "$BRANCH" 2>/dev/null || true
-  BEHIND=$(git -C "$APP_DIR" rev-list --count "HEAD..origin/$BRANCH" 2>/dev/null || echo 0)
+  HEAD_SHA=$(git_app rev-parse --short HEAD)
+  BRANCH=$(git_app rev-parse --abbrev-ref HEAD)
+  if [[ -z "$HEAD_SHA" ]]; then
+    bad "$APP_DIR/.git exists but git will not read it as $APP_USER"
+    first "ls -ld $APP_DIR/.git   # who owns it?"
+  fi
+  ok "$APP_DIR on ${BRANCH:-?} at ${HEAD_SHA:-?}"
+  git_app fetch --quiet origin "$BRANCH" || true
+  BEHIND=$(git_app rev-list --count "HEAD..origin/$BRANCH" || echo 0)
   if [[ "${BEHIND:-0}" -gt 0 ]]; then
     warn "$BEHIND commit(s) behind origin/$BRANCH"
     first "bash $APP_DIR/deploy/deploy.sh"
