@@ -7,7 +7,7 @@ import { StakeDrawer } from '@/components/shell/StakeDrawer';
 import { TopNav } from '@/components/shell/TopNav';
 import { WalletModal } from '@/components/shell/WalletModal';
 import { Toast } from '@/components/ui/Toast';
-import { SITE_URL } from '@/lib/site';
+import { SITE_URL, X_HANDLE } from '@/lib/site';
 import './globals.css';
 
 // Three faces, each with one job (§19): the serif for headlines, the sans
@@ -49,7 +49,7 @@ export const metadata: Metadata = {
       'Deposit into any token on Robinhood Chain and collect swap fees in WETH. No lockups, no emissions.',
     images: [{ url: '/og-card.png', width: 1200, height: 630, alt: 'Balast' }],
   },
-  twitter: { card: 'summary_large_image', images: ['/og-card.png'] },
+  twitter: { card: 'summary_large_image', site: X_HANDLE, images: ['/og-card.png'] },
 };
 
 export const viewport: Viewport = {

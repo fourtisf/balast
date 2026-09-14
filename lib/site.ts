@@ -20,21 +20,22 @@ export const SITE_URL = `https://${DOMAIN}`;
 export const DEFENSIVE_DOMAINS = ['www.balast.xyz'] as const;
 
 /**
- * Community links and the token's contract address.
+ * Where the project talks, and the token's contract address.
  *
- * Set at build time from the environment (NEXT_PUBLIC_*), because they are
- * facts about the project rather than about the code: a handle changes
- * without a commit. On the box: `deploy/set-env.sh NEXT_PUBLIC_X_URL https://x.com/…`
- * then a deploy, since Next.js inlines these when it builds.
+ * X is the one channel: @Balastdotfi, the account the owner named. Telegram
+ * was offered as a second icon and removed at the owner's request. The URL
+ * can still be overridden at build time (`NEXT_PUBLIC_X_URL`, via
+ * `deploy/set-env.sh` then a deploy) so a move costs no commit.
  *
- * An unset link renders as "soon" rather than as a dead link, and an unset
- * contract address renders as "CA · coming soon" — the words the owner asked
- * for, and true until there is one.
+ * An unset contract address renders as "CA · coming soon" — the words the
+ * owner asked for, and true until there is one.
  */
 export const SOCIAL = {
-  x: process.env.NEXT_PUBLIC_X_URL ?? '',
-  telegram: process.env.NEXT_PUBLIC_TELEGRAM_URL ?? '',
+  x: process.env.NEXT_PUBLIC_X_URL || 'https://x.com/Balastdotfi',
 } as const;
+
+/** The X handle, for the site's own metadata; derived so it cannot disagree with the link. */
+export const X_HANDLE = `@${SOCIAL.x.replace(/\/+$/, '').split('/').pop()}`;
 
 /** The token's contract address, once it exists. Empty until then. */
 export const TOKEN_CA = process.env.NEXT_PUBLIC_TOKEN_CA ?? '';

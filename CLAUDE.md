@@ -1806,3 +1806,15 @@ contract-address banner says what the site's masthead says: there is no
 token yet, and any address circulating before it appears there is not
 ours.
 
+### X, and no Telegram
+
+The account is **@Balastdotfi**. `lib/site.ts` carries the link as the
+default rather than waiting on an environment variable, so a plain deploy
+shows it; `NEXT_PUBLIC_X_URL` still overrides it. `X_HANDLE` is derived
+from the link for the page's card metadata, so the two cannot disagree.
+Telegram was removed at the owner's request: the icon, the variable and
+the second row of the footer. `brand/social/COPY.md` holds the posts that
+go with the banners, one per image, each under 280 characters and written
+inside §7: no yield figure, no "APY", nothing the contracts cannot keep
+yet, and the contract-address warning pinned before anything else goes out.
+
