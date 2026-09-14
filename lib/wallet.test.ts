@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { CHAIN } from './chain';
-import { CHAIN_ID_HEX, CHAIN_PARAMS, connectWallet, describeWalletError, ensureChain, type Eip1193Provider } from './wallet';
+import {
+  CHAIN_ID_HEX,
+  CHAIN_PARAMS,
+  KNOWN_WALLETS,
+  connectWallet,
+  describeWalletError,
+  ensureChain,
+  type Eip1193Provider,
+} from './wallet';
 
 /** A fake wallet: method → answer, or a thrown error. Records every call. */
 function provider(answers: Record<string, unknown | (() => never)>): Eip1193Provider & { calls: { method: string; params?: unknown[] }[] } {
@@ -69,6 +77,15 @@ describe('connectWallet', () => {
 
   it('refuses a wallet that returns no account', async () => {
     await expect(connectWallet({ info, provider: provider({ eth_requestAccounts: [] }) })).rejects.toThrow(/no account/);
+  });
+});
+
+describe('KNOWN_WALLETS', () => {
+  it('lists distinct wallets with https install links', () => {
+    const rdns = KNOWN_WALLETS.map((w) => w.rdns);
+    expect(new Set(rdns).size).toBe(rdns.length);
+    for (const w of KNOWN_WALLETS) expect(w.install).toMatch(/^https:\/\//);
+    expect(rdns).toContain('io.metamask');
   });
 });
 

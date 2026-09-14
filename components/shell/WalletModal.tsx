@@ -4,12 +4,18 @@ import { useEffect, useRef, useState } from 'react';
 import { useUi } from '@/components/providers/UiProvider';
 import { EXPLORER_URL } from '@/lib/chain';
 import { shortWallet } from '@/lib/format';
+import { tokenMark } from '@/lib/token-mark';
 import {
+  KNOWN_WALLETS,
+  WALLETCONNECT_PROJECT_ID,
+  WALLETCONNECT_RDNS,
   connectWallet,
+  connectWalletConnect,
   describeWalletError,
   discoverWallets,
   forgetWallet,
   rememberedWallet,
+  restoreWalletConnect,
   silentAccount,
   type AnnouncedWallet,
 } from '@/lib/wallet';
@@ -20,16 +26,18 @@ const FOCUSABLE =
 /**
  * The wallet dialog.
  *
- * Lists every wallet the browser announces (EIP-6963), connects to the one
- * chosen, and — once connected — shows the address with copy, explorer and
- * disconnect. A reload reconnects quietly to the remembered wallet if it
- * still exposes an account; nothing prompts without a click. Traps focus
- * and closes on Escape, like the stake drawer, because a dialog that asks
- * for a wallet is the last place to lose the keyboard.
+ * Always lists the wallets people have — MetaMask, Rabby, Coinbase Wallet,
+ * Phantom, OKX, Trust, Brave — plus any other the browser announces
+ * (EIP-6963), and WalletConnect for a phone when the site has a project id.
+ * An installed wallet connects; one that is not gets an Install link. A
+ * reload reconnects quietly to the remembered wallet if it still exposes an
+ * account; nothing prompts without a click. Traps focus and closes on
+ * Escape, like the stake drawer.
  */
 export function WalletModal() {
   const { walletOpen, closeWallet, wallet, setWallet, showToast } = useUi();
-  const [wallets, setWallets] = useState<AnnouncedWallet[]>([]);
+  const [announced, setAnnounced] = useState<AnnouncedWallet[]>([]);
+  const [session, setSession] = useState<AnnouncedWallet | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const dialog = useRef<HTMLDivElement | null>(null);
@@ -39,30 +47,48 @@ export function WalletModal() {
   // announce itself after the page is up.
   useEffect(() => {
     const stop = discoverWallets((found) => {
-      setWallets((prev) => (prev.some((w) => w.info.uuid === found.info.uuid) ? prev : [...prev, found]));
+      setAnnounced((prev) => (prev.some((w) => w.info.uuid === found.info.uuid) ? prev : [...prev, found]));
     });
     return stop;
   }, []);
 
-  // Quiet reconnect to the remembered wallet, and follow its account changes.
+  // Quiet reconnect to the remembered wallet.
   useEffect(() => {
     const rdns = rememberedWallet();
     if (!rdns || wallet) return;
-    const found = wallets.find((w) => w.info.rdns === rdns);
-    if (!found) return;
     let cancelled = false;
+    if (rdns === WALLETCONNECT_RDNS) {
+      void restoreWalletConnect().then(async (restored) => {
+        if (cancelled || !restored) return;
+        const address = await silentAccount(restored);
+        if (cancelled || !address) return;
+        setSession(restored);
+        setWallet({ address, name: restored.info.name, rdns });
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+    const found = announced.find((w) => w.info.rdns === rdns);
+    if (!found) return;
     void silentAccount(found).then((address) => {
-      if (!cancelled && address) setWallet({ address, name: found.info.name, rdns });
+      if (!cancelled && address) {
+        setSession(found);
+        setWallet({ address, name: found.info.name, rdns });
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [wallets, wallet, setWallet]);
+  }, [announced, wallet, setWallet]);
 
+  // Follow the connected wallet's own account changes and disconnects.
   useEffect(() => {
-    if (!wallet) return;
-    const found = wallets.find((w) => w.info.rdns === wallet.rdns);
-    if (!found?.provider.on || !found.provider.removeListener) return;
+    if (!wallet || !session) return;
+    const provider = session.provider;
+    const on = provider.on?.bind(provider);
+    const off = provider.removeListener?.bind(provider);
+    if (!on || !off) return;
     const onAccounts = (payload: unknown) => {
       const next = Array.isArray(payload) && typeof payload[0] === 'string' ? (payload[0] as string) : null;
       if (!next) {
@@ -73,9 +99,14 @@ export function WalletModal() {
         setWallet({ ...wallet, address: next });
       }
     };
-    found.provider.on('accountsChanged', onAccounts);
-    return () => found.provider.removeListener?.('accountsChanged', onAccounts);
-  }, [wallet, wallets, setWallet, showToast]);
+    const onDisconnect = () => onAccounts([]);
+    on('accountsChanged', onAccounts);
+    on('disconnect', onDisconnect);
+    return () => {
+      off('accountsChanged', onAccounts);
+      off('disconnect', onDisconnect);
+    };
+  }, [wallet, session, setWallet, showToast]);
 
   // Escape closes, Tab cycles inside, focus returns where it came from.
   useEffect(() => {
@@ -111,14 +142,19 @@ export function WalletModal() {
 
   if (!walletOpen) return null;
 
+  const finish = async (candidate: AnnouncedWallet) => {
+    const address = await connectWallet(candidate);
+    setSession(candidate);
+    setWallet({ address, name: candidate.info.name, rdns: candidate.info.rdns });
+    showToast(`Connected to ${candidate.info.name}`);
+    closeWallet();
+  };
+
   const choose = async (candidate: AnnouncedWallet) => {
     setBusy(candidate.info.uuid);
     setError(null);
     try {
-      const address = await connectWallet(candidate);
-      setWallet({ address, name: candidate.info.name, rdns: candidate.info.rdns });
-      showToast(`Connected to ${candidate.info.name}`);
-      closeWallet();
+      await finish(candidate);
     } catch (e) {
       setError(describeWalletError(e));
     } finally {
@@ -126,8 +162,26 @@ export function WalletModal() {
     }
   };
 
-  const disconnect = () => {
+  const chooseWalletConnect = async () => {
+    setBusy(WALLETCONNECT_RDNS);
+    setError(null);
+    try {
+      await finish(await connectWalletConnect());
+    } catch (e) {
+      setError(describeWalletError(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const disconnect = async () => {
+    try {
+      await (session?.provider as { disconnect?: () => Promise<void> } | undefined)?.disconnect?.();
+    } catch {
+      /* the session may already be gone */
+    }
     forgetWallet();
+    setSession(null);
     setWallet(null);
     showToast('Wallet disconnected');
     closeWallet();
@@ -142,6 +196,13 @@ export function WalletModal() {
       showToast(wallet.address);
     }
   };
+
+  // The list: every known wallet, installed or not, then any other wallet
+  // that announced itself, then the phone.
+  const byRdns = new Map(announced.map((w) => [w.info.rdns, w] as const));
+  const known = KNOWN_WALLETS.map((w) => ({ ...w, found: byRdns.get(w.rdns) ?? null }));
+  const others = announced.filter((w) => !KNOWN_WALLETS.some((k) => k.rdns === w.info.rdns));
+  const installed = known.filter((w) => w.found).length + others.length;
 
   return (
     <div className="modal-scrim" onClick={closeWallet} role="presentation">
@@ -190,43 +251,70 @@ export function WalletModal() {
         ) : (
           <>
             <p className="lede">
-              Pick one of the wallets in this browser. Balast never takes custody: your
-              positions stay in your wallet.
+              {installed > 0
+                ? 'Pick a wallet. Balast never takes custody: your positions stay in your wallet.'
+                : 'No wallet extension is installed in this browser. Install one below, or scan with your phone.'}
             </p>
-            {wallets.length === 0 ? (
-              <div className="wallet-empty">
-                <b>No wallet extension found.</b> Install{' '}
-                <a href="https://metamask.io/download/" target="_blank" rel="noopener noreferrer">
-                  MetaMask
-                </a>{' '}
-                or{' '}
-                <a href="https://rabby.io/" target="_blank" rel="noopener noreferrer">
-                  Rabby
-                </a>
-                , then reload this page.
-              </div>
-            ) : (
-              <div className="wallet-list">
-                {wallets.map((w) => (
-                  <button
-                    key={w.info.uuid}
-                    className="wallet-opt"
-                    onClick={() => choose(w)}
-                    disabled={busy !== null}
-                  >
-                    {/* The icon is the wallet's own, as a data: URI per the standard. */}
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={w.info.icon} alt="" />
-                    <span>
-                      <span className="n">{w.info.name}</span>
-                      <span className="s">
-                        {busy === w.info.uuid ? 'Waiting for the wallet…' : w.info.rdns}
-                      </span>
+            <div className="wallet-list">
+              {[...known.filter((w) => w.found).map((w) => w.found!), ...others].map((w) => (
+                <button
+                  key={w.info.uuid}
+                  className="wallet-opt"
+                  onClick={() => choose(w)}
+                  disabled={busy !== null}
+                >
+                  {/* The icon is the wallet's own, as a data: URI per the standard. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={w.info.icon} alt="" />
+                  <span>
+                    <span className="n">{w.info.name}</span>
+                    <span className="s">{busy === w.info.uuid ? 'Waiting for the wallet…' : 'Installed'}</span>
+                  </span>
+                  <span className="act">Connect</span>
+                </button>
+              ))}
+
+              {WALLETCONNECT_PROJECT_ID && (
+                <button className="wallet-opt" onClick={chooseWalletConnect} disabled={busy !== null}>
+                  <span className="wallet-qr" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 14h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z" />
+                    </svg>
+                  </span>
+                  <span>
+                    <span className="n">WalletConnect</span>
+                    <span className="s">
+                      {busy === WALLETCONNECT_RDNS ? 'Waiting for your phone…' : 'Scan with any mobile wallet'}
                     </span>
-                  </button>
-                ))}
-              </div>
-            )}
+                  </span>
+                  <span className="act">Scan</span>
+                </button>
+              )}
+
+              {known
+                .filter((w) => !w.found)
+                .map((w) => {
+                  const mark = tokenMark(w.rdns);
+                  return (
+                    <a
+                      key={w.rdns}
+                      className="wallet-opt off"
+                      href={w.install}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <span className="wallet-mono" style={{ backgroundColor: mark.bg, color: mark.ink }} aria-hidden="true">
+                        {w.name[0]}
+                      </span>
+                      <span>
+                        <span className="n">{w.name}</span>
+                        <span className="s">Not installed</span>
+                      </span>
+                      <span className="act">Install</span>
+                    </a>
+                  );
+                })}
+            </div>
             {error && (
               <p className="hint down" role="alert" style={{ marginTop: 12 }}>
                 {error}

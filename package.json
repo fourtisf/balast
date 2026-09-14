@@ -2,7 +2,7 @@
   "name": "balast",
   "version": "0.1.0",
   "private": true,
-  "description": "Balast \u2014 liquidity layer for Robinhood Chain. P0: shell and simulated data.",
+  "description": "Balast — liquidity layer for Robinhood Chain. P0: shell and simulated data.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -33,6 +33,7 @@
     "@fastify/rate-limit": "^11.2.0",
     "@fastify/websocket": "^11.3.0",
     "@prisma/client": "^6.19.3",
+    "@walletconnect/ethereum-provider": "^2.25.0",
     "fastify": "^5.12.4",
     "ioredis": "^6.0.0",
     "next": "14.2.35",

@@ -517,3 +517,10 @@ h1 em{font-style:italic;color:var(--ac)}
 .wallet-empty{padding:14px;border:1px solid var(--bd-n);border-radius:var(--r);background:var(--panel-2);font-size:13.5px;line-height:1.6;color:var(--fg-2)}
 .wallet-empty a{text-decoration:underline;text-underline-offset:3px;color:var(--fg)}
 .wallet-addr{font-size:13px;word-break:break-all;padding:12px 14px;background:var(--panel-2);border:1px solid var(--bd-n);border-radius:var(--r)}
+.wallet-opt .act{margin-left:auto;font-size:12px;font-weight:600;color:var(--ac-3);flex:none}
+.wallet-opt.off{color:inherit}
+.wallet-opt.off .act{color:var(--fg-3)}
+.wallet-mono{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;font-weight:700;font-size:13px;flex:none}
+.wallet-qr{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:var(--fg);flex:none}
+.wallet-qr svg{width:18px;height:18px;fill:var(--panel)}
+.wallet-list{max-height:min(52vh,420px);overflow-y:auto;padding-right:2px}

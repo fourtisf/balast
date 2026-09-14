@@ -1739,5 +1739,13 @@ Robinhood Chain (switch, or add and switch; declining the switch is not an
 error, nothing here signs), and remembers the wallet so a reload reconnects
 quietly through `eth_accounts`. Connected, the button shows the address and
 the dialog offers copy, explorer and disconnect. It traps focus and closes
-on Escape like the drawer. No WalletConnect yet: that needs a project id
-and a large dependency, and until P2 there is nothing to sign with a phone.
+on Escape like the drawer.
+
+The list is a floor, not a filter: MetaMask, Rabby, Coinbase Wallet,
+Phantom, OKX, Trust and Brave are always shown — installed ones with
+Connect, the rest with an Install link — and any other wallet that announces
+itself is added. WalletConnect, for a phone by QR, appears once
+`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is set (a free project id from
+cloud.reown.com); its provider is loaded only when chosen, because it is a
+large one, and a session survives a reload. Until P2 nothing is signed from
+any of them.
