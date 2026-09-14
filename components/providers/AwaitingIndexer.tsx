@@ -64,23 +64,33 @@ export function AwaitingIndexer() {
     };
   }, []);
 
+  // Four states, and only one of them is somebody's mistake.
   const eyebrow =
     DATA_SOURCE !== 'live'
       ? 'Loading'
       : unreachable
         ? 'The API is not answering'
         : health?.status === 'misconfigured'
-          ? 'The indexer is not configured'
-          : 'Waiting for the indexer';
+          ? 'The indexer is misconfigured'
+          : // Indexing, but no WETH/USDG pool found yet, so nothing has a
+            // dollar figure. Transient and self-healing: it resolves itself
+            // the moment that pool is indexed.
+            health?.status === 'no-anchor'
+            ? 'Looking for the USD anchor'
+            : 'Waiting for the indexer';
 
   return (
     <div className="awaiting" role="status">
       <div className="aw-in">
         <span className="eyebrow">{eyebrow}</span>
         <p>
-          No indexed blocks yet, so there is nothing honest to show. The boards
-          appear as soon as the first swap is attributed — no placeholder
-          numbers in the meantime.
+          {health?.status === 'no-anchor'
+            ? 'Blocks are being indexed, but no WETH/USDG pool has turned up yet, ' +
+              'so nothing has a dollar figure. This resolves itself as soon as one ' +
+              'is indexed — no placeholder numbers in the meantime.'
+            : 'No indexed blocks yet, so there is nothing honest to show. The boards ' +
+              'appear as soon as the first swap is attributed — no placeholder ' +
+              'numbers in the meantime.'}
         </p>
         {health?.message ? <p className="aw-why">{health.message}</p> : null}
         {unreachable ? (

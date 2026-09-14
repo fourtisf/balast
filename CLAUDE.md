@@ -970,3 +970,38 @@ visible signal there.
 reason under the honest-empty message. The waiting page now tells an operator
 what to fix instead of leaving them to guess, which is the difference between
 a blank wall and a diagnosis.
+
+### The anchor finds itself
+
+`USDG_ADDRESS` was the one value nothing could proceed without, and the only
+one no machine could supply — §2 names USDG but not its address. So the
+indexer refused to start, the API refused to start, and the site sat on a "not
+configured" page waiting for a step only a person could take. For hours.
+
+That was the wrong shape for the problem. **The indexer already reads every
+token's symbol off its own contract while discovering pools.** The answer was
+in its own tables the whole time.
+
+`server/indexer/anchor.ts` looks: the token calling itself USDG that trades
+against WETH, ranked by swaps. `USDG_ADDRESS` still overrides it, and a
+*malformed* override is still refused — somebody meant to pin a specific token
+and mistyped it, and quietly pricing the whole site off a different one cannot
+be detected from anywhere downstream.
+
+Where it will not guess: with two tokens claiming the symbol it picks the one
+with real depth, **says which and why**, and reports both. `/api/health`
+carries `usdgSource` and `usdgNote`, because the anchor is the single most
+consequential value in the system — a wrong one makes every dollar figure
+wrong — and it has to be auditable from outside the box.
+
+The ordering works because of a decision made much earlier for a different
+reason. Aggregates are REBUILT, never incremented (§14), so the indexer can
+write raw rows with no anchor at all, discover it several passes later, and
+the next rebuild prices everything retroactively. No second scan of the chain.
+There is a test proving the early hours — indexed before any anchor was
+known — end up carrying USD figures, and another proving the result is
+identical to having configured the address up front.
+
+`START_BLOCK` and `V3_FACTORY` remain genuinely optional rather than
+discovered: the first is a performance choice, the second cannot be inferred
+from logs the factory itself emits.

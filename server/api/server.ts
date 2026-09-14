@@ -21,6 +21,7 @@ import type { MarketSnapshot } from '../../lib/data/types';
 import { prisma } from '../db';
 import { env } from '../env';
 import { POOL_MANAGER_CURSOR } from '../indexer/poller';
+import { resolveUsdg } from '../indexer/anchor';
 import { busKind, subscribeTicks } from './bus';
 import { buildSnapshot } from './snapshot';
 
@@ -40,12 +41,15 @@ const USDG = process.env.USDG_ADDRESS ?? '';
  * same reason, which the waiting page then shows the operator.
  */
 function configurationProblem(): string | null {
-  if (!USDG) {
+  // An UNSET address is no longer a problem: the anchor is discovered from
+  // the chain's own tokens. A malformed one still is — someone meant to pin a
+  // specific token and mistyped it, and quietly discovering a different one
+  // would be worse than saying so.
+  if (USDG && !/^0x[0-9a-fA-F]{40}$/.test(USDG)) {
     return (
-      'USDG_ADDRESS is not set. The WETH/USDG pool is the only path to a USD ' +
-      'figure, so without it every dollar amount would read zero. Run ' +
-      '`npm run find:tokens` on the server, then ' +
-      '`./deploy/set-env.sh USDG_ADDRESS 0x...`.'
+      `USDG_ADDRESS is set but is not an address: ${JSON.stringify(USDG)}. ` +
+      'Fix or remove it — left unset, the anchor is discovered from the ' +
+      'tokens the indexer finds.'
     );
   }
   return null;
@@ -124,7 +128,7 @@ export async function buildServer(): Promise<FastifyInstance> {
     }
     // Coalesce concurrent requests into one query.
     if (!building) {
-      building = buildSnapshot({ usdgAddress: USDG })
+      building = buildSnapshot({ usdgAddress: USDG || null })
         .then((value) => {
           cached = { snapshot: value, at: Date.now() };
           return value;
@@ -160,6 +164,10 @@ export async function buildServer(): Promise<FastifyInstance> {
       SELECT (SELECT COUNT(*) FROM pools)::int AS pools,
              (SELECT COUNT(*) FROM swap_events)::int AS swaps
     `;
+    // Which token is pricing the whole site, and how that was decided. This
+    // is the single most consequential value in the system — a wrong anchor
+    // makes every dollar figure wrong — so it is auditable from outside.
+    const anchor = await resolveUsdg(USDG || null);
 
     // Misconfiguration outranks everything: a never-indexed chain is the
     // SYMPTOM when the indexer cannot start, and reporting the symptom sends
@@ -169,9 +177,11 @@ export async function buildServer(): Promise<FastifyInstance> {
       ? 'misconfigured'
       : cursor === null
         ? 'never-indexed'
-        : lagSeconds !== null && lagSeconds > env.stallSeconds
-          ? 'stalled'
-          : 'ok';
+        : !anchor.address
+          ? 'no-anchor'
+          : lagSeconds !== null && lagSeconds > env.stallSeconds
+            ? 'stalled'
+            : 'ok';
 
     const body = {
       // Kept for anything already reading it, but `status` is the field to
@@ -186,13 +196,17 @@ export async function buildServer(): Promise<FastifyInstance> {
       swaps: counts?.swaps ?? 0,
       bus: busKind(),
       weth: CONTRACTS.weth,
-      usdg: USDG || null,
+      usdg: anchor.address,
+      usdgSource: anchor.source,
+      usdgNote: anchor.note,
       message:
         status === 'misconfigured'
           ? problem!
           : status === 'never-indexed'
             ? 'The indexer has never written a block. Check `pm2 logs balast-indexer`.'
-            : status === 'stalled'
+            : status === 'no-anchor'
+              ? anchor.note
+              : status === 'stalled'
               ? `The indexer is ${Math.round(lagSeconds ?? 0)}s behind, past the ${env.stallSeconds}s ` +
                 'stall threshold. The site is showing numbers that old.'
               : undefined,

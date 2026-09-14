@@ -163,61 +163,90 @@ describe('rate limiting', () => {
   });
 });
 
-describe('a missing USDG_ADDRESS', () => {
+describe('USDG_ADDRESS', () => {
   /**
-   * The API used to throw here and refuse to start — 24 restarts on the real
-   * box, no explanation anywhere, and a front end that could not even ask
-   * what was wrong. A configuration error has to be loudly visible, not
-   * fatal: this is the one process in a position to say what is missing.
+   * Unset is no longer a fault. The anchor is discovered from the chain's own
+   * tokens, because an indexer that refuses to start until a human looks up
+   * an address leaves the site on a "not configured" page indefinitely — it
+   * did, for hours.
    *
-   * `vi.resetModules` because server.ts reads USDG_ADDRESS at import, which
+   * A MALFORMED override is still a fault, and a different one: somebody
+   * meant to pin a specific token and mistyped it, and quietly pricing the
+   * whole site off a different token would be far worse than saying so.
+   *
+   * `vi.resetModules` because server.ts reads the variable at import, which
    * is the behaviour we want in production.
    */
-  let bare: FastifyInstance;
-
-  beforeAll(async () => {
+  async function serverWith(value: string | undefined): Promise<FastifyInstance> {
     vi.resetModules();
     const saved = process.env.USDG_ADDRESS;
-    delete process.env.USDG_ADDRESS;
+    if (value === undefined) delete process.env.USDG_ADDRESS;
+    else process.env.USDG_ADDRESS = value;
     const { buildServer } = await import('./server');
-    bare = await buildServer();
-    await bare.ready();
+    const built = await buildServer();
+    await built.ready();
     if (saved !== undefined) process.env.USDG_ADDRESS = saved;
+    else delete process.env.USDG_ADDRESS;
+    return built;
+  }
+
+  it('starts with none set, and does not call that a misconfiguration', async () => {
+    const bare = await serverWith(undefined);
+    try {
+      const body = (await bare.inject({ method: 'GET', url: '/api/health' })).json();
+      expect(body.status).not.toBe('misconfigured');
+      // On an empty database it is "never-indexed" or "no-anchor" — both
+      // transient and self-healing, neither of them somebody's mistake.
+      expect(['never-indexed', 'no-anchor', 'ok', 'stalled']).toContain(body.status);
+    } finally {
+      await bare.close();
+      vi.resetModules();
+    }
   });
 
-  afterAll(async () => {
-    await bare?.close();
-    vi.resetModules();
+  it('reports which token is pricing the site, and how it was chosen', async () => {
+    // The single most consequential value in the system: a wrong anchor makes
+    // every dollar figure wrong. It has to be auditable from outside.
+    const bare = await serverWith(undefined);
+    try {
+      const body = (await bare.inject({ method: 'GET', url: '/api/health' })).json();
+      expect(body).toHaveProperty('usdgSource');
+      expect(body).toHaveProperty('usdgNote');
+      expect(typeof body.usdgNote).toBe('string');
+      expect(body.usdgNote.length).toBeGreaterThan(10);
+    } finally {
+      await bare.close();
+      vi.resetModules();
+    }
   });
 
-  it('still starts, rather than crash-looping', async () => {
-    // If buildServer had thrown, beforeAll would have failed and we would
-    // never get here. Asserting it answers is the point.
-    const response = await bare.inject({ method: 'GET', url: '/api/health' });
-    expect(response.statusCode).toBe(503);
+  it('refuses a malformed override rather than discovering something else', async () => {
+    const bad = await serverWith('0xnope');
+    try {
+      const health = await bad.inject({ method: 'GET', url: '/api/health' });
+      expect(health.statusCode).toBe(503);
+      const body = health.json();
+      expect(body.status).toBe('misconfigured');
+      expect(body.message).toMatch(/is not an address/i);
+
+      const snapshot = await bad.inject({ method: 'GET', url: '/api/snapshot' });
+      expect(snapshot.statusCode).toBe(503);
+      expect(snapshot.json().error).toBe('misconfigured');
+    } finally {
+      await bad.close();
+      vi.resetModules();
+    }
   });
 
-  it('reports the reason, and names what to set', async () => {
-    const body = (await bare.inject({ method: 'GET', url: '/api/health' })).json();
-    expect(body.status).toBe('misconfigured');
-    expect(body.message).toMatch(/USDG_ADDRESS is not set/);
-    // The message is what the waiting page shows the operator, so it has to
-    // carry the fix and not just the complaint.
-    expect(body.message).toMatch(/find:tokens/);
-    expect(body.message).toMatch(/set-env\.sh/);
-  });
-
-  it('ranks misconfiguration above never-indexed', async () => {
-    // A chain with no indexed blocks is the SYMPTOM of an indexer that cannot
-    // start. Reporting the symptom sends whoever is looking to the wrong place.
-    const body = (await bare.inject({ method: 'GET', url: '/api/health' })).json();
-    expect(body.status).not.toBe('never-indexed');
-  });
-
-  it('refuses the snapshot with the same reason, not an empty one', async () => {
-    const response = await bare.inject({ method: 'GET', url: '/api/snapshot' });
-    expect(response.statusCode).toBe(503);
-    expect(response.json().error).toBe('misconfigured');
-    expect(response.json().message).toMatch(/USDG_ADDRESS/);
+  it('takes a well-formed override as given', async () => {
+    const pinned = await serverWith('0x00000000000000000000000000000000000000d6');
+    try {
+      const body = (await pinned.inject({ method: 'GET', url: '/api/health' })).json();
+      expect(body.status).not.toBe('misconfigured');
+      expect(body.usdgSource).toBe('configured');
+    } finally {
+      await pinned.close();
+      vi.resetModules();
+    }
   });
 });

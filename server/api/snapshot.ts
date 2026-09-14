@@ -33,6 +33,7 @@ import type {
 } from '../../lib/data/types';
 import { MIN_DATA_HOURS, YIELD_WINDOW_HOURS } from '../../lib/yield';
 import { prisma } from '../db';
+import { resolveUsdg } from '../indexer/anchor';
 import { tradedSide } from '../indexer/aggregate';
 import { POOL_MANAGER_CURSOR } from '../indexer/poller';
 
@@ -43,7 +44,11 @@ const SPARK_BUCKET_HOURS = YIELD_WINDOW_HOURS / SPARK_BUCKETS; // 12h
 export interface SnapshotOptions {
   /** Wallet to build the portfolio for. Without one the portfolio is empty. */
   wallet?: string | null;
-  usdgAddress: string;
+  /**
+   * USDG's address. Optional: when absent it is discovered from the chain's
+   * own tokens, the same way the indexer does it.
+   */
+  usdgAddress?: string | null;
 }
 
 interface PoolQueryRow {
@@ -468,9 +473,15 @@ export async function buildSnapshot(
   });
   if (!cursor) return null;
 
+  // The anchor: pinned by configuration, or discovered from indexed tokens.
+  // Without one nothing has a dollar figure, so there is nothing honest to
+  // render — the same null the UI already handles.
+  const anchor = await resolveUsdg(options.usdgAddress);
+  if (!anchor.address) return null;
+
   const asOf = cursor.lastIndexedAt;
   const [rows, vaults, portfolio] = await Promise.all([
-    queryPools(options.usdgAddress, asOf),
+    queryPools(anchor.address, asOf),
     queryVaults(),
     queryPortfolio(options.wallet ?? null),
   ]);

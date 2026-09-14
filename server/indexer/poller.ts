@@ -31,6 +31,7 @@ import {
   sortEvents,
   type ChainEvent,
 } from './events';
+import { resolveUsdg } from './anchor';
 import { planIngest } from './ingest';
 import { refreshLogos } from './logos';
 import {
@@ -92,8 +93,12 @@ export interface PassResult {
 
 export interface PollerOptions {
   source: LogSource;
-  /** USDG's address. Required for the one USD anchor path (§4.3). */
-  usdgAddress: string;
+  /**
+   * USDG's address, if someone pinned one. Optional: when it is absent the
+   * anchor is discovered from the chain's own tokens (see anchor.ts), so the
+   * indexer starts and indexes rather than waiting on a human.
+   */
+  usdgAddress?: string | null;
   /**
    * v3 pool addresses to follow. Usually empty: pools discovered through the
    * factory are followed automatically and reloaded from the database on
@@ -118,7 +123,9 @@ export interface PollerOptions {
 
 export class Poller {
   private readonly source: LogSource;
-  private readonly usdgAddress: string;
+  private readonly usdgAddress: string | null;
+  /** Last resolution, so a change of anchor can be logged once rather than every pass. */
+  private lastAnchorNote = '';
   private readonly startBlock: bigint;
   private readonly blockRange: bigint;
   private readonly reorgDepth: bigint;
@@ -131,7 +138,7 @@ export class Poller {
 
   constructor(options: PollerOptions) {
     this.source = options.source;
-    this.usdgAddress = options.usdgAddress.toLowerCase();
+    this.usdgAddress = options.usdgAddress?.toLowerCase() ?? null;
     this.startBlock = options.startBlock ?? env.startBlock;
     this.blockRange = BigInt(options.blockRange ?? env.blockRange);
     this.reorgDepth = BigInt(options.reorgDepth ?? CHAIN.reorgDepth);
@@ -141,14 +148,27 @@ export class Poller {
     this.log = options.log ?? (() => {});
   }
 
-  /** Anchors for the SQL aggregation, resolved fresh each pass. */
-  private async anchors(): Promise<PriceAnchors> {
+  /**
+   * Anchors for the SQL aggregation, resolved fresh each pass.
+   *
+   * Fresh, not cached, because on a first sync the anchor does not exist yet:
+   * the indexer writes raw rows with no dollar figures, discovers USDG a few
+   * passes later, and the next rebuild prices everything retroactively. That
+   * only works because aggregates are rebuilt rather than incremented.
+   */
+  private async anchors(): Promise<PriceAnchors | null> {
+    const resolved = await resolveUsdg(this.usdgAddress);
+    if (resolved.note !== this.lastAnchorNote) {
+      this.log(`  anchor: ${resolved.note}`);
+      this.lastAnchorNote = resolved.note;
+    }
+    if (!resolved.address) return null;
     return {
       weth: CONTRACTS.weth.toLowerCase(),
-      usdg: this.usdgAddress,
+      usdg: resolved.address,
       wethDecimals: 18,
       usdgDecimals: 6,
-      anchorPoolId: await findAnchorPool(this.usdgAddress),
+      anchorPoolId: await findAnchorPool(resolved.address),
     };
   }
 
@@ -311,7 +331,12 @@ export class Poller {
     const suppliesRefreshed = await refreshSupplies(head.timestamp, {
       read: this.tokenReader,
     });
-    await rebuildAggregates(anchors, { fromBlock: from, toBlock: to });
+    // No anchor yet means no dollar figure is derivable — the raw rows above
+    // are still written, and the rebuild that prices them happens on whatever
+    // pass first finds USDG. Skipping the aggregation here is not data loss.
+    if (anchors) {
+      await rebuildAggregates(anchors, { fromBlock: from, toBlock: to });
+    }
     await classifyPools();
 
     const lastBlockTime = blockTimes.get(to) ?? head.timestamp;

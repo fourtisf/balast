@@ -40,11 +40,15 @@ npm run api          # in another
 DATA_SOURCE=live npm run dev
 ```
 
-`USDG_ADDRESS` is the one thing that has to be looked up by hand. USDG is the
-day-one stablecoin on this chain, not USDC (§2), and the WETH/USDG pool is the
-site's single USD anchor (§4.3) — without it every USD figure on the site is
-zero. The indexer stops with an explanation rather than running and reporting
-zeros.
+Nothing has to be looked up by hand. The USD anchor — the WETH/USDG pool that
+prices everything (§4.3) — is **discovered**: the indexer already reads every
+token's symbol off-chain while finding pools, so it looks for the one called
+USDG trading against WETH. `/api/health` reports which token it chose and why.
+
+Set `USDG_ADDRESS` only to override that, for instance to pin one token when
+two claim the symbol. A malformed value is refused rather than quietly
+discovered past — pricing the site off the wrong token cannot be detected from
+anywhere downstream.
 
 ## Check it
 

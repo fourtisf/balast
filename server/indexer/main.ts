@@ -31,12 +31,12 @@ function log(message: string): void {
 }
 
 async function main(): Promise<void> {
+  // No USDG_ADDRESS is no longer fatal. The anchor is discovered from the
+  // chain's own tokens once pools are indexed (see indexer/anchor.ts) — the
+  // indexer refusing to start meant the site sat on a "not configured" page
+  // waiting for a step only a person could take.
   if (!USDG) {
-    throw new Error(
-      'USDG_ADDRESS is required: it is the site\'s one USD anchor (§4.3). ' +
-        'Find the USDG token on the explorer and set it. Without it every USD ' +
-        'figure would read zero.',
-    );
+    log('USDG_ADDRESS not set — the USD anchor will be discovered from indexed tokens');
   }
 
   log(`chain check against ${env.rpcUrls.length} endpoint(s)`);
