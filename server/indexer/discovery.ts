@@ -162,8 +162,8 @@ export async function readToken(address: string): Promise<TokenFacts> {
  * as its most-traded market. The facts here are constants, not reads, so
  * they are asserted on every start rather than fetched once.
  */
-export async function repairNativeToken(): Promise<void> {
-  await prisma.token.updateMany({
+export async function repairNativeToken(): Promise<number> {
+  const { count } = await prisma.token.updateMany({
     where: { address: NATIVE_ETH },
     data: {
       symbol: CHAIN.nativeCurrency.symbol,
@@ -172,6 +172,7 @@ export async function repairNativeToken(): Promise<void> {
       totalSupply: null,
     },
   });
+  return count;
 }
 
 /** How a token's facts are obtained. Injectable for the same reason the log

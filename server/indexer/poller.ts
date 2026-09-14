@@ -424,7 +424,8 @@ export class Poller {
     const bounds = { fromBlock: from, toBlock: to };
 
     if (!this.nativeRepaired) {
-      await repairNativeToken();
+      const rows = await repairNativeToken();
+      if (rows > 0) this.log(`  native ether row asserted as ${CHAIN.nativeCurrency.symbol}`);
       this.nativeRepaired = true;
     }
 

@@ -1327,3 +1327,30 @@ guessed URL. With the bar in place the listed set is small enough to curate:
 `config/tokens.json`, Uniswap token-list shape, `logoURI` only, picked up on
 the indexer's next pass.
 
+### One row per token, and a fixture that had been lying about NVDA
+
+The first filtered board listed CASHCAT twice and the ether market twice.
+A token on this chain routinely has several pools — fee tiers, hooked
+variants — and the query returned one row per pool. The board is a token
+listing (§6, and every row of the prototype), so a token's row is now its
+deepest pool: the one the Stake button opens and the one a yield figure
+honestly describes. Shallower pools stay indexed and unlisted, and the
+header sums the rows it shows (§12).
+
+Writing the test for it found a fixture bug that had been there since P1.
+The fixture derives a log's tx hash from `(block, logIndex)`, rows are keyed
+by exactly that (§4.1), and every pool's seed logs sat at indices 0 and 1 of
+its init block — so two pools created in block 1 collided, and the second
+pool's funding mint was silently dropped. **NVDA/WETH in the default chain
+has had unknown depth all along**, and the suites tolerated it because the
+yield-state assertions accept `insufficient` where they should not have had
+to. Seed logs sit at index 1000+ now, above anything a block's swap counter
+reaches. Nothing in the indexer changed; the fixture simply stopped
+contradicting the chain it stands in for.
+
+The `0000…0000 / Unknown token` row on that board is the ether market,
+still carrying the row an earlier `readToken` wrote. `repairNativeToken`
+runs on the indexer's first pass after a restart and logs when it does; the
+pass is preceded by the deployment-block bisection and the full rebuild, so
+the label lags a deploy by a minute or two.
+

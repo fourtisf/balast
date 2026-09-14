@@ -28,6 +28,13 @@ import type { LogSource } from '../indexer/poller';
 
 const MANAGER = CONTRACTS.poolManager.toLowerCase();
 
+/**
+ * First log index for a pool's seed logs. Above anything the per-block swap
+ * counter reaches (a handful), so seeds never share a (block, logIndex) —
+ * and therefore a tx hash — with a swap or with another pool's seed.
+ */
+const SEED_LOG_BASE = 1_000;
+
 /** 60s blocks: see the header. */
 export const FIXTURE_BLOCK_SECONDS = 60;
 /** Chain time at block 1. Fixed, so every run produces the same hours. */
@@ -294,8 +301,16 @@ export function buildFixtureChain(
   const logs: RawLog[] = [];
 
   // Liquidity is seeded once per pool, wide, at its init block.
-  for (const pool of pools) {
-    logs.push(initializeLog(pool, pool.initBlock, 0));
+  //
+  // The seed logs sit at log indices no swap in that block can reach. The
+  // fixture's tx hash is derived from (block, logIndex), and rows are keyed
+  // by exactly that (§4.1) — so two pools created in the same block with
+  // both seeds at index 1 collided, and the second pool's funding mint was
+  // silently dropped. NVDA/WETH in the default chain had unknown depth for
+  // that reason, and the suites tolerated it. A pool's own swaps never land
+  // in its init block, so ordering within the block is not disturbed.
+  pools.forEach((pool, i) => {
+    logs.push(initializeLog(pool, pool.initBlock, SEED_LOG_BASE + 2 * i));
     logs.push(
       modifyLiquidityLog({
         poolId: pool.id,
@@ -304,10 +319,10 @@ export function buildFixtureChain(
         tickUpper: pool.tick + 20 * pool.tickSpacing,
         liquidityDelta: pool.liquidity,
         block: pool.initBlock,
-        logIndex: 1,
+        logIndex: SEED_LOG_BASE + 2 * i + 1,
       }),
     );
-  }
+  });
 
   const liveFrom = new Map(pools.map((p) => [p.id, p.initBlock]));
   const tickNow = new Map(pools.map((p) => [p.id, p.tick]));

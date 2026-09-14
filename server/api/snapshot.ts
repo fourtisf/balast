@@ -474,6 +474,31 @@ async function queryRouter(pools: Pool[]): Promise<RouterPlan> {
   };
 }
 
+/**
+ * One row per token: its deepest pool.
+ *
+ * The board is a TOKEN listing (§6, and the prototype's rows), and a token
+ * on this chain routinely has several pools — fee tiers, hooked variants —
+ * which listed CASHCAT twice and the ether market twice on the first real
+ * board. The row is the pool with the most depth, because that is the pool
+ * the Stake button opens and the one a yield figure honestly describes;
+ * the shallower pools stay indexed and unlisted. The header sums the rows
+ * it shows (§12), so it moves with this rule rather than contradicting it.
+ *
+ * Rows arrive ordered by TVL descending, so the first seen per token wins.
+ */
+function onePoolPerToken(pools: Pool[]): Pool[] {
+  const seen = new Set<string>();
+  const kept: Pool[] = [];
+  for (const pool of pools) {
+    const key = pool.token.address.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    kept.push(pool);
+  }
+  return kept;
+}
+
 let revision = 0;
 
 /**
@@ -504,7 +529,7 @@ export async function buildSnapshot(
     queryPortfolio(options.wallet ?? null),
   ]);
 
-  const pools = rows.map(toPool);
+  const pools = onePoolPerToken(rows.map(toPool));
   const router = await queryRouter(pools);
 
   // Every figure that can be summed from the pools is summed from them, so
