@@ -54,6 +54,10 @@ module.exports = {
       exec_mode: 'fork',
       autorestart: true,
       max_memory_restart: '512M',
+      // Same reasoning as the indexer below: a config error should end in a
+      // visible `errored` state, not an endless restart loop.
+      min_uptime: 10_000,
+      max_restarts: 10,
       env: {
         NODE_ENV: 'production',
         API_PORT: 3001,
@@ -76,6 +80,16 @@ module.exports = {
       // Long enough that a crash loop is visible in `pm2 list` as a climbing
       // restart count rather than hidden behind instant restarts.
       restart_delay: 5_000,
+      // Give up after ten failures that happen inside ten seconds.
+      //
+      // A missing USDG_ADDRESS is a configuration error, not a transient
+      // fault, and restarting forever neither fixes it nor surfaces it — this
+      // process reached 8,086 restarts on a mistake one line of config would
+      // solve. Ten attempts, then `errored` in `pm2 status`, which is a state
+      // somebody can actually see. A real crash after ten seconds of uptime
+      // does not count against the budget.
+      min_uptime: 10_000,
+      max_restarts: 10,
       env: {
         NODE_ENV: 'production',
       },

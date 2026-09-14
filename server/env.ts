@@ -7,7 +7,7 @@
 // Before any value below is read. Also imported first by each entry point,
 // because other modules read process.env at their own top level and module
 // evaluation order would otherwise decide whether they saw the file.
-import '../server/load-env';
+import './load-env';
 import { RPC_URLS } from './chain/endpoints';
 
 function required(name: string): string {

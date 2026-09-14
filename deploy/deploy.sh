@@ -30,12 +30,19 @@ as_app npm run build
 # `migrate deploy` only applies what is pending, so this is a no-op most runs.
 as_app npx prisma migrate deploy
 
-# The indexer first. It is the only process that writes, so a schema change
-# lands there before the API starts reading through it.
-as_app pm2 reload balast-indexer --update-env
-as_app pm2 reload balast-api --update-env
-as_app pm2 reload balast-web --update-env
+# startOrReload, not reload.
+#
+# `pm2 reload <name>` does not reliably revive a process already in `errored`
+# state — and that is exactly when a deploy is most needed, because the deploy
+# is usually the fix. A crashed process would silently stay crashed through
+# the one command meant to repair it. `startOrReload` against the ecosystem
+# file starts whatever is not running and reloads whatever is.
+as_app pm2 startOrReload ecosystem.config.js --update-env
 as_app pm2 save
+
+# Clear the restart counters, so `pm2 status` shows what happened since this
+# deploy rather than a five-figure number from before the fix.
+as_app pm2 reset all >/dev/null 2>&1 || true
 
 # Only touch nginx if the config in the repo changed.
 if ! diff -q deploy/nginx.conf /etc/nginx/sites-available/balast >/dev/null 2>&1; then
