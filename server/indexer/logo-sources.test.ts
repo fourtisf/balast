@@ -14,6 +14,7 @@ import { CHAIN, NATIVE_ETH } from '../../lib/chain';
 import { prisma } from '../db';
 import { isReachable, resetDatabase } from '../test/db';
 import {
+  blockscout,
   coingecko,
   coinmarketcap,
   createSources,
@@ -39,6 +40,40 @@ function service(routes: Record<string, unknown>): { fetch: Fetch; calls: string
 }
 
 const quiet = () => {};
+
+describe('blockscout', () => {
+  it('reads icon_url from the explorer\'s token endpoint, at the configured base', async () => {
+    const api = service({ '/api/v2/tokens/': { name: 'A1', symbol: 'A1', icon_url: LOGO } });
+    const src = blockscout({ base: 'https://explorer.example/' });
+    expect(await src.lookup(TOKEN, { fetch: api.fetch, log: quiet })).toBe(LOGO);
+    // One call, lowercased address, no double slash from a trailing one.
+    expect(api.calls).toEqual([`https://explorer.example/api/v2/tokens/${TOKEN}`]);
+  });
+
+  it('defaults to the registry explorer for this chain', async () => {
+    const api = service({ '/api/v2/tokens/': { icon_url: LOGO } });
+    await blockscout().lookup(TOKEN, { fetch: api.fetch, log: quiet });
+    expect(api.calls[0].startsWith('https://robinhoodchain.blockscout.com/api/v2/tokens/')).toBe(true);
+  });
+
+  it('is null for a token with no icon, an unsafe icon, an unknown token, or a dead explorer', async () => {
+    const none = service({ '/api/v2/tokens/': { icon_url: null } });
+    expect(await blockscout().lookup(TOKEN, { fetch: none.fetch, log: quiet })).toBeNull();
+    const unsafe = service({ '/api/v2/tokens/': { icon_url: 'data:image/png;base64,AAAA' } });
+    expect(await blockscout().lookup(TOKEN, { fetch: unsafe.fetch, log: quiet })).toBeNull();
+    expect(await blockscout().lookup(TOKEN, { fetch: service({}).fetch, log: quiet })).toBeNull();
+    const down: Fetch = async () => {
+      throw new Error('ECONNRESET');
+    };
+    expect(await blockscout().lookup(TOKEN, { fetch: down, log: quiet })).toBeNull();
+  });
+
+  it('never asks about ether, which has no token contract', async () => {
+    const api = service({ '/api/v2/tokens/': { icon_url: LOGO } });
+    expect(await blockscout().lookup(NATIVE_ETH, { fetch: api.fetch, log: quiet })).toBeNull();
+    expect(api.calls).toHaveLength(0);
+  });
+});
 
 describe('coingecko', () => {
   it('discovers the platform by chainId, then reads image.large from the contract lookup', async () => {
@@ -140,6 +175,7 @@ describe('createSources', () => {
       'dexscreener',
       'coingecko',
     ]);
+    expect(createSources(['explorer', 'blockscout']).map((s) => s.name)).toEqual(['explorer', 'explorer']);
     expect(createSources(['none'])).toHaveLength(0);
   });
 });

@@ -38,6 +38,14 @@ export const CONTRACTS = {
 export type ContractName = keyof typeof CONTRACTS;
 
 /**
+ * The chain's block explorer, from the ethereum-lists/chains registry entry
+ * for chainId 4663. It is a Blockscout, which means a documented JSON API
+ * under `/api/v2/` — the indexer asks it for token icons, which §4 allows
+ * from outside, and for nothing numeric. `EXPLORER_API_URL` overrides it.
+ */
+export const EXPLORER_URL = 'https://robinhoodchain.blockscout.com';
+
+/**
  * How Uniswap v4 spells native ether: the zero address.
  *
  * v4 has no WETH-only rule — a pool's `currency0` is `address(0)` when the

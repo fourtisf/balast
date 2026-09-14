@@ -19,6 +19,20 @@ export function MyStakes() {
     );
   });
 
+  // Nothing staked is not a failed search. Until the vaults exist and a
+  // wallet is connected there is nothing here, and the card says that.
+  if (portfolio.stakes.length === 0 && q === '') {
+    return (
+      <div className="card mine" style={{ marginTop: 22 }}>
+        <h2 className="sect-h">Your stakes</h2>
+        <div className="empty">
+          <b>Nothing staked yet</b>Once vaults open and a wallet is connected, your stakes and
+          their 7-day streams appear here.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="card mine" style={{ marginTop: 22 }}>
       <div

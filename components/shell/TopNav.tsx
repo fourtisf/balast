@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { duration } from '@/lib/format';
+import { Community } from './Community';
 import { Mark } from './Logo';
 
 /** Above this the indexer is behind and the bar has to say so (§7). */
@@ -64,6 +65,8 @@ export function TopNav() {
             );
           })}
         </nav>
+
+        <Community />
 
         <div className="search">
           <svg viewBox="0 0 24 24" aria-hidden="true">

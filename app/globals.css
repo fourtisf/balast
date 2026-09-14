@@ -475,3 +475,23 @@ h1 em{font-style:italic;color:var(--ac)}
 .aw-nums{display:flex;justify-content:space-between;gap:12px;margin-top:8px;
   font-family:var(--mono);font-size:11px;color:var(--fg-3);font-variant-numeric:tabular-nums}
 @media (prefers-reduced-motion:reduce){.aw-bar span{transition:none}}
+
+/* ---------- community links, and the contract address ----------
+   X and Telegram as quiet icons in the navigation, labelled in the footer.
+   An unset link is an unlinked icon, not a link to nowhere. The contract
+   address lives in the masthead facts and the footer; until there is one,
+   both say so. */
+.community{display:flex;align-items:center;gap:2px;flex:none}
+.soc{display:inline-flex;align-items:center;justify-content:center;gap:7px;width:34px;height:34px;border-radius:99px;color:var(--fg-2);transition:var(--t-hover)}
+.soc:hover{background:var(--raise-2);color:var(--fg)}
+.soc svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.soc.off{color:var(--fg-4);cursor:default}
+.community.foot{gap:16px}
+.community.foot .soc{width:auto;height:auto;padding:0;border-radius:0;color:var(--fg-3)}
+.community.foot .soc:hover{background:none;color:var(--fg)}
+.community.foot .soc svg{width:14px;height:14px}
+.facts .soon{color:var(--fg-3);font-weight:500}
+.facts .ca{font:inherit;font-family:var(--mono);font-weight:600;color:var(--fg);text-decoration:underline dotted;text-underline-offset:3px;padding:0}
+.foot-ca{color:var(--fg-2)}
+@media (max-width:1400px){.search{width:220px}}
+@media (max-width:640px){.nav .community{display:none}}

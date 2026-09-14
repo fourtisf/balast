@@ -36,6 +36,7 @@ import { resolveUsdg } from './anchor';
 import { planIngest } from './ingest';
 import { refreshLogos } from './logos';
 import { createSources, lookupLogos, type Fetch, type LogoSource } from './logo-sources';
+import { prisma } from '../db';
 import {
   loadFeeTiers,
   loadKnownPools,
@@ -462,6 +463,18 @@ export class Poller {
     if (!this.nativeRepaired) {
       const rows = await repairNativeToken();
       if (rows > 0) this.log(`  native ether row asserted as ${CHAIN.nativeCurrency.symbol}`);
+      // A restart is when the logo sources change — a deploy — so every
+      // token still without a logo is asked about again, one per
+      // LOGO_LOOKUP_MS. A week-long silence after a miss is right for a
+      // source that answered "no"; it is wrong for a source that was not
+      // configured yet when the question was asked.
+      const reasked = await prisma.token.updateMany({
+        where: { logoUrl: null, logoCheckedAt: { not: null } },
+        data: { logoCheckedAt: null },
+      });
+      if (reasked.count > 0) {
+        this.log(`  ${reasked.count} token(s) without a logo will be asked about again`);
+      }
       this.nativeRepaired = true;
     }
 

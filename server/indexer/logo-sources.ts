@@ -33,7 +33,7 @@
  * found".
  */
 
-import { CHAIN, NATIVE_ETH } from '../../lib/chain';
+import { CHAIN, EXPLORER_URL, NATIVE_ETH } from '../../lib/chain';
 import { prisma } from '../db';
 import { isSafeLogoUrl } from './logos';
 
@@ -81,6 +81,35 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 /** The one field that may cross §4's line, and only when it is a safe URL. */
 function image(value: unknown): string | null {
   return isSafeLogoUrl(value) ? value : null;
+}
+
+// ------------------------------------------------------------ Blockscout --
+
+/**
+ * The chain's own block explorer.
+ *
+ * Blockscout keeps an icon per token — supplied by the deployer, the
+ * explorer's operators or its own upstream lists — and serves it from
+ * `/api/v2/tokens/{address}` as `icon_url`. It is the one source native to
+ * this chain rather than an aggregator that may or may not have heard of
+ * it, so it is asked first. The base URL is the registry's (lib/chain.ts);
+ * `EXPLORER_API_URL` overrides it for another explorer of the same shape.
+ */
+export function blockscout(options: { base?: string } = {}): LogoSource {
+  const base = (options.base ?? EXPLORER_URL).replace(/\/+$/, '');
+  return {
+    name: 'explorer',
+    async lookup(address, { fetch }) {
+      // Ether has no token contract for the explorer to hold an entry for.
+      if (address.toLowerCase() === NATIVE_ETH) return null;
+      try {
+        const token = asRecord(await getJson(fetch, `${base}/api/v2/tokens/${address.toLowerCase()}`, {}));
+        return image(token?.icon_url);
+      } catch {
+        return null;
+      }
+    },
+  };
 }
 
 // ------------------------------------------------------------- CoinGecko --
@@ -210,6 +239,10 @@ export function createSources(names: readonly string[]): LogoSource[] {
   const sources: LogoSource[] = [];
   for (const name of names) {
     switch (name.trim().toLowerCase()) {
+      case 'explorer':
+      case 'blockscout':
+        sources.push(blockscout({ base: process.env.EXPLORER_API_URL?.trim() || undefined }));
+        break;
       case 'coingecko':
         sources.push(coingecko({ apiKey: process.env.COINGECKO_API_KEY }));
         break;

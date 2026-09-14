@@ -42,6 +42,8 @@ interface TokenList {
 }
 
 const FETCH_TIMEOUT_MS = 10_000;
+/** Relative to the app root, like any TOKEN_LIST_URL path. */
+const DEFAULT_TOKEN_LIST = 'config/tokens.json';
 /** Data URIs and oversized strings do not belong in a database column. */
 const MAX_URL_LENGTH = 512;
 
@@ -91,7 +93,10 @@ export async function refreshLogos(
     chainId: 0,
   },
 ): Promise<number> {
-  const url = options.url ?? process.env.TOKEN_LIST_URL ?? null;
+  // The list shipped with the repository is the default: it carries ether,
+  // which no aggregator can be asked about, so a box that never set
+  // TOKEN_LIST_URL still gets that one right.
+  const url = options.url ?? process.env.TOKEN_LIST_URL ?? DEFAULT_TOKEN_LIST;
   const log = options.log ?? (() => {});
   if (!url) return 0;
   // A URL has to be http(s); a path is taken as a path. Anything else — a

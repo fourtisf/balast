@@ -9,6 +9,7 @@ import { AreaSpark } from '@/components/ui/Sparkline';
 import { TokenBadge } from '@/components/ui/TokenBadge';
 import { useFlip } from '@/hooks/useFlip';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { isEther } from '@/lib/chain';
 import type { Pool, Quote } from '@/lib/data/types';
 import { ageLabel, usd } from '@/lib/format';
 import {
@@ -155,14 +156,19 @@ function Row({
   const insufficient = pool.feeYield.basis === 'insufficient';
 
   // An FDV is marked, because calling it market cap overstates every token
-  // with a vesting schedule (§7). No supply read is no figure at all (§15).
-  const capText =
-    pool.marketCapUsd > 0
+  // with a vesting schedule (§7). Ether has no contract and no supply to
+  // read (§18), which is a fact about ether, not a gap; any other token
+  // with no supply read is a dash, not a guess (§15).
+  const ether = isEther(pool.token.address);
+  const capText = ether
+    ? 'native asset'
+    : pool.marketCapUsd > 0
       ? `${pool.marketCapIsFdv ? 'FDV' : 'MC'} ${usd(pool.marketCapUsd)}`
-      : 'no supply read';
-  const capTitle =
-    pool.marketCapUsd <= 0
-      ? 'No token supply read yet, so there is no figure to show.'
+      : 'FDV —';
+  const capTitle = ether
+    ? "Ether is the chain's native asset: no token contract, no supply to read, so no FDV."
+    : pool.marketCapUsd <= 0
+      ? 'The token has not answered a supply read, so there is no figure to show.'
       : pool.marketCapIsFdv
         ? 'Fully diluted: total supply × price. Circulating supply is not ' +
           'distinguishable on chain, so locked and vested tokens are included.'

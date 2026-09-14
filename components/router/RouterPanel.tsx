@@ -24,6 +24,14 @@ export function RouterPanel() {
     { id: 2, marketCap: '10,000,000', sharePct: '75' },
   ]);
 
+  // Until `BalastRouter` exists (P4) nothing has accrued and nothing has been
+  // routed. The figures that describe a fee stream are then not shown as
+  // zeros — "0.00 WETH → +$0 depth" is a claim about a stream that does not
+  // exist (§7) — and the projection is not drawn from nothing.
+  const hasSource = router.feeSourceAddress !== '—' && router.feeSourceAddress !== '';
+  const accrued = router.accruedWeth > 0;
+  const hasProjection = router.projectedDepthUsd > router.currentDepthUsd;
+
   const numeric = milestones.map((m) => Number(m.marketCap.replace(/[^0-9.]/g, '')) || 0);
   // Milestones fire once each, in ascending order — out of order is rejected at
   // config time, not at route time (§3.5).
@@ -42,7 +50,7 @@ export function RouterPanel() {
               placeholder="0x… or ticker"
               style={{ fontSize: 15 }}
             />
-            <span className="pill up">Verified deployer</span>
+            {hasSource && <span className="pill up">Verified deployer</span>}
           </div>
         </div>
 
@@ -51,14 +59,17 @@ export function RouterPanel() {
           <div className="inp" style={{ height: 44 }}>
             <input
               id="r-source"
-              value={`${router.feeSourceAddress} · creator fee share`}
+              value={hasSource ? `${router.feeSourceAddress} · creator fee share` : ''}
+              placeholder="Fee wallet address"
               readOnly
               style={{ fontSize: 14, fontWeight: 500 }}
             />
-            <span className="max">Change</span>
+            <span className="max">{hasSource ? 'Change' : 'Set'}</span>
           </div>
           <p className="hint">
-            Accrued so far: {router.accruedWeth.toFixed(2)} WETH · {usdExact(router.accruedUsd)}
+            {accrued
+              ? `Accrued so far: ${router.accruedWeth.toFixed(2)} WETH · ${usdExact(router.accruedUsd)}`
+              : 'Nothing accrued yet. The router has not been enabled for this token.'}
           </p>
         </div>
 
@@ -205,17 +216,24 @@ export function RouterPanel() {
               Accrued WETH is split, half swapped to {router.tokenSymbol} at{' '}
               {router.twapMinutes}-min TWAP, both sides added to the pool.
               <div className="st">
-                Est. first route: {router.firstRouteWeth.toFixed(2)} WETH → +
-                {usd(router.firstRouteDepthUsd)} depth
+                {router.firstRouteWeth > 0
+                  ? `Est. first route: ${router.firstRouteWeth.toFixed(2)} WETH → +${usd(
+                      router.firstRouteDepthUsd,
+                    )} depth`
+                  : 'The first route is sized from whatever has accrued by then.'}
               </div>
             </div>
           </div>
           <div className="tl">
             <div className="w">Ongoing</div>
             <div>
-              Pool depth compounds. Slippage on a $5K buy drops from{' '}
-              {router.slippageNowPct.toFixed(1)}% to an estimated{' '}
-              {router.slippageLaterPct.toFixed(1)}% after 30 days at current fee rate.
+              {hasProjection
+                ? `Pool depth compounds. Slippage on a $5K buy drops from ${router.slippageNowPct.toFixed(
+                    1,
+                  )}% to an estimated ${router.slippageLaterPct.toFixed(
+                    1,
+                  )}% after 30 days at current fee rate.`
+                : 'Pool depth compounds with every route, and slippage on a buy falls with it.'}
             </div>
           </div>
           <div className="tl">
@@ -238,6 +256,7 @@ export function RouterPanel() {
           </p>
         </div>
 
+        {hasProjection ? (
         <div className="note" style={{ marginTop: 12 }}>
           <div className="muted" style={{ fontSize: 12.5 }}>
             Projected depth · 90 days
@@ -277,6 +296,17 @@ export function RouterPanel() {
             Projection at the current fee rate. If volume slows, depth grows slower.
           </p>
         </div>
+        ) : (
+          <div className="note" style={{ marginTop: 12 }}>
+            <div className="muted" style={{ fontSize: 12.5 }}>
+              Projected depth · 90 days
+            </div>
+            <p className="hint">
+              Drawn from the fee rate once a fee source is accruing. Nothing is projected
+              from nothing.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

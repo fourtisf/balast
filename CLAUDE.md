@@ -1509,3 +1509,63 @@ its focus trap, `prefers-reduced-motion`, and no horizontal overflow at
   is settled (§13).
 - The §12 questions — the simulator's six-hours-per-tick clock and
   `/positions`'s *Est. fee yield* — and the §14 inputs remain open.
+
+### First look at the live Journal: empties, logos, and where the project talks
+
+ALFA looked at the deployed page and asked three things: why so much is
+still empty, why the tokens still have no logos, and for X, Telegram and a
+"CA · coming soon" line.
+
+**What is empty, and why it stays honest.** Positions, vaults, stakes and
+the portfolio are empty because the contracts that create them are P2 (§8);
+nothing on the site invents them. What was wrong was how the pages said so:
+an empty vault grid read "No vault matches — try a ticker", the portfolio
+read "$0 · +0.0% all time" and "Best week so far", and the router promised
+"Est. first route: 0.00 WETH → +$0 depth" and drew a rising projection from
+nothing. Each of those is a claim about a history that does not exist (§7).
+They now say what is true: no vaults yet and why, nothing staked yet, no
+positions yet, dashes with a caption where a figure would be a claim, and a
+projection only once a fee source is accruing. The ether row said "no supply
+read", which is operator-speak for a fact about ether — it has no contract
+and no supply — and now says "native asset".
+
+**Logos: the chain's own explorer, asked first.** The three aggregators in
+`logo-sources.ts` were written blind (§18) and there was still no way to
+tell, from the box, what they answered. Two changes:
+
+- `blockscout()` asks the explorer the ethereum-lists/chains registry names
+  for chainId 4663 — `robinhoodchain.blockscout.com`, `EXPLORER_URL` in
+  `lib/chain.ts`, `EXPLORER_API_URL` to override — for `/api/v2/tokens/{addr}`
+  and reads `icon_url`, nothing else. It is native to this chain, so it is
+  first in `LOGO_SOURCES`. A token the explorer has no icon for falls
+  through to the aggregators as before.
+- `npm run logos:probe` asks every configured source about the top listed
+  tokens (or the addresses given) and prints, per source, the HTTP status
+  it saw and the URL it yielded — or the error. It writes nothing. This is
+  the answer to "why no logos" that the poller's log could not give.
+
+Two consequences carried through. A miss is silent for a week
+(`logo_checked_at`), which is right for a source that said no and wrong for
+a source that did not exist when the question was asked — so the poller now
+clears the mark for every logo-less token on restart, and a deploy becomes
+the moment the new source gets its turn, one token per `LOGO_LOOKUP_MS`.
+And ether, which no aggregator can be asked about by address, is in
+`config/tokens.json` with an image this site serves itself
+(`public/tokens/eth.svg`); that file is now the default `TOKEN_LIST_URL`,
+so a box that never set the variable still gets ether right.
+
+None of this could be verified from the session that wrote it: the sandbox
+reaches GitHub and Google Fonts and nothing else. The explorer URL is the
+registry's and the API shape is Blockscout's documented one; the probe
+exists precisely so the first run on the box says what is true.
+
+**X, Telegram, and the contract address.** `lib/site.ts` reads
+`NEXT_PUBLIC_X_URL`, `NEXT_PUBLIC_TELEGRAM_URL` and `NEXT_PUBLIC_TOKEN_CA`
+at build time. The icons sit in the navigation and, labelled, in the
+footer; an unset one is an unlinked icon that says "coming soon" on hover
+rather than a link to nowhere. The contract address is a fifth row in the
+masthead facts on every page and a line in the footer, reading
+"CA · coming soon" until it is set — with a tooltip saying that any address
+circulating before it appears there is not ours, because a site that asks
+people to connect a wallet should say so. Set them with `deploy/set-env.sh`
+and deploy; Next.js inlines them when it builds.

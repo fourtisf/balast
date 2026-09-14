@@ -9,6 +9,7 @@
 // evaluation order would otherwise decide whether they saw the file.
 import './load-env';
 import { RPC_URLS } from './chain/endpoints';
+import { EXPLORER_URL } from '../lib/chain';
 
 function required(name: string): string {
   const value = process.env[name];
@@ -120,7 +121,13 @@ export const env = {
    * Per-token logo sources, in order of preference. `none` disables them.
    * Each reads one image URL and nothing else (§4); see logo-sources.ts.
    */
-  logoSources: list('LOGO_SOURCES', ['coingecko', 'dexscreener', 'coinmarketcap']),
+  logoSources: list('LOGO_SOURCES', ['explorer', 'coingecko', 'dexscreener', 'coinmarketcap']),
+  /**
+   * The chain's own block explorer (Blockscout), asked for token icons before
+   * any aggregator. The default is the explorer the ethereum-lists/chains
+   * registry names for chainId 4663.
+   */
+  explorerApiUrl: process.env.EXPLORER_API_URL?.trim() || EXPLORER_URL,
   /** Milliseconds between logo lookups: one token per interval, every source. */
   logoLookupMs: int('LOGO_LOOKUP_MS', 6_000),
 

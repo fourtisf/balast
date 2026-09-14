@@ -18,6 +18,7 @@
     "verify:chain": "tsx server/scripts/verify-chain.ts",
     "find:tokens": "tsx server/scripts/find-tokens.ts",
     "tokens:indexed": "tsx server/scripts/indexed-tokens.ts",
+    "logos:probe": "tsx server/scripts/probe-logos.ts",
     "db:migrate": "prisma migrate deploy",
     "db:dev": "prisma migrate dev",
     "db:studio": "prisma studio",

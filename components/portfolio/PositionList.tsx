@@ -93,7 +93,16 @@ export function PositionList() {
 
       {positions.length === 0 && stakes.length === 0 && (
         <div className="empty">
-          <b>No match</b>Nothing in your portfolio matches that search.
+          {q === '' ? (
+            <>
+              <b>No positions yet</b>Positions you mint and stakes you open appear here,
+              marked to market, with the fees they earned.
+            </>
+          ) : (
+            <>
+              <b>No match</b>Nothing in your portfolio matches that search.
+            </>
+          )}
         </div>
       )}
 

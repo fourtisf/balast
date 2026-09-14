@@ -20,6 +20,19 @@ export function VaultGrid() {
     );
   });
 
+  // No vaults at all is a different fact from no vault matching a search:
+  // the contracts are not deployed yet (§8, P2), and the page should say so
+  // rather than suggest clearing a search that is not the reason.
+  if (vaults.length === 0) {
+    return (
+      <div className="card">
+        <div className="empty">
+          <b>No vaults yet</b>Staking opens when the vault contracts deploy. Until then every
+          pool is listed and nothing is staked or promised.
+        </div>
+      </div>
+    );
+  }
   if (matching.length === 0) {
     return (
       <div className="card">
