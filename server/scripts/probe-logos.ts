@@ -3,7 +3,7 @@
  * what each one answered.
  *
  *   npm run logos:probe                    the next tokens the poller would ask about
- *   npm run logos:probe -- 0xabc… 0xdef…   specific tokens
+ *   npm run logos:probe -- VLAD 0xdef…     specific tokens, by symbol or address
  *
  * The indexer asks these sources quietly, one token every LOGO_LOOKUP_MS,
  * and records only the answer. When a board has no logos the question is
@@ -29,11 +29,44 @@ function shortUrl(url: string): string {
   return `${u.host}${u.pathname}${u.search ? '?…' : ''}`;
 }
 
+/**
+ * Arguments are addresses or symbols. A symbol names the token of that
+ * symbol with the most 24h volume — the one on the board — so the row a
+ * person is looking at is the row the probe asks about.
+ */
+async function named(args: string[]): Promise<{ address: string; symbol: string }[]> {
+  const out: { address: string; symbol: string }[] = [];
+  for (const arg of args) {
+    if (/^0x[0-9a-fA-F]{40}$/.test(arg)) {
+      out.push({ address: arg.toLowerCase(), symbol: '' });
+      continue;
+    }
+    const rows = await prisma.$queryRaw<{ address: string; symbol: string }[]>`
+      WITH latest AS (SELECT MAX(hour) AS newest FROM pool_fee_hourly),
+      volume AS (
+        SELECT f.pool_id, SUM(f.volume_usd) AS volume
+        FROM pool_fee_hourly f, latest
+        WHERE f.hour > latest.newest - interval '24 hours'
+        GROUP BY f.pool_id
+      )
+      SELECT t.address, t.symbol
+      FROM tokens t
+      LEFT JOIN pools p ON lower(p.token0) = lower(t.address) OR lower(p.token1) = lower(t.address)
+      LEFT JOIN volume v ON v.pool_id = p.id
+      WHERE lower(t.symbol) = lower(${arg})
+      GROUP BY t.address, t.symbol
+      ORDER BY MAX(COALESCE(v.volume, 0)) DESC NULLS LAST, t.first_seen ASC
+      LIMIT 1
+    `;
+    if (rows.length === 0) process.stdout.write(`\nno token called ${arg} in the indexer's tables\n`);
+    else out.push(rows[0]);
+  }
+  return out;
+}
+
 async function main(): Promise<void> {
-  const args = process.argv.slice(2).filter((a) => /^0x[0-9a-fA-F]{40}$/.test(a));
-  const tokens = args.length
-    ? args.map((address) => ({ address: address.toLowerCase(), symbol: '' }))
-    : await logoCandidates(6, null);
+  const args = process.argv.slice(2).filter((a) => a.trim() !== '');
+  const tokens = args.length ? await named(args) : await logoCandidates(6, null);
 
   const sources = createSources(env.logoSources);
   process.stdout.write(
