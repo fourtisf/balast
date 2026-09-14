@@ -21,6 +21,7 @@ const TABLES = [
   'swap_events',
   'liquidity_events',
   'indexer_cursors',
+  'indexer_state',
   'pools',
   'tokens',
 ];

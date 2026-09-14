@@ -34,8 +34,6 @@ import {
 } from './events';
 import { resolveUsdg } from './anchor';
 import { planIngest } from './ingest';
-import { refreshLogos } from './logos';
-import { createSources, lookupLogos, type Fetch, type LogoSource } from './logo-sources';
 import { prisma } from '../db';
 import {
   loadFeeTiers,
@@ -60,6 +58,8 @@ const BUSY_LOGS = 2_000;
 
 /** The cursor key for the one v4 contract every pool lives in. */
 export const POOL_MANAGER_CURSOR = `v4:${CONTRACTS.poolManager.toLowerCase()}`;
+/** `indexer_state` key: the anchor the priced tables were last fully rebuilt for. */
+export const REBUILT_ANCHOR_KEY = 'rebuilt_anchor';
 
 /**
  * What the poller needs from a chain. Satisfied by viem in production and by
@@ -97,7 +97,6 @@ export interface PassResult {
   /** Token supplies re-read this pass, for the fully diluted figure. */
   suppliesRefreshed: number;
   /** Token logos picked up from the token list, if one is configured. */
-  logosFound: number;
   /** Blocks this pass covered. Visible so the adaptation is observable. */
   blockRange: number;
   /** Seconds between the last indexed block's time and head's. Shown in the top bar (§7). */
@@ -136,8 +135,6 @@ export interface PollerOptions {
   tokenReader?: TokenReader;
   log?: (message: string) => void;
   /** Per-token logo sources. Defaults to LOGO_SOURCES; tests pass their own with a fake fetch. */
-  logoSources?: LogoSource[];
-  logoFetch?: Fetch;
 }
 
 export class Poller {
@@ -151,13 +148,16 @@ export class Poller {
    * passes into the first sync — every priced table is rebuilt in full
    * rather than for the hours this pass touched. See the pass body.
    */
-  private lastAnchorAddress: string | null = null;
+  /**
+   * The anchor the priced tables were last fully rebuilt for. Loaded from
+   * `indexer_state` on the first pass (undefined until then), so a restart
+   * with the same anchor does not redo a rebuild that on a large table is
+   * longer than the gap between two deploys.
+   */
+  private lastAnchorAddress: string | null | undefined = undefined;
   /** The native-ether row is asserted once per process; see repairNativeToken. */
   private nativeRepaired = false;
-  private readonly logoSources: LogoSource[];
-  private readonly logoFetch?: Fetch;
   /** Wall clock of the last per-token logo lookup: one token per LOGO_LOOKUP_MS. */
-  private lastLogoLookupAt = 0;
   private readonly startBlock: bigint;
   /**
    * Blocks per pass, which ADAPTS as it goes.
@@ -201,8 +201,6 @@ export class Poller {
     this.v3Factory = options.v3Factory?.toLowerCase() ?? null;
     this.tokenReader = options.tokenReader;
     this.log = options.log ?? (() => {});
-    this.logoSources = options.logoSources ?? createSources(env.logoSources);
-    this.logoFetch = options.logoFetch;
   }
 
   /**
@@ -225,31 +223,6 @@ export class Poller {
       usdg: resolved.address,
       anchorPoolId: await findAnchorPool(resolved.address),
     };
-  }
-
-  /**
-   * One token's logo per LOGO_LOOKUP_MS, whatever the pass is doing.
-   *
-   * On the clock rather than per pass, because a first sync passes every
-   * second and the sources are public and rate-limited. Never throws: a
-   * logo is decoration, and the pass must not depend on one.
-   */
-  private async maybeLookupLogo(): Promise<number> {
-    if (this.logoSources.length === 0) return 0;
-    const now = Date.now();
-    if (now - this.lastLogoLookupAt < env.logoLookupMs) return 0;
-    this.lastLogoLookupAt = now;
-    try {
-      return await lookupLogos({
-        sources: this.logoSources,
-        now: new Date(now),
-        limit: 1,
-        fetch: this.logoFetch,
-        log: this.log,
-      });
-    } catch {
-      return 0;
-    }
   }
 
   /**
@@ -295,12 +268,6 @@ export class Poller {
         // Caught up is exactly when there is room to spend an RPC call on
         // something other than logs.
         suppliesRefreshed: await refreshSupplies(head.timestamp, { read: this.tokenReader }),
-        // Caught up is the only time there is room to fetch a token list.
-        // It is also the only network call in this process that is not to a
-        // node, and it is allowed to fail silently (§4 permits logos from
-        // external sources; a missing one changes no number).
-        logosFound:
-          (await refreshLogos({ chainId: CHAIN.id, log: this.log })) + (await this.maybeLookupLogo()),
         lagSeconds: 0,
         caughtUp: true,
         blockRange: Number(this.blockRange),
@@ -339,7 +306,6 @@ export class Poller {
         poolsFound: 0,
         tokensFound: 0,
         suppliesRefreshed: 0,
-        logosFound: 0,
         lagSeconds: 0,
         caughtUp: false,
         blockRange: Number(this.blockRange),
@@ -463,22 +429,6 @@ export class Poller {
     if (!this.nativeRepaired) {
       const rows = await repairNativeToken();
       if (rows > 0) this.log(`  native ether row asserted as ${CHAIN.nativeCurrency.symbol}`);
-      // A restart is when the logo sources change — a deploy — so every
-      // token still without a logo is asked about again, one per
-      // LOGO_LOOKUP_MS. A week-long silence after a miss is right for a
-      // source that answered "no"; it is wrong for a source that was not
-      // configured yet when the question was asked.
-      const reasked = await prisma.token.updateMany({
-        where: { logoUrl: null, logoCheckedAt: { not: null } },
-        data: { logoCheckedAt: null },
-      });
-      if (reasked.count > 0) {
-        this.log(`  ${reasked.count} token(s) without a logo will be asked about again`);
-      }
-      // And the token list is applied now, not only when a pool is
-      // discovered or the sync catches up: on a first sync the list's
-      // tokens — ether above all — should not wait on either.
-      await refreshLogos({ chainId: CHAIN.id, log: this.log });
       this.nativeRepaired = true;
     }
 
@@ -492,14 +442,28 @@ export class Poller {
     await rebuildFlowHours(bounds);
 
     if (anchors) {
+      if (this.lastAnchorAddress === undefined) {
+        const remembered = await prisma.indexerState.findUnique({ where: { key: REBUILT_ANCHOR_KEY } });
+        this.lastAnchorAddress = remembered?.value ?? null;
+      }
       if (anchors.usdg !== this.lastAnchorAddress) {
         // A new anchor prices history, not just this window. §17 promised
         // that the pass discovering USDG reprices everything retroactively;
-        // bounded to the touched hours it never did. Once per anchor — and
-        // once per restart, which is a cheap way to make a repair a no-op.
+        // bounded to the touched hours it never did. Once per anchor, and
+        // remembered: it used to run on every restart too, and once the raw
+        // tables were a few million rows that took longer than the gap
+        // between deploys, so no pass finished for a day. `npm run
+        // aggregates:rebuild` forgets the marker when a repair needs one.
         this.log(`  anchor ${anchors.usdg}: rebuilding every priced table from the raw rows`);
-        await rebuildAggregates(anchors);
+        const started = Date.now();
+        await rebuildAggregates(anchors, undefined, this.log);
+        await prisma.indexerState.upsert({
+          where: { key: REBUILT_ANCHOR_KEY },
+          create: { key: REBUILT_ANCHOR_KEY, value: anchors.usdg, updatedAt: new Date() },
+          update: { value: anchors.usdg, updatedAt: new Date() },
+        });
         this.lastAnchorAddress = anchors.usdg;
+        this.log(`  rebuilt in ${((Date.now() - started) / 1000).toFixed(1)}s`);
       } else {
         await rebuildAggregates(anchors, bounds);
       }
@@ -546,12 +510,6 @@ export class Poller {
       poolsFound: initializePlan.pools.length,
       tokensFound,
       suppliesRefreshed,
-      // Only when a pool was discovered: a logo list does not change between
-      // blocks, and this is the one call in here that leaves the chain.
-      logosFound:
-        (initializePlan.pools.length > 0
-          ? await refreshLogos({ chainId: CHAIN.id, log: this.log })
-          : 0) + (await this.maybeLookupLogo()),
       lagSeconds,
       caughtUp: to >= head.number,
       blockRange: Number(to - from + 1n),

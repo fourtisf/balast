@@ -104,7 +104,7 @@ esac
 # The API can answer while the indexer is a crash loop, so check both.
 if command -v pm2 >/dev/null; then
   offline=""
-  for app in balast-web balast-api balast-indexer; do
+  for app in balast-web balast-api balast-indexer balast-logos; do
     state=$(runuser -u "$APP_USER" -- pm2 jlist 2>/dev/null \
       | grep -o "\"name\":\"$app\",\"pm2_env\":{[^}]*\"status\":\"[a-z]*\"" \
       | grep -o '"status":"[a-z]*"' | cut -d'"' -f4 | head -1)

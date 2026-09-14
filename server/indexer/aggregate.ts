@@ -554,9 +554,18 @@ export async function rebuildPoolState(anchors: PriceAnchors): Promise<number> {
 export async function rebuildAggregates(
   anchors: PriceAnchors,
   bounds?: Bounds,
+  log?: (message: string) => void,
 ): Promise<void> {
-  await rebuildAnchorPrices(anchors, bounds);
-  await rebuildFlowHours(bounds);
-  await rebuildFeeHours(anchors, bounds);
-  await rebuildPoolState(anchors);
+  // Timed per step when asked, because an unbounded rebuild on a large
+  // table is minutes to hours and a silent one is indistinguishable from a
+  // hang. Only the full rebuild logs; a bounded one runs every pass.
+  const step = async (name: string, run: () => Promise<unknown>) => {
+    const started = Date.now();
+    await run();
+    if (log && !bounds) log(`    ${name}: ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  };
+  await step('anchor prices', () => rebuildAnchorPrices(anchors, bounds));
+  await step('flow', () => rebuildFlowHours(bounds));
+  await step('fees', () => rebuildFeeHours(anchors, bounds));
+  await step('pool state', () => rebuildPoolState(anchors));
 }

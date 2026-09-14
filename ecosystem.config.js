@@ -7,6 +7,8 @@
  *   balast-web      the Next.js front end
  *   balast-api      Fastify: /api/snapshot and the websocket
  *   balast-indexer  the log poller
+ *   balast-logos    token logos, one lookup at a time — its own process, so
+ *                   a decoration never waits on the sync
  *
  * The indexer is the one that matters most when it dies. §7 and the P3
  * criterion both name the same failure: a process that stops quietly while the
@@ -95,6 +97,25 @@ module.exports = {
       },
       error_file: '/var/log/balast/indexer.error.log',
       out_file: '/var/log/balast/indexer.out.log',
+      time: true,
+    },
+    {
+      name: 'balast-logos',
+      script: 'node_modules/.bin/tsx',
+      args: 'server/logos/main.ts',
+      cwd: '/var/www/balast',
+      instances: 1,
+      exec_mode: 'fork',
+      autorestart: true,
+      max_memory_restart: '256M',
+      restart_delay: 5_000,
+      min_uptime: 10_000,
+      max_restarts: 10,
+      env: {
+        NODE_ENV: 'production',
+      },
+      error_file: '/var/log/balast/logos.error.log',
+      out_file: '/var/log/balast/logos.out.log',
       time: true,
     },
   ],

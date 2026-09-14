@@ -102,14 +102,15 @@ async function main(): Promise<void> {
   const idleSeconds = cursor ? (Date.now() - cursor.updatedAt.getTime()) / 1000 : null;
   if (counts.checked === 0) {
     process.stdout.write(
-      idleSeconds !== null && idleSeconds > 120
-        ? `  The poller has not asked about any token, and the cursor has not moved for ${Math.round(
-            idleSeconds,
-          )}s. After a restart it rebuilds every aggregate before its first pass; on a large ` +
-            'table that is minutes. If it stays like this: pm2 logs balast-indexer --lines 100\n'
-        : `  The poller has not asked about any token yet. It asks one every ${env.logoLookupMs}ms ` +
-            'once its first pass completes. Run this again in a minute.\n',
+      `  No token has been asked about yet. balast-logos asks one every ${env.logoLookupMs}ms from ` +
+        'the moment it starts; if this stays at zero: pm2 status, then pm2 logs balast-logos --lines 50\n',
     );
+    if (idleSeconds !== null && idleSeconds > 300) {
+      process.stdout.write(
+        `  Separately: the indexer cursor has not moved for ${Math.round(idleSeconds)}s. Logos no ` +
+          'longer depend on it, but the numbers do: pm2 logs balast-indexer --lines 100\n',
+      );
+    }
   } else if (counts.with_logo === 0) {
     process.stdout.write(
       `  ${counts.checked} token(s) asked about, none found. npm run logos:probe shows what each source answered.\n`,

@@ -97,7 +97,11 @@ export async function refreshLogos(
   // which no aggregator can be asked about, so a box that never set
   // TOKEN_LIST_URL — or set it to nothing — still gets that one right.
   // `none` is the way to say "no list".
-  const configured = options.url ?? (process.env.TOKEN_LIST_URL?.trim() || DEFAULT_TOKEN_LIST);
+  // An explicit null from a caller means no list; an absent option means
+  // the environment's choice, and an absent or empty variable means the
+  // shipped list.
+  const configured =
+    options.url !== undefined ? options.url : process.env.TOKEN_LIST_URL?.trim() || DEFAULT_TOKEN_LIST;
   const url = configured === 'none' ? null : configured;
   const log = options.log ?? (() => {});
   if (!url) return 0;

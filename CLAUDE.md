@@ -1600,3 +1600,35 @@ sat on the board without logos. The poller asked in the same order.
 `logoCandidates()` now ranks by the pools' 24h volume, the board's own
 order, and the probe uses the same function, so what it prints is exactly
 what the poller asks about next.
+
+### The stalled indexer, and logos that no longer wait on it
+
+`logos:status` on the box answered the question the probe could not:
+**"0 asked about — indexer cursor last written 9344s ago."** Every source
+was answering, and no token was asked, because the lookup ran inside the
+indexer's pass and the indexer had not finished a pass in two and a half
+hours. Two faults, both structural.
+
+**A restart cost a full rebuild, and deploys came faster than rebuilds.**
+§18 made the unbounded rebuild of every priced table run on a change of
+anchor *and on every restart* — "a cheap way to make a repair a no-op".
+Cheap on a fixture. On the real tables, after 4.4 million blocks, it takes
+longer than the gap between two deploys, and every deploy restarted it from
+the beginning: a day of deploys was a day in which no pass wrote the cursor,
+health said `stalled`, and nothing downstream moved. The anchor the tables
+were last rebuilt for is now remembered (`indexer_state`, one migration),
+so a restart with the same anchor does the bounded rebuild every pass does.
+`npm run aggregates:rebuild` forgets the marker when a change to the
+aggregation SQL needs the full one. The full rebuild also logs each step's
+time, because a silent hour is indistinguishable from a hang.
+
+**Logos are a process of their own.** `balast-logos` (`server/logos/main.ts`,
+in the PM2 list, the doctor and the monitor) reads the token list, asks the
+sources about one token every `LOGO_LOOKUP_MS`, records what it finds and
+nudges the API. It re-asks every logo-less token on start, board first. The
+poller no longer knows logos exist. A decoration must never wait on a block,
+and it did.
+
+Unverified from here, as before: whether the indexer on the box is stuck in
+that rebuild or dead for another reason is in `pm2 logs balast-indexer`,
+which the deploy summary and the doctor both point at.
