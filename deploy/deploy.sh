@@ -104,6 +104,44 @@ fi
 as_app pm2 status
 
 echo
-# The lag is the honest health check (§7): "ok" only means the API answered.
-echo "indexer lag:"
-curl -fsS localhost:3001/api/health | head -20 || echo "  API not answering yet"
+# Say what is running, because the question after a deploy that changed
+# nothing visible has been "did it actually deploy the branch I meant".
+echo "running $(as_app git rev-parse --short HEAD) on $(as_app git rev-parse --abbrev-ref HEAD)"
+
+# The API answers 503 for every state that is not "ok" — a first sync, no
+# anchor yet, a stall — and carries the reason in the body. `curl -f` turned
+# each of those into "API not answering yet", which was false and hid the one
+# line that said what was going on. Read the body; explain the state.
+echo "indexer:"
+BODY=$(curl -sS --max-time 10 localhost:3001/api/health 2>/dev/null || true)
+if [[ -z "$BODY" ]]; then
+  echo "  the API did not answer on :3001 — runuser -u $APP_USER -- pm2 logs balast-api --lines 30 --nostream"
+else
+  printf '%s' "$BODY" | node -e '
+    let raw = "";
+    process.stdin.on("data", (d) => (raw += d)).on("end", () => {
+      let h;
+      try { h = JSON.parse(raw); } catch { console.log("  unreadable health body: " + raw.slice(0, 160)); return; }
+      const i = h.indexed || {};
+      const pct = i.progressPct == null ? "" : ` (${Number(i.progressPct).toFixed(2)}% of the chain)`;
+      const lag = i.lagSeconds == null ? "" : `, ${Math.round(i.lagSeconds)}s of chain time behind`;
+      switch (h.status) {
+        case "ok":
+          console.log(`  ok — following head${lag}`); break;
+        case "no-anchor":
+          if (i.syncing) console.log(`  first sync running${pct}: block ${i.lastBlock} of ${i.headBlock}, ${h.pools} pool(s) so far.`);
+          else if (i.headBlock == null) console.log(`  block ${i.lastBlock}, ${h.pools} pool(s); the indexer has not reported the chain head yet — check again in a minute.`);
+          else console.log(`  caught up, and no ETH/USDG pool among ${h.pools} pool(s) — run: npm run tokens:indexed`);
+          console.log("  no USD anchor yet, so the site shows the waiting panel with this progress. Not an error.");
+          break;
+        case "stalled":
+          console.log(`  STALLED${lag} — runuser -u balast -- pm2 logs balast-indexer --lines 30 --nostream`); break;
+        case "never-indexed":
+          console.log("  the indexer has never written a block — runuser -u balast -- pm2 logs balast-indexer --lines 30 --nostream"); break;
+        case "misconfigured":
+          console.log("  MISCONFIGURED: " + h.message); break;
+        default:
+          console.log("  " + (h.message || raw.slice(0, 160)));
+      }
+    });' || echo "  $BODY" | head -c 300
+fi
