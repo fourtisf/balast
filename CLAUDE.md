@@ -1726,9 +1726,9 @@ with the issuer's mark for every one of its stock tokens — and it was asked
 first, so NVDA, TSLA and AMD were the same bird. `tickers` now outranks the
 explorer for a "Robinhood Token", and on start the logo process replaces
 whatever such a token has on record with its ticker icon when one exists
-and loads. SpaceX and the ETFs have no ticker icon in the repository and
-keep the feather: Robinhood's mark on Robinhood's token is not wrong, just
-not what a person wanted to see.
+and loads. The ETFs have no ticker icon in the repository and keep the
+feather: Robinhood's mark on Robinhood's token is not wrong, just not what
+a person wanted to see. SpaceX is the next subsection.
 
 **Connect wallet is a dialog now** (`components/shell/WalletModal.tsx`,
 `lib/wallet.ts`). EIP-6963: every installed extension announces itself with
@@ -1749,3 +1749,35 @@ itself is added. WalletConnect, for a phone by QR, appears once
 cloud.reown.com); its provider is loaded only when chosen, because it is a
 large one, and a session survives a reload. Until P2 nothing is signed from
 any of them.
+
+### A mark of our own, and wallets wearing theirs
+
+**SPCX still wore the feather** after the ticker icons landed, and it
+always would have: SpaceX is on no exchange, so no ticker repository
+carries it, the `tickers` source answered null, and the explorer's answer
+stood. The fix is the same shape as ether's (§19, *First look*): a mark
+this site serves itself. `OWN_STOCK_MARKS` in `logo-sources.ts` maps a
+"Robinhood Token" ticker to a file under `public/tokens/`, reached as an
+absolute https URL on the canonical site so the same load check, the same
+https rule and the same logo proxy apply as to any other source's answer.
+The `tickers` source answers it before asking the repository, and
+`upgradeStockLogos` replaces the feather with it on the logo process's
+next start — once: a mark that is already on record is skipped rather
+than rewritten and counted on every restart, which the query alone would
+have done, since the URL is not under the repository's base. The SVG is
+inset (`viewBox -4 -4 32 32`) because the badge is a circle and the
+wordmark's ends sat outside it at full width.
+
+Adding another private company is one line in that map and one file; the
+token's address is not needed, which is why this is not an entry in
+`config/tokens.json`.
+
+**Every wallet in the dialog has its logo.** A wallet that is installed
+announces its icon (EIP-6963); one that is not announces nothing, so its
+row showed a letter on a coloured disc, and so did WalletConnect's. Each
+entry on the known list now carries `icon`, a file under `public/wallets/`
+(the marks RainbowKit ships, MIT), and `walletIcon()` picks the announced
+icon when there is one and the known mark otherwise — an extension that
+announces an empty icon gets the same fallback. A test asserts every file
+exists, because a missing one is a broken image on the one dialog that
+asks people to trust the site.

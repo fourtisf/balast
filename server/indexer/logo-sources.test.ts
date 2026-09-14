@@ -9,6 +9,8 @@
  * found" rather than as data.
  */
 
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CHAIN, NATIVE_ETH } from '../../lib/chain';
 import { prisma } from '../db';
@@ -104,6 +106,7 @@ describe('tickers', () => {
       [TOKEN]: { symbol: 'AMD', name: 'AMD \u2022 Robinhood Token' },
       '0x00000000000000000000000000000000000000a2': { symbol: 'GME', name: 'GME' },
       '0x00000000000000000000000000000000000000a3': { symbol: 'SPCX', name: 'Space Exploration \u2022 Robinhood Token' },
+      '0x00000000000000000000000000000000000000a4': { symbol: 'SPY', name: 'SPDR S&P 500 \u2022 Robinhood Token' },
     })[address] ?? null;
 
   it('maps a Robinhood stock token to its ticker icon when the icon exists', async () => {
@@ -126,9 +129,27 @@ describe('tickers', () => {
   it('is null when the repository has no icon for the ticker', async () => {
     const api = service({});
     expect(
-      await tickers({ facts }).lookup('0x00000000000000000000000000000000000000a3', { fetch: api.fetch, log: quiet }),
+      await tickers({ facts }).lookup('0x00000000000000000000000000000000000000a4', { fetch: api.fetch, log: quiet }),
     ).toBeNull();
-    expect(api.calls[0]).toContain('/ticker_icons/SPCX.png');
+    expect(api.calls[0]).toContain('/ticker_icons/SPY.png');
+  });
+
+  it('gives a private company\'s stock token the mark this site serves, without asking the repository', async () => {
+    // SpaceX is on no exchange, so no ticker repository has it; without this
+    // the row wears whatever the explorer answered — the issuer's feather.
+    const api = service({ '/ticker_icons/SPCX.png': {} });
+    expect(
+      await tickers({ facts, site: 'https://site.example/' }).lookup('0x00000000000000000000000000000000000000a3', {
+        fetch: api.fetch,
+        log: quiet,
+      }),
+    ).toBe('https://site.example/tokens/spcx.svg');
+    expect(api.calls).toHaveLength(0);
+    // The mark is a real file in the repository, on the canonical site by default.
+    expect(await tickers({ facts }).lookup('0x00000000000000000000000000000000000000a3', { fetch: api.fetch, log: quiet })).toBe(
+      'https://balast.xyz/tokens/spcx.svg',
+    );
+    expect(existsSync(join(process.cwd(), 'public', 'tokens', 'spcx.svg'))).toBe(true);
   });
 });
 
@@ -481,6 +502,25 @@ describe('lookupLogos', () => {
     // Not a stock token: untouched.
     expect((await prisma.token.findUniqueOrThrow({ where: { address: '0x00000000000000000000000000000000000000a2' } })).logoUrl).toBe(feather);
     // Already carrying a ticker icon: not asked again.
+    expect(await upgradeStockLogos({ source, base, fetch })).toBe(0);
+  });
+
+  it('replaces the feather on a private company\'s stock with this site\'s own mark, once', async () => {
+    await resetDatabase();
+    const feather = 'https://explorer.example/robinhood-feather.png';
+    await prisma.token.create({
+      data: { address: TOKEN, symbol: 'SPCX', name: 'Space Exploration \u2022 Robinhood Token', decimals: 18, firstSeen: new Date('2026-07-01'), logoUrl: feather },
+    });
+    const facts = async () => ({ symbol: 'SPCX', name: 'Space Exploration \u2022 Robinhood Token' });
+    const base = 'https://icons.example/ticker_icons/';
+    const source = tickers({ facts, base, site: 'https://site.example' });
+    const fetch = service({ 'site.example': {} }).fetch;
+    expect(await upgradeStockLogos({ source, base, fetch })).toBe(1);
+    expect((await prisma.token.findUniqueOrThrow({ where: { address: TOKEN } })).logoUrl).toBe(
+      'https://site.example/tokens/spcx.svg',
+    );
+    // Not under `base`, so the query selects it every start — and it is
+    // already on record, so nothing is rewritten or counted.
     expect(await upgradeStockLogos({ source, base, fetch })).toBe(0);
   });
 

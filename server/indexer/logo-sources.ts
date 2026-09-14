@@ -35,6 +35,7 @@
 
 import { ContractFunctionExecutionError, getAddress } from 'viem';
 import { CHAIN, CONTRACTS, EXPLORER_URL, NATIVE_ETH } from '../../lib/chain';
+import { SITE_URL } from '../../lib/site';
 import { rpc } from '../chain/client';
 import { prisma } from '../db';
 import { isSafeLogoUrl } from './logos';
@@ -181,14 +182,29 @@ export function blockscout(options: { base?: string } = {}): LogoSource {
 export const TICKER_ICON_BASE = 'https://raw.githubusercontent.com/nvstly/icons/main/ticker_icons';
 const STOCK_TOKEN_NAME = /robinhood\s+token/i;
 
+/**
+ * Stocks no exchange lists, so no ticker repository carries them: Robinhood
+ * issues tokens on private companies too, and SPCX sat on the board wearing
+ * the issuer's feather because the repository had nothing under that
+ * ticker. Their marks are served by this site (`public/tokens/`), the way
+ * ether's is, and reached here as an absolute https URL so the same load
+ * check and the same logo proxy apply as to any other source's answer.
+ */
+export const OWN_STOCK_MARKS: Readonly<Record<string, string>> = {
+  SPCX: '/tokens/spcx.svg',
+};
+
 export function tickers(
   options: {
     base?: string;
+    /** Where this site's own marks are served from; the canonical URL by default. */
+    site?: string;
     /** Symbol and name for an address; the database by default. */
     facts?: (address: string) => Promise<{ symbol: string; name: string } | null>;
   } = {},
 ): LogoSource {
   const base = (options.base ?? TICKER_ICON_BASE).replace(/\/+$/, '');
+  const site = (options.site ?? SITE_URL).replace(/\/+$/, '');
   const facts =
     options.facts ??
     (async (address: string) =>
@@ -204,6 +220,8 @@ export function tickers(
         if (!token || !STOCK_TOKEN_NAME.test(token.name)) return null;
         const ticker = token.symbol.trim().toUpperCase();
         if (!/^[A-Z][A-Z0-9.]{0,9}$/.test(ticker)) return null;
+        const own = OWN_STOCK_MARKS[ticker];
+        if (own) return `${site}${own}`;
         const url = `${base}/${ticker}.png`;
         const response = await fetch(url, { headers: { 'user-agent': USER_AGENT } });
         return response.ok ? url : null;
@@ -698,7 +716,9 @@ export async function upgradeStockLogos(options: {
   let changed = 0;
   for (const stock of stocks) {
     const url = await source.lookup(stock.address, { fetch, log });
-    if (!url || !(await imageLoads(fetch, url))) continue;
+    // A mark served by this site is not under `base`, so the query selects
+    // it every start; it is already on record, and nothing has changed.
+    if (!url || url === stock.logo_url || !(await imageLoads(fetch, url))) continue;
     await prisma.token.update({
       where: { address: stock.address },
       data: { logoUrl: url, logoCheckedAt: new Date() },

@@ -55,19 +55,35 @@ export const REMEMBERED_WALLET_KEY = 'balast:wallet';
  * announces itself (EIP-6963) under this rdns and gets a Connect; the rest
  * get an Install link. Any wallet that announces itself and is not on this
  * list is shown too — the list is a floor, not a filter.
+ *
+ * Each carries its own mark, served by this site (`public/wallets/`): an
+ * installed wallet announces an icon, one that is not installed cannot, and
+ * a row without a logo reads as a placeholder rather than a wallet.
  */
 export const KNOWN_WALLETS = [
-  { name: 'MetaMask', rdns: 'io.metamask', install: 'https://metamask.io/download/' },
-  { name: 'Rabby', rdns: 'io.rabby', install: 'https://rabby.io/' },
-  { name: 'Coinbase Wallet', rdns: 'com.coinbase.wallet', install: 'https://www.coinbase.com/wallet/downloads' },
-  { name: 'Phantom', rdns: 'app.phantom', install: 'https://phantom.com/download' },
-  { name: 'OKX Wallet', rdns: 'com.okex.wallet', install: 'https://www.okx.com/web3' },
-  { name: 'Trust Wallet', rdns: 'com.trustwallet.app', install: 'https://trustwallet.com/download' },
-  { name: 'Brave Wallet', rdns: 'com.brave.wallet', install: 'https://brave.com/wallet/' },
+  { name: 'MetaMask', rdns: 'io.metamask', icon: '/wallets/metamask.svg', install: 'https://metamask.io/download/' },
+  { name: 'Rabby', rdns: 'io.rabby', icon: '/wallets/rabby.svg', install: 'https://rabby.io/' },
+  { name: 'Coinbase Wallet', rdns: 'com.coinbase.wallet', icon: '/wallets/coinbase.svg', install: 'https://www.coinbase.com/wallet/downloads' },
+  { name: 'Phantom', rdns: 'app.phantom', icon: '/wallets/phantom.svg', install: 'https://phantom.com/download' },
+  { name: 'OKX Wallet', rdns: 'com.okex.wallet', icon: '/wallets/okx.svg', install: 'https://www.okx.com/web3' },
+  { name: 'Trust Wallet', rdns: 'com.trustwallet.app', icon: '/wallets/trust.svg', install: 'https://trustwallet.com/download' },
+  { name: 'Brave Wallet', rdns: 'com.brave.wallet', icon: '/wallets/brave.svg', install: 'https://brave.com/wallet/' },
 ] as const;
 
 /** The rdns the dialog uses for a WalletConnect session. */
 export const WALLETCONNECT_RDNS = 'walletconnect';
+/** WalletConnect's mark, served by this site. */
+export const WALLETCONNECT_ICON = '/wallets/walletconnect.svg';
+
+/**
+ * The mark for a wallet the dialog shows: the one it announced (EIP-6963
+ * icons are data: URIs), else the one on the known list for its rdns.
+ */
+export function walletIcon(info: { rdns: string; icon?: string }): string | undefined {
+  if (info.icon) return info.icon;
+  if (info.rdns === WALLETCONNECT_RDNS) return WALLETCONNECT_ICON;
+  return KNOWN_WALLETS.find((w) => w.rdns === info.rdns)?.icon;
+}
 
 /**
  * WalletConnect needs a project id from cloud.reown.com (free). Inlined at
@@ -107,7 +123,7 @@ export async function connectWalletConnect(): Promise<AnnouncedWallet> {
   const provider = await walletConnectProvider();
   await provider.connect();
   return {
-    info: { uuid: WALLETCONNECT_RDNS, name: 'WalletConnect', icon: '', rdns: WALLETCONNECT_RDNS },
+    info: { uuid: WALLETCONNECT_RDNS, name: 'WalletConnect', icon: WALLETCONNECT_ICON, rdns: WALLETCONNECT_RDNS },
     provider,
   };
 }
@@ -119,7 +135,7 @@ export async function restoreWalletConnect(): Promise<AnnouncedWallet | null> {
     const provider = await walletConnectProvider();
     if (!provider.session || !provider.accounts?.[0]) return null;
     return {
-      info: { uuid: WALLETCONNECT_RDNS, name: 'WalletConnect', icon: '', rdns: WALLETCONNECT_RDNS },
+      info: { uuid: WALLETCONNECT_RDNS, name: 'WalletConnect', icon: WALLETCONNECT_ICON, rdns: WALLETCONNECT_RDNS },
       provider,
     };
   } catch {

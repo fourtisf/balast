@@ -1,12 +1,17 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CHAIN } from './chain';
 import {
   CHAIN_ID_HEX,
   CHAIN_PARAMS,
   KNOWN_WALLETS,
+  WALLETCONNECT_ICON,
+  WALLETCONNECT_RDNS,
   connectWallet,
   describeWalletError,
   ensureChain,
+  walletIcon,
   type Eip1193Provider,
 } from './wallet';
 
@@ -86,6 +91,22 @@ describe('KNOWN_WALLETS', () => {
     expect(new Set(rdns).size).toBe(rdns.length);
     for (const w of KNOWN_WALLETS) expect(w.install).toMatch(/^https:\/\//);
     expect(rdns).toContain('io.metamask');
+  });
+
+  it('gives every wallet a mark this site serves, so a row is never a letter', () => {
+    // A wallet that is not installed announces nothing, so its mark has to
+    // come from here; the file must exist or the row shows a broken image.
+    for (const w of [...KNOWN_WALLETS, { rdns: WALLETCONNECT_RDNS, icon: WALLETCONNECT_ICON }]) {
+      expect(w.icon).toMatch(/^\/wallets\/[a-z]+\.svg$/);
+      expect(existsSync(join(process.cwd(), 'public', w.icon))).toBe(true);
+    }
+  });
+
+  it('prefers the icon a wallet announced, and falls back to the known mark', () => {
+    expect(walletIcon({ rdns: 'io.metamask', icon: 'data:image/svg+xml,announced' })).toBe('data:image/svg+xml,announced');
+    expect(walletIcon({ rdns: 'io.metamask', icon: '' })).toBe('/wallets/metamask.svg');
+    expect(walletIcon({ rdns: WALLETCONNECT_RDNS })).toBe(WALLETCONNECT_ICON);
+    expect(walletIcon({ rdns: 'com.example.unknown', icon: '' })).toBeUndefined();
   });
 });
 

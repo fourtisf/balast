@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useUi } from '@/components/providers/UiProvider';
 import { EXPLORER_URL } from '@/lib/chain';
 import { shortWallet } from '@/lib/format';
-import { tokenMark } from '@/lib/token-mark';
 import {
   KNOWN_WALLETS,
+  WALLETCONNECT_ICON,
   WALLETCONNECT_PROJECT_ID,
   WALLETCONNECT_RDNS,
   connectWallet,
@@ -17,6 +17,7 @@ import {
   rememberedWallet,
   restoreWalletConnect,
   silentAccount,
+  walletIcon,
   type AnnouncedWallet,
 } from '@/lib/wallet';
 
@@ -263,9 +264,9 @@ export function WalletModal() {
                   onClick={() => choose(w)}
                   disabled={busy !== null}
                 >
-                  {/* The icon is the wallet's own, as a data: URI per the standard. */}
+                  {/* The wallet's own icon (a data: URI per the standard), else its known mark. */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={w.info.icon} alt="" />
+                  <img src={walletIcon(w.info)} alt="" />
                   <span>
                     <span className="n">{w.info.name}</span>
                     <span className="s">{busy === w.info.uuid ? 'Waiting for the wallet…' : 'Installed'}</span>
@@ -276,11 +277,8 @@ export function WalletModal() {
 
               {WALLETCONNECT_PROJECT_ID && (
                 <button className="wallet-opt" onClick={chooseWalletConnect} disabled={busy !== null}>
-                  <span className="wallet-qr" aria-hidden="true">
-                    <svg viewBox="0 0 24 24">
-                      <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 14h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z" />
-                    </svg>
-                  </span>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={WALLETCONNECT_ICON} alt="" />
                   <span>
                     <span className="n">WalletConnect</span>
                     <span className="s">
@@ -293,27 +291,24 @@ export function WalletModal() {
 
               {known
                 .filter((w) => !w.found)
-                .map((w) => {
-                  const mark = tokenMark(w.rdns);
-                  return (
-                    <a
-                      key={w.rdns}
-                      className="wallet-opt off"
-                      href={w.install}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <span className="wallet-mono" style={{ backgroundColor: mark.bg, color: mark.ink }} aria-hidden="true">
-                        {w.name[0]}
-                      </span>
-                      <span>
-                        <span className="n">{w.name}</span>
-                        <span className="s">Not installed</span>
-                      </span>
-                      <span className="act">Install</span>
-                    </a>
-                  );
-                })}
+                .map((w) => (
+                  <a
+                    key={w.rdns}
+                    className="wallet-opt off"
+                    href={w.install}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {/* Not installed, so nothing announced an icon: the mark this site serves. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={w.icon} alt="" />
+                    <span>
+                      <span className="n">{w.name}</span>
+                      <span className="s">Not installed</span>
+                    </span>
+                    <span className="act">Install</span>
+                  </a>
+                ))}
             </div>
             {error && (
               <p className="hint down" role="alert" style={{ marginTop: 12 }}>
