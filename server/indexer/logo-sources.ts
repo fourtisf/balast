@@ -33,8 +33,8 @@
  * found".
  */
 
-import { getAddress } from 'viem';
-import { CHAIN, EXPLORER_URL, NATIVE_ETH } from '../../lib/chain';
+import { ContractFunctionExecutionError, getAddress } from 'viem';
+import { CHAIN, CONTRACTS, EXPLORER_URL, NATIVE_ETH } from '../../lib/chain';
 import { rpc } from '../chain/client';
 import { prisma } from '../db';
 import { isSafeLogoUrl } from './logos';
@@ -282,6 +282,67 @@ function imageFromMetadata(meta: unknown, gateway: string): string | null {
   return null;
 }
 
+type MetadataAnswers = Record<MetadataFunction, string | null>;
+
+/**
+ * Every candidate function in one Multicall3 round trip, falling back to
+ * one call each. A contract without the function reverts, and a revert is
+ * an answer — "not here" — not an endpoint failure: the first version let
+ * `withFailover` retry every revert on all four endpoints, twenty calls and
+ * nine seconds per token for a source that made no HTTP request at all.
+ */
+async function readMetadataOnChain(address: string): Promise<MetadataAnswers> {
+  const checksummed = getAddress(address);
+  const contracts = METADATA_FUNCTIONS.map((functionName) => ({
+    address: checksummed,
+    abi: METADATA_ABI,
+    functionName,
+  }));
+  const empty = Object.fromEntries(METADATA_FUNCTIONS.map((fn) => [fn, null])) as MetadataAnswers;
+
+  try {
+    const results = await rpc(async (c) => {
+      try {
+        return await c.multicall({ contracts, allowFailure: true, multicallAddress: CONTRACTS.multicall3 });
+      } catch (error) {
+        // No Multicall3 at that address (it is unverified, §2): not an outage.
+        if (error instanceof ContractFunctionExecutionError) return null;
+        throw error;
+      }
+    }, `metadata(${address})`);
+    if (results) {
+      return Object.fromEntries(
+        METADATA_FUNCTIONS.map((fn, i) => {
+          // viem's result type collapses over a loosely typed ABI; the shape
+          // is documented: { status, result? }.
+          const r = results[i] as { status: string; result?: unknown };
+          return [fn, r.status === 'success' && typeof r.result === 'string' ? r.result : null];
+        }),
+      ) as MetadataAnswers;
+    }
+  } catch {
+    // Every endpoint refused the batch; one call each, below.
+  }
+
+  const out = { ...empty };
+  for (const functionName of METADATA_FUNCTIONS) {
+    try {
+      const value = await rpc(async (c) => {
+        try {
+          return await c.readContract({ address: checksummed, abi: METADATA_ABI, functionName });
+        } catch (error) {
+          if (error instanceof ContractFunctionExecutionError) return null;
+          throw error;
+        }
+      }, `${functionName}(${address})`);
+      out[functionName] = typeof value === 'string' ? value : null;
+    } catch {
+      out[functionName] = null;
+    }
+  }
+  return out;
+}
+
 export function onchain(
   options: {
     /** The string a view function returns, or null if the call reverts. */
@@ -290,15 +351,18 @@ export function onchain(
   } = {},
 ): LogoSource {
   const gateway = (options.gateway ?? process.env.IPFS_GATEWAY?.trim() ?? DEFAULT_IPFS_GATEWAY).replace(/\/*$/, '/');
+  // One round trip per token, whichever function is asked about first.
+  const answers = new Map<string, Promise<MetadataAnswers>>();
   const read =
     options.read ??
     (async (address: string, functionName: MetadataFunction) => {
+      const key = address.toLowerCase();
+      if (!answers.has(key)) {
+        if (answers.size > 256) answers.clear();
+        answers.set(key, readMetadataOnChain(key));
+      }
       try {
-        const value = await rpc(
-          (c) => c.readContract({ address: getAddress(address), abi: METADATA_ABI, functionName }),
-          `${functionName}(${address})`,
-        );
-        return typeof value === 'string' ? value : null;
+        return (await answers.get(key)!)[functionName];
       } catch {
         return null;
       }
