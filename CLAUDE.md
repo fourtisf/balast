@@ -1657,3 +1657,21 @@ documented shape, as the others were; the probe says what it answers.
 
 The default order is explorer, tickers, geckoterminal, dexscreener,
 coingecko, coinmarketcap: chain-native first, the rate-limited one last.
+
+### The token's own word: on-chain metadata
+
+With the aggregators answering, the board still had launchpad coins none
+of them carried (VLAD, MARIAN). One source is left that needs nobody to
+have listed the token: its own contract. Launchpads that follow ERC-7572
+publish `contractURI()`, home-grown ones `metadataURI()`, `image()`,
+`imageUrl()` or `logoURI()` — a URI pointing at JSON with an `image`, or
+at the image itself. The `onchain` source tries each (one `eth_call`; a
+contract without the function reverts), resolves `ipfs://` through a
+gateway (`IPFS_GATEWAY`), decodes an inline `data:` JSON in place, and
+records only an https image URL.
+
+It fetches metadata only over https and never from a bare IP or localhost.
+A contract can name any host it likes and this process runs on the box next
+to the API; the test pins that refusal. Whether this chain's launchpads
+publish anything the source can read is, as with the others, a fact the
+probe reports.

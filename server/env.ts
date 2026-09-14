@@ -124,6 +124,7 @@ export const env = {
   logoSources: list('LOGO_SOURCES', [
     'explorer',
     'tickers',
+    'onchain',
     'geckoterminal',
     'dexscreener',
     'coingecko',

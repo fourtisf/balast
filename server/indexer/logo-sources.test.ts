@@ -20,6 +20,7 @@ import {
   createSources,
   dexscreener,
   geckoterminal,
+  onchain,
   tickers,
   lookupLogos,
   type Fetch,
@@ -127,6 +128,54 @@ describe('tickers', () => {
       await tickers({ facts }).lookup('0x00000000000000000000000000000000000000a3', { fetch: api.fetch, log: quiet }),
     ).toBeNull();
     expect(api.calls[0]).toContain('/ticker_icons/SPCX.png');
+  });
+});
+
+describe('onchain', () => {
+  const answering = (table: Partial<Record<string, string | null>>) => async (_address: string, fn: string) =>
+    table[fn] ?? null;
+
+  it('reads contractURI, resolves ipfs:// through the gateway, and takes image from the JSON', async () => {
+    const api = service({ '/ipfs/QmMeta': { name: 'VLAD', image: 'ipfs://QmImage/logo.png' } });
+    const src = onchain({ read: answering({ contractURI: 'ipfs://QmMeta' }), gateway: 'https://gw.example/ipfs/' });
+    expect(await src.lookup(TOKEN, { fetch: api.fetch, log: quiet })).toBe('https://gw.example/ipfs/QmImage/logo.png');
+    expect(api.calls).toEqual(['https://gw.example/ipfs/QmMeta']);
+  });
+
+  it('takes a URI that is the image itself without fetching it, and falls through reverts', async () => {
+    const api = service({});
+    const src = onchain({ read: answering({ contractURI: null, metadataURI: null, image: 'https://cdn.example/vlad.png' }) });
+    expect(await src.lookup(TOKEN, { fetch: api.fetch, log: quiet })).toBe('https://cdn.example/vlad.png');
+    expect(api.calls).toHaveLength(0);
+  });
+
+  it('decodes an inline data: JSON URI in place', async () => {
+    const json = Buffer.from(JSON.stringify({ image: 'https://cdn.example/inline.png' })).toString('base64');
+    const src = onchain({ read: answering({ contractURI: `data:application/json;base64,${json}` }) });
+    expect(await src.lookup(TOKEN, { fetch: service({}).fetch, log: quiet })).toBe('https://cdn.example/inline.png');
+  });
+
+  it('never fetches http, an IP literal or localhost, whatever the contract says', async () => {
+    const api = service({ '/meta': { image: 'https://cdn.example/x.png' } });
+    for (const uri of ['http://cdn.example/meta', 'https://127.0.0.1:3001/meta', 'https://localhost/meta', 'https://[::1]/meta']) {
+      expect(await onchain({ read: answering({ contractURI: uri }) }).lookup(TOKEN, { fetch: api.fetch, log: quiet })).toBeNull();
+    }
+    expect(api.calls).toHaveLength(0);
+    // And an image the metadata names over http is refused too.
+    const insecure = service({ '/meta': { image: 'http://cdn.example/x.png' } });
+    expect(await onchain({ read: answering({ contractURI: 'https://cdn.example/meta' }) }).lookup(TOKEN, { fetch: insecure.fetch, log: quiet })).toBeNull();
+  });
+
+  it('is null for a contract with none of the functions, and never asks about ether', async () => {
+    const calls: string[] = [];
+    const read = async (_a: string, fn: string) => {
+      calls.push(fn);
+      return null;
+    };
+    expect(await onchain({ read }).lookup(TOKEN, { fetch: service({}).fetch, log: quiet })).toBeNull();
+    expect(calls).toEqual(['contractURI', 'metadataURI', 'image', 'imageUrl', 'logoURI']);
+    expect(await onchain({ read }).lookup(NATIVE_ETH, { fetch: service({}).fetch, log: quiet })).toBeNull();
+    expect(calls).toHaveLength(5);
   });
 });
 
@@ -303,7 +352,11 @@ describe('createSources', () => {
       'coingecko',
     ]);
     expect(createSources(['explorer', 'blockscout']).map((s) => s.name)).toEqual(['explorer', 'explorer']);
-    expect(createSources(['tickers', 'geckoterminal']).map((s) => s.name)).toEqual(['tickers', 'geckoterminal']);
+    expect(createSources(['tickers', 'geckoterminal', 'onchain']).map((s) => s.name)).toEqual([
+      'tickers',
+      'geckoterminal',
+      'onchain',
+    ]);
     expect(createSources(['none'])).toHaveLength(0);
   });
 });

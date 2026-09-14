@@ -33,7 +33,9 @@
  * found".
  */
 
+import { getAddress } from 'viem';
 import { CHAIN, EXPLORER_URL, NATIVE_ETH } from '../../lib/chain';
+import { rpc } from '../chain/client';
 import { prisma } from '../db';
 import { isSafeLogoUrl } from './logos';
 
@@ -174,6 +176,130 @@ export function tickers(
         const url = `${base}/${ticker}.png`;
         const response = await fetch(url, { headers: { 'user-agent': USER_AGENT } });
         return response.ok ? url : null;
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
+// ----------------------------------------------------------- on-chain --
+
+/**
+ * The token's own contract.
+ *
+ * Launchpads that follow ERC-7572 publish a `contractURI()`; home-grown
+ * ones a `metadataURI()`, `image()`, `imageUrl()` or `logoURI()` — a URI
+ * pointing at JSON with an `image`, or at the image itself. It is the one
+ * source that is the launchpad's own word rather than an aggregator's copy
+ * of it, and it needs nobody to have listed the token. Each candidate is
+ * one `eth_call`; a contract without the function reverts, which costs the
+ * call and nothing else.
+ *
+ * IPFS URIs resolve through a public gateway (`IPFS_GATEWAY`); a `data:`
+ * JSON URI is decoded in place. Metadata is fetched only over https and
+ * never from a bare IP or localhost, because a contract can name any host
+ * it likes and this process runs on the box. Only an https image URL
+ * crosses §4's line.
+ */
+const METADATA_FUNCTIONS = ['contractURI', 'metadataURI', 'image', 'imageUrl', 'logoURI'] as const;
+type MetadataFunction = (typeof METADATA_FUNCTIONS)[number];
+const METADATA_ABI = METADATA_FUNCTIONS.map((name) => ({
+  type: 'function' as const,
+  name,
+  stateMutability: 'view' as const,
+  inputs: [],
+  outputs: [{ type: 'string' as const }],
+}));
+export const DEFAULT_IPFS_GATEWAY = 'https://ipfs.io/ipfs/';
+const IMAGE_EXTENSION = /\.(png|jpe?g|gif|webp|svg|avif)(\?.*)?$/i;
+
+/** An https URL on a named host, or null: never http, an IP literal or localhost. */
+function publicHttps(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return null;
+    const host = parsed.hostname;
+    if (host === 'localhost' || host.endsWith('.local') || /^[\d.]+$/.test(host) || host.includes(':')) return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+/** ipfs://… and bare CIDs through the gateway; https as it is; anything else null. */
+function resolveUri(uri: string, gateway: string): string | null {
+  const trimmed = uri.trim();
+  const ipfs = /^ipfs:\/\/(?:ipfs\/)?(.+)$/i.exec(trimmed);
+  if (ipfs) return publicHttps(`${gateway}${ipfs[1]}`);
+  if (/^(Qm[1-9A-HJ-NP-Za-km-z]{44}|bafy[a-z2-7]{50,})(\/.*)?$/.test(trimmed)) {
+    return publicHttps(`${gateway}${trimmed}`);
+  }
+  return publicHttps(trimmed);
+}
+
+function imageFromMetadata(meta: unknown, gateway: string): string | null {
+  const record = asRecord(meta);
+  if (!record) return null;
+  for (const key of ['image', 'image_url', 'imageUrl', 'logo', 'logoURI', 'icon']) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim() !== '') {
+      const resolved = resolveUri(value, gateway);
+      if (resolved && isSafeLogoUrl(resolved)) return resolved;
+    }
+  }
+  return null;
+}
+
+export function onchain(
+  options: {
+    /** The string a view function returns, or null if the call reverts. */
+    read?: (address: string, functionName: MetadataFunction) => Promise<string | null>;
+    gateway?: string;
+  } = {},
+): LogoSource {
+  const gateway = (options.gateway ?? process.env.IPFS_GATEWAY?.trim() ?? DEFAULT_IPFS_GATEWAY).replace(/\/*$/, '/');
+  const read =
+    options.read ??
+    (async (address: string, functionName: MetadataFunction) => {
+      try {
+        const value = await rpc(
+          (c) => c.readContract({ address: getAddress(address), abi: METADATA_ABI, functionName }),
+          `${functionName}(${address})`,
+        );
+        return typeof value === 'string' ? value : null;
+      } catch {
+        return null;
+      }
+    });
+
+  return {
+    name: 'onchain',
+    async lookup(address, { fetch }) {
+      if (address.toLowerCase() === NATIVE_ETH) return null;
+      try {
+        for (const functionName of METADATA_FUNCTIONS) {
+          const value = await read(address, functionName);
+          if (!value || value.trim() === '') continue;
+          const uri = value.trim();
+
+          // Inline JSON: decoded here, no request made.
+          const inline = /^data:application\/json(;base64)?,(.*)$/i.exec(uri);
+          if (inline) {
+            const text = inline[1] ? Buffer.from(inline[2], 'base64').toString('utf8') : decodeURIComponent(inline[2]);
+            const found = imageFromMetadata(JSON.parse(text), gateway);
+            if (found) return found;
+            continue;
+          }
+
+          const resolved = resolveUri(uri, gateway);
+          if (!resolved) continue;
+          // The URI is the image itself, or JSON that names one.
+          if (IMAGE_EXTENSION.test(new URL(resolved).pathname)) return isSafeLogoUrl(resolved) ? resolved : null;
+          const found = imageFromMetadata(await getJson(fetch, resolved, {}), gateway);
+          if (found) return found;
+        }
+        return null;
       } catch {
         return null;
       }
@@ -420,6 +546,10 @@ export function createSources(names: readonly string[]): LogoSource[] {
       case 'tickers':
       case 'stocks':
         sources.push(tickers());
+        break;
+      case 'onchain':
+      case 'contract':
+        sources.push(onchain());
         break;
       case 'geckoterminal':
         sources.push(geckoterminal({ network: process.env.GECKOTERMINAL_NETWORK?.trim() || null }));
