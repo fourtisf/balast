@@ -13,7 +13,10 @@ DOMAIN=balast.xyz
 APP_USER=balast
 APP_DIR=/var/www/balast
 REPO=https://github.com/fourtisf/depth.git
-BRANCH=claude/new-session-c0aptv
+# Overridable, and kept in step with deploy.sh: a default naming whichever
+# session last touched this file will otherwise install an old version of the
+# site on a fresh box and look like it worked.
+BRANCH="${BRANCH:-claude/jolly-knuth-fyykbh}"
 NODE_MAJOR=20
 
 [[ $EUID -eq 0 ]] || { echo "run as root"; exit 1; }

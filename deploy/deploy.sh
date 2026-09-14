@@ -10,7 +10,10 @@ set -euo pipefail
 
 APP_USER=balast
 APP_DIR=/var/www/balast
-BRANCH=claude/new-session-c0aptv
+# The branch this deploys. Overridable — `BRANCH=... bash deploy.sh` — because
+# the default here is a fact about the last session that touched it, and a
+# stale default silently deploys the previous version while reporting success.
+BRANCH="${BRANCH:-claude/jolly-knuth-fyykbh}"
 
 [[ $EUID -eq 0 ]] || { echo "run as root"; exit 1; }
 cd "$APP_DIR"
