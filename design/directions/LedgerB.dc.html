@@ -1,0 +1,163 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: inherit; text-decoration: none; } a:hover { color: inherit; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+
+<div style="width:1280px;min-height:900px;background:oklch(96.5% 0.006 85);color:oklch(22% 0.02 165);font-family:'DM Sans', 'Segoe UI', system-ui, sans-serif;display:flex">
+  <aside style="width:220px;flex:none;padding:26px 16px;display:flex;flex-direction:column;gap:4px;border-right:1px solid rgba(20,32,27,.10)">
+    <div style="display:flex;align-items:center;gap:10px;padding:0 12px 28px">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="oklch(22% 0.02 165)" style="display:block"><path d="M4 20V6l6 9 4-6 6 11z"></path></svg>
+      <span style="font-family:'Instrument Serif', Georgia, serif;font-size:24px;letter-spacing:.01em">Balast</span>
+    </div>
+    <a href="#" style="display:flex;align-items:center;gap:10px;height:38px;padding:0 12px;border-radius:8px;color:oklch(22% 0.02 165);background:rgba(20,32,27,.06);font-weight:600;font-size:14px"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="oklch(22% 0.02 165)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex:none"><path d="M3 15l5-6 4 4 4-6 5 6"></path></svg><span>Pools</span></a><a href="#" style="display:flex;align-items:center;gap:10px;height:38px;padding:0 12px;border-radius:8px;color:oklch(45% 0.02 165);background:transparent;font-weight:500;font-size:14px"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="oklch(45% 0.02 165)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex:none"><path d="M12 3l9 5-9 5-9-5 9-5z"></path><path d="M3 13l9 5 9-5"></path></svg><span>Stakes</span></a><a href="#" style="display:flex;align-items:center;gap:10px;height:38px;padding:0 12px;border-radius:8px;color:oklch(45% 0.02 165);background:transparent;font-weight:500;font-size:14px"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="oklch(45% 0.02 165)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex:none"><path d="M5 20V10M10 20V4M15 20v-8M20 20v-4"></path></svg><span>Positions</span></a><a href="#" style="display:flex;align-items:center;gap:10px;height:38px;padding:0 12px;border-radius:8px;color:oklch(45% 0.02 165);background:transparent;font-weight:500;font-size:14px"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="oklch(45% 0.02 165)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex:none"><path d="M4 7h9a4 4 0 010 8H4"></path><path d="M14 17l3 3 3-3"></path></svg><span>Router</span></a><a href="#" style="display:flex;align-items:center;gap:10px;height:38px;padding:0 12px;border-radius:8px;color:oklch(45% 0.02 165);background:transparent;font-weight:500;font-size:14px"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="oklch(45% 0.02 165)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex:none"><rect x="3" y="7" width="18" height="13" rx="2"></rect><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"></path></svg><span>Portfolio</span></a>
+  </aside>
+  <main style="flex:1;min-width:0;padding:26px 36px 36px;display:flex;flex-direction:column;gap:26px">
+    <header style="display:flex;align-items:center;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px;flex:1;height:44px;padding:0 16px;border:1px solid rgba(20,32,27,.10);border-radius:12px;background:#FFFFFF;color:oklch(60% 0.015 165);font-size:14px"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="oklch(60% 0.015 165)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex:none"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>Search tokens</div>
+      <div style="display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border:1px solid rgba(20,32,27,.10);border-radius:12px;background:#FFFFFF;color:oklch(45% 0.02 165);font-size:12.5px;font-weight:500"><span style="width:7px;height:7px;border-radius:99px;background:oklch(60% 0.015 165)"></span>Indexer 67d 20h behind</div>
+      <div style="display:flex;align-items:center;height:44px;padding:0 20px;border-radius:12px;background:oklch(22% 0.02 165);color:#FFFFFF;font-weight:600;font-size:14px">Connect wallet</div>
+    </header>
+
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <h1 style="margin:0;font-family:'Instrument Serif', Georgia, serif;font-weight:400;font-size:46px;line-height:1.05;letter-spacing:-.01em">Every pool on Robinhood Chain, priced from its own fees.</h1>
+      <p style="margin:0;font-size:15px;color:oklch(45% 0.02 165);max-width:62ch">Deposit one token, collect a share of swap fees in WETH. Nothing here is projected — the yield you see is what LPs earned, trailing seven days.</p>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px">
+      <div style="display:flex;flex-direction:column;gap:8px;padding:22px 24px;background:#FFFFFF;border:1px solid rgba(20,32,27,.10);border-radius:16px;box-shadow:0 1px 2px rgba(20,32,27,.05),0 16px 40px -28px rgba(20,32,27,.25)"><span style="font-size:12px;font-weight:600;color:oklch(60% 0.015 165)">Total value locked</span><span style="font-family:'Instrument Serif', Georgia, serif;font-size:38px;line-height:1;letter-spacing:-.01em;color:oklch(22% 0.02 165)">$3.78M</span><span style="font-size:12.5px;color:oklch(45% 0.02 165)">across 7 listed markets</span></div>
+      <div style="display:flex;flex-direction:column;gap:8px;padding:22px 24px;background:#FFFFFF;border:1px solid rgba(20,32,27,.10);border-radius:16px;box-shadow:0 1px 2px rgba(20,32,27,.05),0 16px 40px -28px rgba(20,32,27,.25)"><span style="font-size:12px;font-weight:600;color:oklch(60% 0.015 165)">Fees paid to LPs</span><span style="font-family:'Instrument Serif', Georgia, serif;font-size:38px;line-height:1;letter-spacing:-.01em;color:oklch(22% 0.02 165)">$387,569</span><span style="font-size:12.5px;color:oklch(45% 0.02 165)">since the chain launched</span></div>
+      <div style="display:flex;flex-direction:column;gap:8px;padding:22px 24px;background:#FFFFFF;border:1px solid rgba(20,32,27,.10);border-radius:16px;box-shadow:0 1px 2px rgba(20,32,27,.05),0 16px 40px -28px rgba(20,32,27,.25)"><span style="font-size:12px;font-weight:600;color:oklch(60% 0.015 165)">ETH price</span><span style="font-family:'Instrument Serif', Georgia, serif;font-size:38px;line-height:1;letter-spacing:-.01em;color:oklch(22% 0.02 165)">$2,521</span><span style="font-size:12.5px;color:oklch(45% 0.02 165)">from the ETH/USDG pool, one path</span></div>
+    </div>
+
+    <section style="background:#FFFFFF;border:1px solid rgba(20,32,27,.10);border-radius:18px;box-shadow:0 1px 2px rgba(20,32,27,.05),0 24px 48px -36px rgba(20,32,27,.3);overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px 14px">
+        <div style="display:flex;align-items:baseline;gap:12px"><span style="font-family:'Instrument Serif', Georgia, serif;font-size:26px">Markets</span><span style="font-size:13px;color:oklch(60% 0.015 165)">Tokens above $1M · sorted by volume</span></div>
+        <div style="display:flex;padding:3px;border:1px solid rgba(20,32,27,.10);border-radius:10px;background:oklch(96.5% 0.006 85)"><span style="padding:6px 14px;border-radius:7px;background:#FFFFFF;font-size:13px;font-weight:600;box-shadow:0 1px 2px rgba(20,32,27,.08)">All</span><span style="padding:6px 14px;font-size:13px;color:oklch(60% 0.015 165)">ETH</span><span style="padding:6px 14px;font-size:13px;color:oklch(60% 0.015 165)">USDG</span></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 160px 110px 120px 110px 120px;gap:16px;padding:0 24px 10px;font-size:11.5px;font-weight:600;color:oklch(60% 0.015 165)">
+        <span>Token</span><span style="text-align:right">Market cap</span><span style="text-align:right">24h</span><span style="text-align:right">Fees 24h</span><span style="text-align:right">Yield · 7d</span><span style="text-align:right">Last 24h</span>
+      </div>
+      
+      <div style="display:grid;grid-template-columns:1fr 160px 110px 120px 110px 120px;align-items:center;gap:16px;height:64px;padding:0 24px;border-top:1px solid rgba(20,32,27,.10)">
+        <div style="display:flex;align-items:center;gap:14px;min-width:0">
+          <span style="font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-size:12px;color:oklch(60% 0.015 165);width:18px">1</span>
+          <div style="width:36px;height:36px;border-radius:999px;background-color:oklch(88% 0.09 48);background-image:linear-gradient(155deg,rgba(255,255,255,.35),rgba(255,255,255,0) 55%);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),inset 0 -3px 6px rgba(0,0,0,.22),0 2px 6px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;flex:none;color:oklch(32% 0.09 48);font-weight:700;font-size:10px;letter-spacing:.04em">ET</div>
+          <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+            <span style="font-weight:700;font-size:15px;color:oklch(22% 0.02 165)">ETH</span>
+            <span style="font-size:12.5px;color:oklch(60% 0.015 165);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Ether</span>
+          </div>
+        </div>
+        <div style="text-align:right"><span style="color:oklch(60% 0.015 165);font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace">—</span></div>
+        <div style="text-align:right"><span style="display:inline-flex;align-items:center;padding:3px 9px;border-radius:999px;background:oklch(95% 0.03 25);color:oklch(55% 0.17 25);font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-weight:600;font-size:12px">-1.9%</span></div>
+        <div style="text-align:right;font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-weight:600;font-size:14px;color:oklch(22% 0.02 165)">$5.1K</div>
+        <div style="text-align:right;font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-size:13px;color:oklch(60% 0.015 165)">—</div>
+        <div style="display:flex;justify-content:flex-end"><svg width="100" height="30" viewBox="0 0 100 30" style="display:block"><polyline points="0.0,28.0 7.7,23.7 15.4,28.0 23.1,19.3 30.8,23.7 38.5,15.0 46.2,19.3 53.8,10.7 61.5,15.0 69.2,6.3 76.9,10.7 84.6,2.0 92.3,6.3 100.0,2.0" fill="none" stroke="oklch(55% 0.17 25)" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"></polyline></svg></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 160px 110px 120px 110px 120px;align-items:center;gap:16px;height:64px;padding:0 24px;border-top:1px solid rgba(20,32,27,.10)">
+        <div style="display:flex;align-items:center;gap:14px;min-width:0">
+          <span style="font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-size:12px;color:oklch(60% 0.015 165);width:18px">2</span>
+          <div style="width:36px;height:36px;border-radius:999px;background-color:oklch(88% 0.09 350);background-image:linear-gradient(155deg,rgba(255,255,255,.35),rgba(255,255,255,0) 55%);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),inset 0 -3px 6px rgba(0,0,0,.22),0 2px 6px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;flex:none;color:oklch(32% 0.09 350);font-weight:700;font-size:10px;letter-spacing:.04em">CA</div>
+          <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+            <span style="font-weight:700;font-size:15px;color:oklch(22% 0.02 165)">CASHCAT</span>
+            <span style="font-size:12.5px;color:oklch(60% 0.015 165);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Cash Cat</span>
+          </div>
+        </div>
+        <div style="text-align:right"><span style="font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-weight:600;font-size:14px;color:oklch(22% 0.02 165)">$116.47M</span><span style="margin-left:6px;font-size:10px;font-weight:600;letter-spacing:.08em;color:oklch(60% 0.015 165)">FDV</span></div>
+        <div style="text-align:right"><span style="color:oklch(60% 0.015 165);font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace">—</span></div>
+        <div style="text-align:right;font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-weight:600;font-size:14px;color:oklch(22% 0.02 165)">$67.7K</div>
+        <div style="text-align:right;font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-size:13px;color:oklch(60% 0.015 165)">—</div>
+        <div style="display:flex;justify-content:flex-end"><svg width="100" height="30" viewBox="0 0 100 30" style="display:block"><polyline points="0.0,28.0 7.7,28.0 15.4,24.8 23.1,28.0 30.8,24.8 38.5,21.5 46.2,24.8 53.8,18.2 61.5,15.0 69.2,11.8 76.9,5.2 84.6,2.0 92.3,2.0 100.0,2.0" fill="none" stroke="oklch(52% 0.13 158)" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"></polyline></svg></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 160px 110px 120px 110px 120px;align-items:center;gap:16px;height:64px;padding:0 24px;border-top:1px solid rgba(20,32,27,.10)">
+        <div style="display:flex;align-items:center;gap:14px;min-width:0">
+          <span style="font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-size:12px;color:oklch(60% 0.015 165);width:18px">3</span>
+          <div style="width:36px;height:36px;border-radius:999px;background-color:oklch(88% 0.09 290);background-image:linear-gradient(155deg,rgba(255,255,255,.35),rgba(255,255,255,0) 55%);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),inset 0 -3px 6px rgba(0,0,0,.22),0 2px 6px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;flex:none;color:oklch(32% 0.09 290);font-weight:700;font-size:10px;letter-spacing:.04em">GU</div>
+          <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+            <span style="font-weight:700;font-size:15px;color:oklch(22% 0.02 165)">GUH</span>
+            <span style="font-size:12.5px;color:oklch(60% 0.015 165);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">GUH</span>
+          </div>
+        </div>
+        <div style="text-align:right"><span style="font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-weight:600;font-size:14px;color:oklch(22% 0.02 165)">$1.91M</span><span style="margin-left:6px;font-size:10px;font-weight:600;letter-spacing:.08em;color:oklch(60% 0.015 165)">FDV</span></div>
+        <div style="text-align:right"><span style="color:oklch(60% 0.015 165);font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace">—</span></div>
+        <div style="text-align:right;font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-weight:600;font-size:14px;color:oklch(22% 0.02 165)">$73.4K</div>
+        <div style="text-align:right;font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-size:13px;color:oklch(60% 0.015 165)">—</div>
+        <div style="display:flex;justify-content:flex-end"><svg width="100" height="30" viewBox="0 0 100 30" style="display:block"><polyline points="0.0,28.0 7.7,28.0 15.4,28.0 23.1,28.0 30.8,24.8 38.5,24.8 46.2,21.5 53.8,18.2 61.5,15.0 69.2,8.5 76.9,5.2 84.6,2.0 92.3,2.0 100.0,2.0" fill="none" stroke="oklch(52% 0.13 158)" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"></polyline></svg></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 160px 110px 120px 110px 120px;align-items:center;gap:16px;height:64px;padding:0 24px;border-top:1px solid rgba(20,32,27,.10)">
+        <div style="display:flex;align-items:center;gap:14px;min-width:0">
+          <span style="font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-size:12px;color:oklch(60% 0.015 165);width:18px">4</span>
+          <div style="width:36px;height:36px;border-radius:999px;background-color:oklch(88% 0.09 220);background-image:linear-gradient(155deg,rgba(255,255,255,.35),rgba(255,255,255,0) 55%);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),inset 0 -3px 6px rgba(0,0,0,.22),0 2px 6px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;flex:none;color:oklch(32% 0.09 220);font-weight:700;font-size:10px;letter-spacing:.04em">IN</div>
+          <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+            <span style="font-weight:700;font-size:15px;color:oklch(22% 0.02 165)">Index</span>
+            <span style="font-size:12.5px;color:oklch(60% 0.015 165);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">The Index</span>
+          </div>
+        </div>
+        <div style="text-align:right"><span style="font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-weight:600;font-size:14px;color:oklch(22% 0.02 165)">$2.78M</span><span style="margin-left:6px;font-size:10px;font-weight:600;letter-spacing:.08em;color:oklch(60% 0.015 165)">FDV</span></div>
+        <div style="text-align:right"><span style="color:oklch(60% 0.015 165);font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace">—</span></div>
+        <div style="text-align:right;font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-weight:600;font-size:14px;color:oklch(22% 0.02 165)">$5.9K</div>
+        <div style="text-align:right;font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-size:13px;color:oklch(60% 0.015 165)">—</div>
+        <div style="display:flex;justify-content:flex-end"><svg width="100" height="30" viewBox="0 0 100 30" style="display:block"><polyline points="0.0,28.0 7.7,28.0 15.4,24.3 23.1,28.0 30.8,24.3 38.5,20.6 46.2,24.3 53.8,16.9 61.5,20.6 69.2,13.1 76.9,9.4 84.6,5.7 92.3,5.7 100.0,2.0" fill="none" stroke="oklch(52% 0.13 158)" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"></polyline></svg></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 160px 110px 120px 110px 120px;align-items:center;gap:16px;height:64px;padding:0 24px;border-top:1px solid rgba(20,32,27,.10)">
+        <div style="display:flex;align-items:center;gap:14px;min-width:0">
+          <span style="font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-size:12px;color:oklch(60% 0.015 165);width:18px">5</span>
+          <div style="width:36px;height:36px;border-radius:999px;background-color:oklch(88% 0.09 140);background-image:linear-gradient(155deg,rgba(255,255,255,.35),rgba(255,255,255,0) 55%);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),inset 0 -3px 6px rgba(0,0,0,.22),0 2px 6px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;flex:none;color:oklch(32% 0.09 140);font-weight:700;font-size:10px;letter-spacing:.04em">VI</div>
+          <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+            <span style="font-weight:700;font-size:15px;color:oklch(22% 0.02 165)">VIRTUAL</span>
+            <span style="font-size:12.5px;color:oklch(60% 0.015 165);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Virtuals Protocol</span>
+          </div>
+        </div>
+        <div style="text-align:right"><span style="font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-weight:600;font-size:14px;color:oklch(22% 0.02 165)">$4.40M</span><span style="margin-left:6px;font-size:10px;font-weight:600;letter-spacing:.08em;color:oklch(60% 0.015 165)">FDV</span></div>
+        <div style="text-align:right"><span style="display:inline-flex;align-items:center;padding:3px 9px;border-radius:999px;background:oklch(95% 0.03 25);color:oklch(55% 0.17 25);font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-weight:600;font-size:12px">-3.1%</span></div>
+        <div style="text-align:right;font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-weight:600;font-size:14px;color:oklch(22% 0.02 165)">$3.1K</div>
+        <div style="text-align:right;font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-size:13px;color:oklch(60% 0.015 165)">—</div>
+        <div style="display:flex;justify-content:flex-end"><svg width="100" height="30" viewBox="0 0 100 30" style="display:block"><polyline points="0.0,17.6 7.7,12.4 15.4,22.8 23.1,7.2 30.8,17.6 38.5,22.8 46.2,12.4 53.8,28.0 61.5,17.6 69.2,22.8 76.9,12.4 84.6,7.2 92.3,17.6 100.0,2.0" fill="none" stroke="oklch(55% 0.17 25)" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"></polyline></svg></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 160px 110px 120px 110px 120px;align-items:center;gap:16px;height:64px;padding:0 24px;border-top:1px solid rgba(20,32,27,.10)">
+        <div style="display:flex;align-items:center;gap:14px;min-width:0">
+          <span style="font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-size:12px;color:oklch(60% 0.015 165);width:18px">6</span>
+          <div style="width:36px;height:36px;border-radius:999px;background-color:oklch(88% 0.09 30);background-image:linear-gradient(155deg,rgba(255,255,255,.35),rgba(255,255,255,0) 55%);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),inset 0 -3px 6px rgba(0,0,0,.22),0 2px 6px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;flex:none;color:oklch(32% 0.09 30);font-weight:700;font-size:10px;letter-spacing:.04em">SP</div>
+          <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+            <span style="font-weight:700;font-size:15px;color:oklch(22% 0.02 165)">SPCX</span>
+            <span style="font-size:12.5px;color:oklch(60% 0.015 165);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Space Exploration</span>
+          </div>
+        </div>
+        <div style="text-align:right"><span style="font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-weight:600;font-size:14px;color:oklch(22% 0.02 165)">$12.11M</span><span style="margin-left:6px;font-size:10px;font-weight:600;letter-spacing:.08em;color:oklch(60% 0.015 165)">FDV</span></div>
+        <div style="text-align:right"><span style="color:oklch(60% 0.015 165);font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace">—</span></div>
+        <div style="text-align:right;font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-weight:600;font-size:14px;color:oklch(22% 0.02 165)">$1.2K</div>
+        <div style="text-align:right;font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-size:13px;color:oklch(60% 0.015 165)">—</div>
+        <div style="display:flex;justify-content:flex-end"><svg width="100" height="30" viewBox="0 0 100 30" style="display:block"><polyline points="0.0,28.0 7.7,28.0 15.4,24.8 23.1,24.8 30.8,24.8 38.5,21.5 46.2,21.5 53.8,21.5 61.5,18.2 69.2,15.0 76.9,11.8 84.6,8.5 92.3,5.2 100.0,2.0" fill="none" stroke="oklch(52% 0.13 158)" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"></polyline></svg></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 160px 110px 120px 110px 120px;align-items:center;gap:16px;height:64px;padding:0 24px;border-top:1px solid rgba(20,32,27,.10)">
+        <div style="display:flex;align-items:center;gap:14px;min-width:0">
+          <span style="font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-size:12px;color:oklch(60% 0.015 165);width:18px">7</span>
+          <div style="width:36px;height:36px;border-radius:999px;background-color:oklch(88% 0.09 200);background-image:linear-gradient(155deg,rgba(255,255,255,.35),rgba(255,255,255,0) 55%);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),inset 0 -3px 6px rgba(0,0,0,.22),0 2px 6px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;flex:none;color:oklch(32% 0.09 200);font-weight:700;font-size:10px;letter-spacing:.04em">AM</div>
+          <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+            <span style="font-weight:700;font-size:15px;color:oklch(22% 0.02 165)">AMD</span>
+            <span style="font-size:12.5px;color:oklch(60% 0.015 165);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">AMD · Robinhood</span>
+          </div>
+        </div>
+        <div style="text-align:right"><span style="font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-weight:600;font-size:14px;color:oklch(22% 0.02 165)">$2.08M</span><span style="margin-left:6px;font-size:10px;font-weight:600;letter-spacing:.08em;color:oklch(60% 0.015 165)">FDV</span></div>
+        <div style="text-align:right"><span style="color:oklch(60% 0.015 165);font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace">—</span></div>
+        <div style="text-align:right;font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-weight:600;font-size:14px;color:oklch(22% 0.02 165)">$1.0K</div>
+        <div style="text-align:right;font-family:'IBM Plex Mono', ui-monospace, Menlo, monospace;font-size:13px;color:oklch(60% 0.015 165)">—</div>
+        <div style="display:flex;justify-content:flex-end"><svg width="100" height="30" viewBox="0 0 100 30" style="display:block"><polyline points="0.0,24.8 7.7,28.0 15.4,24.8 23.1,24.8 30.8,21.5 38.5,24.8 46.2,21.5 53.8,18.2 61.5,18.2 69.2,15.0 76.9,11.8 84.6,8.5 92.3,5.2 100.0,2.0" fill="none" stroke="oklch(52% 0.13 158)" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"></polyline></svg></div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+</body>
+</html>

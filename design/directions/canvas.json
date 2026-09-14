@@ -1,0 +1,40 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "A \u00b7 Vault \u2014 dark luxury",
+      "x": 0,
+      "y": 0,
+      "w": 1280,
+      "h": 900
+    },
+    {
+      "file": "LedgerB.dc.html",
+      "title": "B \u00b7 Ledger \u2014 light editorial",
+      "x": 1380,
+      "y": 0,
+      "w": 1280,
+      "h": 900
+    },
+    {
+      "file": "TerminalC.dc.html",
+      "title": "C \u00b7 Terminal Pro \u2014 dense",
+      "x": 2760,
+      "y": 0,
+      "w": 1280,
+      "h": 900
+    }
+  ],
+  "annotations": [
+    {
+      "id": "brief",
+      "x": 0,
+      "y": -150,
+      "w": 420,
+      "text": "Balast /pools \u2014 three directions, same live data (14 Sep), 1280 CSS px = a 1920 display at 150%.\nA Vault: dark, serif headline, big rows, one wide market list. Trade-off: fewer rows on screen.\nB Ledger: warm paper, light. Trade-off: breaks the dark brand; needs a real light palette pass.\nC Terminal Pro: current DNA, denser, two boards side by side. Trade-off: reads as a tool, not a product.\nToken marks are placeholders \u2014 real logos slot in the same discs."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

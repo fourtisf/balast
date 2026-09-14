@@ -19,3 +19,7 @@ test-results
 blob-report
 .playwright
 coverage
+
+# Seeded design canvases are generated from the .dc.html sources next to them.
+design/directions/*.html
+!design/directions/*.dc.html
