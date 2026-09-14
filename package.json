@@ -26,7 +26,8 @@
     "db:dev": "prisma migrate dev",
     "db:studio": "prisma studio",
     "brand": "python3 scripts/build-brand.py && node scripts/build-brand-png.mjs",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "brand:social": "node scripts/render-social.mjs"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",

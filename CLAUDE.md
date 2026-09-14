@@ -1781,3 +1781,28 @@ icon when there is one and the known mark otherwise — an extension that
 announces an empty icon gets the same fallback. A test asserts every file
 exists, because a missing one is a broken image on the one dialog that
 asks people to trust the site.
+
+### Banners for X
+
+Seven images under `brand/social/`, each an artboard in the Journal system:
+`social.css` copies the tokens from `app/globals.css` rather than restyling
+them, the brand lockup is the navigation's (ink mark, serif wordmark), the
+masthead's eyebrow, serif headline with one italic green phrase, lede,
+heavy rule and footer line are the site's, and the illustrations are the
+site's own components drawn at banner scale: the leaderboard's serif rank
+numerals, the masthead's facts column, the stake stream bar, the bin chart
+in its bid-ask shape with the token side in the accent and the ether side
+in the soft tint. Six are 1600 × 900 for a post (introduction, Stakes,
+Positions, Router, honest numbers, contract address) and one is the
+1500 × 500 profile header. `npm run brand:social` renders them at 2× with
+Playwright, waiting for the three faces to load.
+
+Two rules carried over from the site. **No number a reader could take as a
+yield.** The stream shows a day of seven and the bin chart shows weights,
+not dollars; §7 applies to a banner as much as to a row. **No handle.**
+The owner asked that neither an X nor a Telegram handle be written on
+them, so the only address on any banner is `balast.xyz`, and the
+contract-address banner says what the site's masthead says: there is no
+token yet, and any address circulating before it appears there is not
+ours.
+

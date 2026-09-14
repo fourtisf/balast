@@ -1,0 +1,39 @@
+/**
+ * Render brand/social/*.html to PNG at 2× — the banners for X.
+ *
+ * Each page is one artboard in the site's own design system (social.css
+ * mirrors app/globals.css). The size comes from the root element's
+ * data-w/data-h, fonts are waited for, and the file is written next to
+ * its source. Run: npm run brand:social
+ */
+import { readdirSync, readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { chromium } from '@playwright/test';
+
+const dir = resolve(dirname(fileURLToPath(import.meta.url)), '../brand/social');
+const only = process.argv.slice(2);
+const files = readdirSync(dir)
+  .filter((f) => f.endsWith('.html') && (only.length === 0 || only.some((o) => f.includes(o))))
+  .sort();
+
+const browser = await chromium.launch({
+  executablePath: process.env.CHROME_PATH || undefined,
+});
+for (const file of files) {
+  const html = readFileSync(resolve(dir, file), 'utf8');
+  const w = Number(/data-w="(\d+)"/.exec(html)?.[1] ?? 1600);
+  const h = Number(/data-h="(\d+)"/.exec(html)?.[1] ?? 900);
+  const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 2 });
+  await page.goto(pathToFileURL(resolve(dir, file)).href, { waitUntil: 'networkidle' });
+  await page.evaluate(() => document.fonts.ready);
+  const loaded = await page.evaluate(() =>
+    ['italic 100px "Instrument Serif"', '600 20px "DM Sans"', '500 20px "IBM Plex Mono"'].map((f) => document.fonts.check(f)),
+  );
+  if (loaded.includes(false)) console.warn(`${file}: a font did not load ${JSON.stringify(loaded)}`);
+  const out = resolve(dir, file.replace(/\.html$/, '.png'));
+  await page.screenshot({ path: out, clip: { x: 0, y: 0, width: w, height: h } });
+  await page.close();
+  console.log(`${file} -> ${w}x${h} @2x`);
+}
+await browser.close();

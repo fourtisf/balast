@@ -30,6 +30,8 @@ being installed**. The generator reads that font out of `.next/`, so
 | Full logo, dark ground | `balast-lockup.svg`, `balast-lockup-1200.png` |
 | Full logo, light ground | `balast-lockup-light.svg`, `balast-lockup-light-1200.png` |
 | Link previews on X, Telegram, Discord, Slack | `og-card.png` — 1200 × 630, also served at `/og-card.png` |
+| Posts on X: introduction, Stakes, Positions, Router, honest numbers, contract address | `social/*.png` — 1600 × 900 at 2×, from `social/*.html`; `npm run brand:social` re-renders |
+| X profile header | `social/x-header.png` — 1500 × 500 at 2× |
 
 **No PNG here has a white pixel in it.** Every one is rasterised with
 `omitBackground`, so whatever the SVG does not paint stays transparent. That

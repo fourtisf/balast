@@ -1,0 +1,88 @@
+/* Balast — social banners. The Journal system from app/globals.css, scaled
+   for a 1600 × 900 image read in a feed at a third of its size. Tokens are
+   the site's, copied not restyled; the colour rule holds: green is brand,
+   a positive number or an active control, and nothing else is coloured. */
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root{
+  --bg:#F5F3EE; --panel:#FFFFFF; --panel-2:#F9F8F4; --raise:#EEEBE4;
+  --bd-n:rgba(20,32,27,.10); --bd:rgba(20,32,27,.14);
+  --fg:#14201B; --fg-2:#4A5A52; --fg-3:#65746C; --fg-4:#9AA49E;
+  --ac:#1B8353; --ac-3:#0F5C3A; --ac-soft:#BFE3CF; --ac-dim:rgba(27,131,83,.10);
+  --red:#C8383D;
+  --serif:"Instrument Serif",Georgia,"Times New Roman",serif;
+  --sans:"DM Sans","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --shadow-card:0 2px 4px rgba(20,32,27,.05),0 32px 80px -56px rgba(20,32,27,.28);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg)}
+body{color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+
+.banner{width:1600px;height:900px;position:relative;overflow:hidden;background:var(--bg);display:flex;flex-direction:column;padding:72px 96px 64px}
+.banner.header{width:1500px;height:500px;padding:0}
+
+/* the nav's brand lockup: ink mark, serif wordmark */
+.brand{display:flex;align-items:center;gap:18px}
+.brand svg{display:block;width:44px;height:44px}
+.brand span{font-family:var(--serif);font-size:48px;line-height:1;letter-spacing:.01em;color:var(--fg)}
+
+.top{display:flex;justify-content:space-between;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:14px;height:56px;padding:0 24px;border:1.5px solid var(--bd-n);border-radius:99px;background:var(--panel);font-size:21px;font-weight:500;color:var(--fg-2);white-space:nowrap}
+.chip i{width:11px;height:11px;border-radius:50%;background:var(--ac)}
+
+/* masthead */
+.mast{display:grid;grid-template-columns:minmax(0,1fr) 520px;gap:80px;align-items:end;flex:1;padding-top:48px}
+.mast.wide{grid-template-columns:minmax(0,1fr) 600px}
+.mast-l{display:flex;flex-direction:column;gap:26px;min-width:0;padding-bottom:8px}
+.eyebrow{font-size:20px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3);font-weight:600}
+h1{font-family:var(--serif);font-weight:400;font-size:112px;line-height:1.02;letter-spacing:-.02em;text-wrap:balance}
+h1.xl{font-size:124px}
+h1 em{font-style:italic;color:var(--ac)}
+.lede{color:var(--fg-2);font-size:29px;line-height:1.5;max-width:24em;text-wrap:pretty}
+
+/* the masthead's facts column: label left, value right, hairlines */
+.facts{display:flex;flex-direction:column;gap:22px;font-size:24px;color:var(--fg-2)}
+.facts>div{display:flex;justify-content:space-between;align-items:baseline;gap:24px;border-bottom:1.5px solid var(--bd-n);padding-bottom:18px}
+.facts>div:last-child{border-bottom:0;padding-bottom:0}
+.facts dt{font-weight:500}
+.facts dd{font-weight:600;color:var(--fg);white-space:nowrap;text-align:right}
+.facts dd.soon{color:var(--fg-3);font-weight:500}
+.facts dd.num{font-family:var(--mono)}
+
+/* the leaderboard's rows: serif rank numeral, name, line of copy */
+.rows{list-style:none;border-top:1.5px solid var(--bd-n)}
+.rows li{display:grid;grid-template-columns:84px minmax(0,1fr);align-items:start;gap:20px;padding:22px 0;border-bottom:1.5px solid var(--bd-n);position:relative}
+.rows li::before{content:"";position:absolute;left:-24px;top:22px;bottom:22px;width:4px;background:var(--ac);opacity:0}
+.rows li.lead::before{opacity:1}
+.rk{font-family:var(--serif);font-size:52px;line-height:1;color:var(--fg-3);padding-top:2px}
+.rows li.lead .rk{color:var(--ac)}
+.rows .n{font-weight:700;font-size:27px;line-height:1.25;letter-spacing:-.005em}
+.rows .s{font-size:22px;line-height:1.45;color:var(--fg-2);margin-top:4px}
+
+/* a card, as the site draws one */
+.card{background:var(--panel);border:1.5px solid var(--bd-n);border-radius:24px;box-shadow:var(--shadow-card);padding:36px 40px}
+.card .cap{display:flex;justify-content:space-between;align-items:baseline;font-size:20px;color:var(--fg-3);margin-bottom:18px}
+.card .cap b{color:var(--fg);font-weight:600}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* segmented control, active in green */
+.seg{display:inline-flex;gap:6px;padding:6px;border:1.5px solid var(--bd-n);border-radius:99px;background:var(--panel)}
+.seg span{height:46px;padding:0 22px;display:inline-flex;align-items:center;border-radius:99px;font-size:20px;font-weight:600;color:var(--fg-2)}
+.seg span.on{background:var(--ac-dim);color:var(--ac-3)}
+
+/* the 7-day stream */
+.stream{margin-top:8px}
+.track{height:18px;border-radius:99px;background:var(--raise);overflow:hidden}
+.track i{display:block;height:100%;border-radius:99px;background:var(--ac)}
+.ticks{display:flex;justify-content:space-between;margin-top:14px;font-family:var(--mono);font-size:18px;color:var(--fg-3)}
+.ticks b{color:var(--fg);font-weight:600}
+
+/* the stake drawer's terms line */
+.terms{margin-top:34px;font-size:23px;font-weight:500;color:var(--fg-2)}
+.terms b{color:var(--ac-3);font-weight:600}
+
+/* foot: heavy rule, then the site's footer line */
+.foot{display:flex;justify-content:space-between;align-items:center;margin-top:44px;padding-top:26px;border-top:2px solid var(--fg);font-size:22px;color:var(--fg-3)}
+.foot .site{font-family:var(--mono);font-weight:600;color:var(--fg);font-size:24px}
+.foot .r{display:flex;gap:36px}
