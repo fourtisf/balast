@@ -27,7 +27,8 @@
     "db:studio": "prisma studio",
     "brand": "python3 scripts/build-brand.py && node scripts/build-brand-png.mjs",
     "postinstall": "prisma generate",
-    "brand:social": "node scripts/render-social.mjs"
+    "brand:social": "node scripts/render-social.mjs",
+    "brand:journal": "python3 scripts/build-brand-journal.py && node scripts/build-brand-journal-png.mjs"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",

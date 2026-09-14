@@ -5,10 +5,9 @@ import { SOCIAL } from '@/lib/site';
 /**
  * Where the project talks: X.
  *
- * The URL is a build-time fact (`NEXT_PUBLIC_X_URL`, defaulting to the
- * owner's account — see lib/site.ts). Were it ever unset it would render as
- * a quiet, unlinked icon that says "coming soon" on hover rather than as a
- * link to nowhere: a dead link on a page that asks people to connect a
+ * The URL is a constant in lib/site.ts. Were it ever empty it would render
+ * as a quiet, unlinked icon that says "coming soon" on hover rather than as
+ * a link to nowhere: a dead link on a page that asks people to connect a
  * wallet is a small thing that reads as a large one.
  */
 export function Community({ className = '' }: { className?: string }) {

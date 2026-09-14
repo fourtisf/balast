@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="1024" height="1024" role="img" aria-label="Balast">
+  <defs><radialGradient id="p" cx="50%" cy="42%" r="78%"><stop offset="0" stop-color="#FBFAF7"/><stop offset=".55" stop-color="#F5F3EE"/><stop offset="1" stop-color="#EEEBE4"/></radialGradient></defs>
+  <rect width="32" height="32" fill="url(#p)"/>
+  <g transform="translate(2.56 2.56) scale(0.84)"><path d="M 5 6 L 13.5 13 L 13.5 26 L 5 26 Z" fill="#14201B" stroke="#14201B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M 27 6 L 18.5 13 L 18.5 26 L 27 26 Z" fill="#14201B" stroke="#14201B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></g>
+</svg>

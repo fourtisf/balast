@@ -1,5 +1,12 @@
 # Balast — brand assets
 
+**The site is the Journal system (§19): ink on paper.** The files under
+`journal/` are the ones that match it — `npm run brand:journal` rebuilds
+them from `scripts/build-brand-journal.py`, with the wordmark outlined from
+Instrument Serif so nothing depends on a font being installed. The files in
+this folder's root are the earlier dark-ground set and stay for the
+favicon and for dark placements.
+
 Generated, not hand-edited. Change the geometry in `components/shell/Logo.tsx`
 and `scripts/build-brand.py`, then rerun:
 
@@ -16,6 +23,12 @@ being installed**. The generator reads that font out of `.next/`, so
 
 | Use | File |
 |---|---|
+| **X avatar, and every avatar on the paper site** | `journal/icon-paper-1024.png` — ink mark on the site's paper, full bleed (`icon-paper-400.png` for X's minimum) |
+| The same on a dark ground | `journal/icon-ink-1024.png` — paper mark on ink |
+| The same in the brand green | `journal/icon-paper-duo-1024.png` |
+| Where you want the squircle yourself | `journal/icon-paper-rounded-1024.png` |
+| **The logo: mark + "Balast" in Instrument Serif** | `journal/lockup-ink.svg` (transparent) · `journal/lockup-paper.svg` (on paper) · `journal/lockup-duo.svg`, each with a 1600px PNG |
+| **Link previews on X, Discord, Slack** | `journal/og-card.png` — 1200 × 630 on paper; the copy served at `/og-card.png` |
 | X / Telegram avatar, app stores, wallet lists | `icon-black-1024.png` — full bleed, black to every edge |
 | The same, one colour | `icon-black-mono-1024.png` |
 | Where you want the squircle yourself | `icon-black-rounded-1024.png` — corners transparent |

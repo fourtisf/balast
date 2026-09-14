@@ -23,15 +23,19 @@ export const DEFENSIVE_DOMAINS = ['www.balast.xyz'] as const;
  * Where the project talks, and the token's contract address.
  *
  * X is the one channel: @Balastdotfi, the account the owner named. Telegram
- * was offered as a second icon and removed at the owner's request. The URL
- * can still be overridden at build time (`NEXT_PUBLIC_X_URL`, via
- * `deploy/set-env.sh` then a deploy) so a move costs no commit.
+ * was offered as a second icon and removed at the owner's request.
+ *
+ * The link is a constant, deliberately not an environment variable. It was
+ * one, and the live site went out pointing at `x.com/HANDLE_ANDA` — a
+ * placeholder typed into the box's .env by hand — while the code carried
+ * the real account as a default the placeholder overrode. A fact this
+ * public belongs in the repository, where a change is a reviewed commit.
  *
  * An unset contract address renders as "CA · coming soon" — the words the
  * owner asked for, and true until there is one.
  */
 export const SOCIAL = {
-  x: process.env.NEXT_PUBLIC_X_URL || 'https://x.com/Balastdotfi',
+  x: 'https://x.com/Balastdotfi',
 } as const;
 
 /** The X handle, for the site's own metadata; derived so it cannot disagree with the link. */

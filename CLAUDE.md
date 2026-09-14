@@ -1818,3 +1818,26 @@ go with the banners, one per image, each under 280 characters and written
 inside §7: no yield figure, no "APY", nothing the contracts cannot keep
 yet, and the contract-address warning pinned before anything else goes out.
 
+### The X link that read HANDLE_ANDA, and a logo on paper
+
+**The live site linked to `x.com/HANDLE_ANDA`.** The code carried the real
+account as the default and read `NEXT_PUBLIC_X_URL` over it; the box's
+`.env` held a placeholder typed in by hand, and the placeholder won. A fact
+this public is now a constant in `lib/site.ts`, the variable is gone from
+`.env.example`, and nothing reads it — a stale value in `.env` can no
+longer reach the page. `X_HANDLE` is still derived from the constant.
+
+**The brand on paper.** Every file in `brand/` was the prototype's mark on
+black, so the avatar on X and the link preview disagreed with the paper
+site behind them. `brand/journal/` is the same mark and the navigation's
+pairing — ink mark, "Balast" in Instrument Serif — drawn as outlines by
+`scripts/build-brand-journal.py`: full-bleed paper icons for avatars (ink,
+brand green, and paper-on-ink for dark grounds), a squircle, three lockups,
+and a 1200 × 630 card on paper that now serves as `/og-card.png`. The paper
+is the page's own: `--bg` lit faintly from the centre, `--raise` at the
+corners. In the lockup the mark's ink stands 1.1 × the cap height, centred
+on it, a touch larger than the navigation sets it, because a logo on its
+own carries its weight in the mark. The three faces are fetched from the
+google/fonts repository into an ignored `.fonts` folder on first run; the
+favicon keeps its dark ground, which a browser tab wants.
+
