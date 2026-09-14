@@ -57,19 +57,38 @@ export interface LogoSource {
 
 const TIMEOUT_MS = 10_000;
 
-async function getJson(fetch: Fetch, url: string, headers: Record<string, string>): Promise<unknown> {
+/**
+ * Sent with every request. Node's fetch identifies itself as `node`, and
+ * the first run against the real explorer answered every such request with
+ * a 403 in seventy milliseconds — an edge rule refusing an unknown client,
+ * not an answer about the token. A named, browser-shaped agent with a URL
+ * to look up is what those rules expect from a well-behaved service.
+ */
+export const USER_AGENT = 'Mozilla/5.0 (compatible; Balast/1.0; +https://balast.xyz)';
+
+interface Answer {
+  status: number;
+  /** Parsed JSON for a 2xx; null for anything else. */
+  body: unknown;
+}
+
+async function get(fetch: Fetch, url: string, headers: Record<string, string>): Promise<Answer> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const response = await fetch(url, {
-      headers: { accept: 'application/json', ...headers },
+      headers: { accept: 'application/json', 'user-agent': USER_AGENT, ...headers },
       signal: controller.signal,
     });
-    if (!response.ok) return null;
-    return await response.json();
+    if (!response.ok) return { status: response.status, body: null };
+    return { status: response.status, body: await response.json() };
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function getJson(fetch: Fetch, url: string, headers: Record<string, string>): Promise<unknown> {
+  return (await get(fetch, url, headers)).body;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -119,17 +138,44 @@ export function blockscout(options: { base?: string } = {}): LogoSource {
  * key) raises that. The platform id for this chain is discovered from
  * `/asset_platforms` by chainId rather than guessed from a name.
  */
-export function coingecko(options: { apiKey?: string | null; base?: string } = {}): LogoSource {
+export function coingecko(
+  options: { apiKey?: string | null; base?: string; now?: () => number } = {},
+): LogoSource {
   const base = options.base ?? 'https://api.coingecko.com/api/v3';
   const headers: Record<string, string> = options.apiKey ? { 'x-cg-demo-api-key': options.apiKey } : {};
+  const now = options.now ?? Date.now;
   /** undefined = not asked yet; null = asked, and this chain is not there. */
   let platform: string | null | undefined;
   let saidUnsupported = false;
+  /**
+   * The public API is rate-limited to a handful of calls a minute, and the
+   * first real run showed what asking on every token does to that: one 404
+   * on the platform list, then 429 on everything after. A failed platform
+   * fetch is not retried for ten minutes and a 429 pauses the source for a
+   * minute and a half, so one refusal costs one token, not the whole board.
+   */
+  let platformRetryAt = 0;
+  let pausedUntil = 0;
+  let saidPlatformFailed = false;
+
+  function noteStatus(status: number): void {
+    if (status === 429) pausedUntil = now() + RATE_LIMIT_PAUSE_MS;
+  }
 
   async function platformId(fetch: Fetch, log: Log): Promise<string | null> {
     if (platform !== undefined) return platform;
-    const list = await getJson(fetch, `${base}/asset_platforms`, headers);
-    if (!Array.isArray(list)) return null; // transient: ask again next time
+    if (now() < platformRetryAt) return null;
+    const { status, body: list } = await get(fetch, `${base}/asset_platforms`, headers);
+    if (!Array.isArray(list)) {
+      // Transient, or a refusal: either way not again for a while.
+      platformRetryAt = now() + PLATFORM_RETRY_MS;
+      noteStatus(status);
+      if (!saidPlatformFailed) {
+        saidPlatformFailed = true;
+        log(`  logos: CoinGecko's platform list answered ${status}; asking again in 10 minutes`);
+      }
+      return null;
+    }
     const match = list
       .map(asRecord)
       .find((row) => row && Number(row.chain_identifier) === CHAIN.id && typeof row.id === 'string');
@@ -144,6 +190,7 @@ export function coingecko(options: { apiKey?: string | null; base?: string } = {
   return {
     name: 'coingecko',
     async lookup(address, { fetch, log }) {
+      if (now() < pausedUntil) return null;
       try {
         // Ether is not a contract anywhere; it is CoinGecko's `ethereum`.
         const url =
@@ -154,7 +201,9 @@ export function coingecko(options: { apiKey?: string | null; base?: string } = {
                 return id ? `${base}/coins/${id}/contract/${address.toLowerCase()}` : null;
               })();
         if (!url) return null;
-        const coin = asRecord(await getJson(fetch, url, headers));
+        const answer = await get(fetch, url, headers);
+        noteStatus(answer.status);
+        const coin = asRecord(answer.body);
         const img = asRecord(coin?.image);
         return image(img?.large) ?? image(img?.small) ?? image(img?.thumb);
       } catch {
@@ -260,6 +309,51 @@ export function createSources(names: readonly string[]): LogoSource[] {
 }
 
 export const RETRY_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+/** After CoinGecko's platform list fails: how long before it is asked again. */
+export const PLATFORM_RETRY_MS = 10 * 60 * 1000;
+/** After a 429 from CoinGecko: how long the source stays quiet. */
+export const RATE_LIMIT_PAUSE_MS = 90 * 1000;
+
+/**
+ * The tokens to ask about next, in the order the board shows them.
+ *
+ * Listed tokens first, by the 24h volume of their pools — the board's own
+ * ranking — then by the largest FDV among them, then never-asked before
+ * asked-and-missed. The first real run ordered by FDV alone and spent its
+ * first three lookups on dust with absurd supplies while the tokens on the
+ * board waited; the board is what people see, so it is what gets asked
+ * about first. `retryBefore` null ignores the retry window (the probe).
+ */
+export async function logoCandidates(
+  limit: number,
+  retryBefore: Date | null,
+): Promise<{ address: string; symbol: string }[]> {
+  return prisma.$queryRaw<{ address: string; symbol: string }[]>`
+    WITH latest AS (SELECT MAX(hour) AS newest FROM pool_fee_hourly),
+    volume AS (
+      SELECT f.pool_id, SUM(f.volume_usd) AS volume
+      FROM pool_fee_hourly f, latest
+      WHERE f.hour > latest.newest - interval '24 hours'
+      GROUP BY f.pool_id
+    ),
+    by_token AS (
+      SELECT side.token, MAX(COALESCE(v.volume, 0)) AS volume, MAX(COALESCE(ps.mc_usd, 0)) AS mc
+      FROM pools p
+      CROSS JOIN LATERAL (VALUES (p.token0), (p.token1)) AS side(token)
+      LEFT JOIN volume v ON v.pool_id = p.id
+      LEFT JOIN pool_state ps ON ps.pool_id = p.id
+      GROUP BY side.token
+    )
+    SELECT t.address, t.symbol
+    FROM tokens t
+    LEFT JOIN by_token m ON lower(m.token) = lower(t.address)
+    WHERE t.logo_url IS NULL
+      AND (${retryBefore}::timestamptz IS NULL OR t.logo_checked_at IS NULL OR t.logo_checked_at < ${retryBefore})
+    ORDER BY m.volume DESC NULLS LAST, m.mc DESC NULLS LAST,
+             t.logo_checked_at ASC NULLS FIRST, t.first_seen ASC, t.address ASC
+    LIMIT ${limit}
+  `;
+}
 
 export interface LookupOptions {
   sources: LogoSource[];
@@ -284,23 +378,7 @@ export async function lookupLogos(options: LookupOptions): Promise<number> {
   const log = options.log ?? (() => {});
   const retryBefore = new Date(now.getTime() - (options.retryAfterMs ?? RETRY_AFTER_MS));
 
-  // Listed tokens first: ordered by the largest FDV among the token's pools,
-  // which is what the listing bar ranks on. Never-asked before asked-and-
-  // missed, oldest first among equals.
-  const candidates = await prisma.$queryRaw<{ address: string; symbol: string }[]>`
-    SELECT t.address, t.symbol
-    FROM tokens t
-    LEFT JOIN (
-      SELECT p.token0 AS token, MAX(ps.mc_usd) AS mc FROM pools p JOIN pool_state ps ON ps.pool_id = p.id GROUP BY p.token0
-      UNION ALL
-      SELECT p.token1 AS token, MAX(ps.mc_usd) AS mc FROM pools p JOIN pool_state ps ON ps.pool_id = p.id GROUP BY p.token1
-    ) m ON lower(m.token) = lower(t.address)
-    WHERE t.logo_url IS NULL
-      AND (t.logo_checked_at IS NULL OR t.logo_checked_at < ${retryBefore})
-    GROUP BY t.address, t.symbol, t.first_seen, t.logo_checked_at
-    ORDER BY MAX(m.mc) DESC NULLS LAST, t.logo_checked_at ASC NULLS FIRST, t.first_seen ASC, t.address ASC
-    LIMIT ${limit}
-  `;
+  const candidates = await logoCandidates(limit, retryBefore);
 
   let found = 0;
   for (const token of candidates) {

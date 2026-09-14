@@ -75,7 +75,59 @@ describe('blockscout', () => {
   });
 });
 
+describe('every source', () => {
+  it('identifies itself with a named user agent on every request', async () => {
+    // Node's fetch says `node`, and the real explorer answered that with a
+    // 403 in seventy milliseconds. A named agent with a URL is what an edge
+    // rule expects from a well-behaved service.
+    const seen: Record<string, string>[] = [];
+    const fetch: Fetch = async (url, init) => {
+      seen.push(init?.headers ?? {});
+      return { ok: true, status: 200, json: async () => ({}) };
+    };
+    await blockscout().lookup(TOKEN, { fetch, log: quiet });
+    await dexscreener().lookup(TOKEN, { fetch, log: quiet });
+    await coingecko().lookup(TOKEN, { fetch, log: quiet });
+    await coinmarketcap({ apiKey: 'k' }).lookup(TOKEN, { fetch, log: quiet });
+    expect(seen.length).toBeGreaterThanOrEqual(4);
+    for (const headers of seen) expect(headers['user-agent']).toMatch(/^Mozilla\/5\.0 \(compatible; Balast/);
+  });
+});
+
 describe('coingecko', () => {
+  it('does not ask for the platform list again for ten minutes after it fails', async () => {
+    let clock = 1_000_000;
+    const api = service({ '/asset_platforms': 'not a list' });
+    const src = coingecko({ now: () => clock });
+    expect(await src.lookup(TOKEN, { fetch: api.fetch, log: quiet })).toBeNull();
+    expect(await src.lookup('0x00000000000000000000000000000000000000a2', { fetch: api.fetch, log: quiet })).toBeNull();
+    expect(api.calls).toHaveLength(1);
+    clock += 11 * 60_000;
+    await src.lookup(TOKEN, { fetch: api.fetch, log: quiet });
+    expect(api.calls).toHaveLength(2);
+  });
+
+  it('goes quiet for a minute and a half after a 429', async () => {
+    let clock = 1_000_000;
+    const calls: string[] = [];
+    const fetch: Fetch = async (url) => {
+      calls.push(url);
+      if (url.includes('/asset_platforms')) {
+        return { ok: true, status: 200, json: async () => [{ id: 'rh', chain_identifier: CHAIN.id }] };
+      }
+      return { ok: false, status: 429, json: async () => ({}) };
+    };
+    const src = coingecko({ now: () => clock });
+    expect(await src.lookup(TOKEN, { fetch, log: quiet })).toBeNull();
+    expect(calls).toHaveLength(2);
+    // Paused: the next token costs no request at all.
+    await src.lookup('0x00000000000000000000000000000000000000a2', { fetch, log: quiet });
+    expect(calls).toHaveLength(2);
+    clock += 2 * 60_000;
+    await src.lookup(TOKEN, { fetch, log: quiet });
+    expect(calls).toHaveLength(3);
+  });
+
   it('discovers the platform by chainId, then reads image.large from the contract lookup', async () => {
     const api = service({
       '/asset_platforms': [

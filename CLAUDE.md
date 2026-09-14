@@ -1569,3 +1569,34 @@ masthead facts on every page and a line in the footer, reading
 circulating before it appears there is not ours, because a site that asks
 people to connect a wallet should say so. Set them with `deploy/set-env.sh`
 and deploy; Next.js inlines them when it builds.
+
+### What the first probe said, and what it changed
+
+`npm run logos:probe` ran on the box and answered the question. Three
+things, two of them mine:
+
+- **The explorer answered 403 in seventy milliseconds** — every token, every
+  time. That is an edge rule refusing the client, not an answer about the
+  token: Node's `fetch` identifies itself as `node`, which is what such rules
+  look for. Every request now carries a named agent
+  (`Mozilla/5.0 (compatible; Balast/1.0; +https://balast.xyz)`), and there is
+  a test that it does. If the explorer still refuses, it is refusing servers
+  as a matter of policy and the probe will show it.
+- **CoinGecko: one 404 on the platform list, then 429 on everything.** The
+  source asked for the platform list on every token because a failed answer
+  was treated as transient, and the public tier allows a handful of calls a
+  minute. A failed platform fetch now waits ten minutes; a 429 pauses the
+  source for ninety seconds. One refusal costs one token, not the board.
+- **DexScreener answered 200 and yielded nothing**, which is a shape
+  question the old probe could not answer. The probe now prints every
+  request's status, content type and the first line of the body, so the
+  next run says whether the chain is unknown to it or the image is simply
+  missing.
+
+And the probe's own choice of tokens showed a fourth thing: it asked about
+GLTCHT, USDG and bbqUSDGturbo — the largest FDVs in the table, which on a
+launchpad chain are dust with absurd supplies — while ETH, VIRTUAL and Index
+sat on the board without logos. The poller asked in the same order.
+`logoCandidates()` now ranks by the pools' 24h volume, the board's own
+order, and the probe uses the same function, so what it prints is exactly
+what the poller asks about next.
