@@ -17,6 +17,27 @@ cd "$APP_DIR"
 
 as_app() { runuser -u "$APP_USER" -- "$@"; }
 
+# ---------------------------------------------------------------------------
+# Pull, then hand over to the version that was pulled.
+#
+# Bash reads a script incrementally, by byte offset. `git checkout` rewrites
+# THIS FILE while bash is part-way through it, so execution continues at the
+# same offset into the new, longer file — and what runs is a splice of the old
+# script and the new one. That is not theoretical: it is why a deploy whose
+# migration step had already been fixed still ran the unfixed line and failed
+# on a missing DATABASE_URL.
+#
+# So the update is its own stage. Fetch, check out, then `exec` the new copy,
+# which skips this block and runs start to finish from one file.
+# ---------------------------------------------------------------------------
+if [[ "${BALAST_DEPLOY_STAGE:-}" != "run" ]]; then
+  as_app git fetch origin "$BRANCH"
+  as_app git checkout -B "$BRANCH" "origin/$BRANCH"
+  export BALAST_DEPLOY_STAGE=run
+  echo "==> running $(git rev-parse --short HEAD)"
+  exec bash "$APP_DIR/deploy/deploy.sh" "$@"
+fi
+
 # Prisma's CLI does its own `.env` discovery, and it does not find the file
 # when run through `runuser` — it reported "Environment variable not found:
 # DATABASE_URL" against a file sitting in the working directory. Rather than
@@ -36,8 +57,6 @@ if [[ -z "$DATABASE_URL" ]]; then
 fi
 export DATABASE_URL
 
-as_app git fetch origin "$BRANCH"
-as_app git checkout -B "$BRANCH" "origin/$BRANCH"
 # postinstall runs `prisma generate`, which validates the schema and so needs
 # DATABASE_URL present even though it never connects.
 as_app env DATABASE_URL="$DATABASE_URL" npm ci

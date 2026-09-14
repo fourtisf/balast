@@ -200,7 +200,22 @@ bash deploy/bootstrap.sh
 
 # every time after
 bash /var/www/balast/deploy/deploy.sh
+
+# when something is wrong and you want one answer rather than a stack trace
+bash /var/www/balast/deploy/doctor.sh
 ```
+
+`doctor.sh` checks code, configuration, database, migrations, the three PM2
+processes, the API's own health, nginx, the certificate and disk — in
+dependency order — and ends with **one** next command. The order matters: a
+missing `DATABASE_URL` makes every layer below it look broken too, so it names
+the first real failure rather than the loudest one. It is read-only.
+
+`deploy.sh` pulls and then `exec`s the pulled copy of itself. That is not
+ceremony: bash reads a script by byte offset, so a `git checkout` that rewrites
+the file mid-run leaves execution continuing at the same offset into a
+different file. It ran a spliced mixture of two versions once, and the symptom
+was a migration step failing on a bug that had already been fixed.
 
 `bootstrap.sh` installs Node, Postgres, Redis and nginx, creates the role and
 database, writes `/var/www/balast/.env` with a generated database password,

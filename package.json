@@ -14,6 +14,7 @@
     "test:e2e": "playwright test",
     "api": "tsx server/api/main.ts",
     "indexer": "tsx server/indexer/main.ts",
+    "doctor": "bash deploy/doctor.sh",
     "verify:chain": "tsx server/scripts/verify-chain.ts",
     "find:tokens": "tsx server/scripts/find-tokens.ts",
     "db:migrate": "prisma migrate deploy",
