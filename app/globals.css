@@ -173,6 +173,8 @@ h1 em{font-style:italic;color:var(--ac)}
    stays painted underneath, so an image that fails to load leaves something
    deliberate rather than a blank circle. */
 .logo img{position:relative;width:100%;height:100%;border-radius:inherit;object-fit:cover;display:block}
+/* A brand mark on an ink coin: inset, so its corners are not cut by the circle. */
+.logo.inset img{object-fit:contain;padding:19%;background-image:none}
 .tok-id{display:block;min-width:0}
 .tok .n,.tok-id .n{display:block;font-weight:700;font-size:16px;letter-spacing:-.01em;line-height:1.2}
 .tok .s,.tok-id .s{display:block;color:var(--fg-3);font-size:13px;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

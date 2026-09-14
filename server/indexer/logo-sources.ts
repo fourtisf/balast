@@ -131,6 +131,131 @@ export function blockscout(options: { base?: string } = {}): LogoSource {
   };
 }
 
+// ------------------------------------------------- tokenised stocks --
+
+/**
+ * Robinhood's tokenised stocks — "AMD • Robinhood Token" — are the one
+ * kind of token whose logo is knowable from the symbol alone: the ticker is
+ * unique on its exchange, and the name says which kind of token it is. No
+ * aggregator lists them, but a public repository of ticker icons does
+ * (nvstly/icons on GitHub, one PNG per ticker). Only tokens whose name says
+ * "Robinhood Token" are looked up this way: a launchpad coin that happens
+ * to call itself GME must not wear GameStop's mark.
+ *
+ * The icons are drawn for a dark theme, so the badge paints them on ink
+ * (see components/ui/TokenBadge.tsx).
+ */
+export const TICKER_ICON_BASE = 'https://raw.githubusercontent.com/nvstly/icons/main/ticker_icons';
+const STOCK_TOKEN_NAME = /robinhood\s+token/i;
+
+export function tickers(
+  options: {
+    base?: string;
+    /** Symbol and name for an address; the database by default. */
+    facts?: (address: string) => Promise<{ symbol: string; name: string } | null>;
+  } = {},
+): LogoSource {
+  const base = (options.base ?? TICKER_ICON_BASE).replace(/\/+$/, '');
+  const facts =
+    options.facts ??
+    (async (address: string) =>
+      prisma.token.findUnique({
+        where: { address: address.toLowerCase() },
+        select: { symbol: true, name: true },
+      }));
+  return {
+    name: 'tickers',
+    async lookup(address, { fetch }) {
+      try {
+        const token = await facts(address);
+        if (!token || !STOCK_TOKEN_NAME.test(token.name)) return null;
+        const ticker = token.symbol.trim().toUpperCase();
+        if (!/^[A-Z][A-Z0-9.]{0,9}$/.test(ticker)) return null;
+        const url = `${base}/${ticker}.png`;
+        const response = await fetch(url, { headers: { 'user-agent': USER_AGENT } });
+        return response.ok ? url : null;
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------- GeckoTerminal --
+
+/**
+ * GeckoTerminal, CoinGecko's DEX side. Keyless, and the aggregator most
+ * likely to carry a launchpad token's image, since it reads what the
+ * launchpads publish. The network id for this chain is discovered from its
+ * network list by name rather than guessed (`GECKOTERMINAL_NETWORK` pins
+ * it), and a network that is not there disables the source and says so
+ * once. `image_url` is the one field read; "missing.png" is its way of
+ * saying none.
+ */
+export function geckoterminal(
+  options: { base?: string; network?: string | null; now?: () => number } = {},
+): LogoSource {
+  const base = options.base ?? 'https://api.geckoterminal.com/api/v2';
+  const headers = { accept: 'application/json;version=20230302' };
+  const now = options.now ?? Date.now;
+  /** undefined = not asked yet; null = asked, and this chain is not there. */
+  let network: string | null | undefined = options.network || undefined;
+  let retryAt = 0;
+  let pausedUntil = 0;
+  let said = false;
+
+  async function networkId(fetch: Fetch, log: Log): Promise<string | null> {
+    if (network !== undefined) return network;
+    if (now() < retryAt) return null;
+    // A handful of pages; the list is a few hundred networks.
+    for (let page = 1; page <= 20; page++) {
+      const { status, body } = await get(fetch, `${base}/networks?page=${page}`, headers);
+      if (status === 429) pausedUntil = now() + RATE_LIMIT_PAUSE_MS;
+      const rows = asRecord(body)?.data;
+      if (!Array.isArray(rows)) {
+        retryAt = now() + PLATFORM_RETRY_MS;
+        return null;
+      }
+      if (rows.length === 0) break;
+      const hit = rows.map(asRecord).find((row) => {
+        const attrs = asRecord(row?.attributes);
+        return /robinhood/i.test(String(attrs?.name ?? '')) || /robinhood/i.test(String(row?.id ?? ''));
+      });
+      if (hit && typeof hit.id === 'string') {
+        network = hit.id;
+        log(`  logos: GeckoTerminal knows this chain as "${network}"`);
+        return network;
+      }
+    }
+    network = null;
+    if (!said) {
+      said = true;
+      log(`  logos: GeckoTerminal does not list ${CHAIN.name}; source disabled`);
+    }
+    return null;
+  }
+
+  return {
+    name: 'geckoterminal',
+    async lookup(address, { fetch, log }) {
+      if (address.toLowerCase() === NATIVE_ETH) return null;
+      if (now() < pausedUntil) return null;
+      try {
+        const id = await networkId(fetch, log);
+        if (!id) return null;
+        const answer = await get(fetch, `${base}/networks/${id}/tokens/${address.toLowerCase()}`, headers);
+        if (answer.status === 429) pausedUntil = now() + RATE_LIMIT_PAUSE_MS;
+        const attrs = asRecord(asRecord(asRecord(answer.body)?.data)?.attributes);
+        const url = attrs?.image_url;
+        if (typeof url !== 'string' || /missing\.png$/i.test(url)) return null;
+        return image(url);
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
 // ------------------------------------------------------------- CoinGecko --
 
 /**
@@ -291,6 +416,13 @@ export function createSources(names: readonly string[]): LogoSource[] {
       case 'explorer':
       case 'blockscout':
         sources.push(blockscout({ base: process.env.EXPLORER_API_URL?.trim() || undefined }));
+        break;
+      case 'tickers':
+      case 'stocks':
+        sources.push(tickers());
+        break;
+      case 'geckoterminal':
+        sources.push(geckoterminal({ network: process.env.GECKOTERMINAL_NETWORK?.trim() || null }));
         break;
       case 'coingecko':
         sources.push(coingecko({ apiKey: process.env.COINGECKO_API_KEY }));

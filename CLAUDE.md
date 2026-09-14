@@ -1632,3 +1632,28 @@ and it did.
 Unverified from here, as before: whether the indexer on the box is stuck in
 that rebuild or dead for another reason is in `pm2 logs balast-indexer`,
 which the deploy summary and the doctor both point at.
+
+### Two more sources: tokenised stocks, and GeckoTerminal
+
+With logos flowing (Index and VIRTUAL were the first), the board showed
+what the aggregators do not carry: Robinhood's tokenised stocks and the
+launchpad coins.
+
+**Tokenised stocks are knowable from the ticker.** "AMD • Robinhood Token"
+names its kind, and a ticker is unique on its exchange, so the `tickers`
+source maps such a token's symbol to a public repository of ticker icons
+(nvstly/icons on GitHub, one PNG per ticker, verified for the board's
+stocks; SPY, GLD, SLV and SPCX are not there). Only a token whose name says
+"Robinhood Token" is looked up this way — a launchpad coin calling itself
+GME must not wear GameStop's mark. Those icons are drawn for a dark theme,
+so the badge paints them on an ink coin, inset.
+
+**GeckoTerminal** for the rest: keyless, and the aggregator that reads what
+launchpads publish. Its id for this chain is discovered from its network
+list by name (`GECKOTERMINAL_NETWORK` pins it), a chain it does not list
+disables the source once and audibly, and "missing.png" is read as none.
+Unverified from here — the sandbox cannot reach it — and written to the
+documented shape, as the others were; the probe says what it answers.
+
+The default order is explorer, tickers, geckoterminal, dexscreener,
+coingecko, coinmarketcap: chain-native first, the rate-limited one last.

@@ -3,6 +3,14 @@ import { monogram, tokenMark } from '@/lib/token-mark';
 import type { TokenMeta } from '@/lib/data/types';
 
 /**
+ * Logos drawn for a dark theme — the ticker icons Robinhood's stock tokens
+ * get (server/indexer/logo-sources.ts, `tickers`) are white where a brand
+ * is black — are painted on ink, inset, so they read as a coin rather than
+ * vanish into the paper.
+ */
+const DARK_THEME_ICON_HOST = /raw\.githubusercontent\.com\/nvstly\/icons\//;
+
+/**
  * Ether's own logo, served by this site. Ether has no contract for any
  * source to look up, so it is the one token whose logo the front end knows
  * without asking the indexer — and the ether market is on every board.
@@ -39,11 +47,12 @@ export function TokenBadge({
 }) {
   const mark = tokenMark(token.address);
   const logoUrl = token.logoUrl ?? (isEther(token.address) ? ETHER_LOGO : undefined);
-  const background = logoUrl ? token.logoColor || mark.bg : mark.bg;
+  const onInk = logoUrl !== undefined && DARK_THEME_ICON_HOST.test(logoUrl);
+  const background = onInk ? 'var(--fg)' : logoUrl ? token.logoColor || mark.bg : mark.bg;
 
   return (
     <span
-      className={className}
+      className={onInk ? `${className} inset` : className}
       // backgroundColor, not the shorthand: the stylesheet layers a sheen
       // (background-image) over the colour so the disc reads as a coin, and
       // the shorthand would wipe it.

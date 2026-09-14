@@ -19,6 +19,8 @@ import {
   coinmarketcap,
   createSources,
   dexscreener,
+  geckoterminal,
+  tickers,
   lookupLogos,
   type Fetch,
   type LogoSource,
@@ -91,6 +93,79 @@ describe('every source', () => {
     await coinmarketcap({ apiKey: 'k' }).lookup(TOKEN, { fetch, log: quiet });
     expect(seen.length).toBeGreaterThanOrEqual(4);
     for (const headers of seen) expect(headers['user-agent']).toMatch(/^Mozilla\/5\.0 \(compatible; Balast/);
+  });
+});
+
+describe('tickers', () => {
+  const facts = async (address: string) =>
+    ({
+      [TOKEN]: { symbol: 'AMD', name: 'AMD \u2022 Robinhood Token' },
+      '0x00000000000000000000000000000000000000a2': { symbol: 'GME', name: 'GME' },
+      '0x00000000000000000000000000000000000000a3': { symbol: 'SPCX', name: 'Space Exploration \u2022 Robinhood Token' },
+    })[address] ?? null;
+
+  it('maps a Robinhood stock token to its ticker icon when the icon exists', async () => {
+    const api = service({ '/ticker_icons/AMD.png': {} });
+    const src = tickers({ facts, base: 'https://icons.example/ticker_icons/' });
+    expect(await src.lookup(TOKEN, { fetch: api.fetch, log: quiet })).toBe(
+      'https://icons.example/ticker_icons/AMD.png',
+    );
+  });
+
+  it('never dresses a token that is not a Robinhood stock token in a stock\'s mark', async () => {
+    // A launchpad coin calling itself GME is not GameStop.
+    const api = service({ '/ticker_icons/GME.png': {} });
+    expect(
+      await tickers({ facts }).lookup('0x00000000000000000000000000000000000000a2', { fetch: api.fetch, log: quiet }),
+    ).toBeNull();
+    expect(api.calls).toHaveLength(0);
+  });
+
+  it('is null when the repository has no icon for the ticker', async () => {
+    const api = service({});
+    expect(
+      await tickers({ facts }).lookup('0x00000000000000000000000000000000000000a3', { fetch: api.fetch, log: quiet }),
+    ).toBeNull();
+    expect(api.calls[0]).toContain('/ticker_icons/SPCX.png');
+  });
+});
+
+describe('geckoterminal', () => {
+  const networks = {
+    '/networks?page=1': { data: [{ id: 'eth', attributes: { name: 'Ethereum' } }, { id: 'base', attributes: { name: 'Base' } }] },
+    '/networks?page=2': { data: [{ id: 'robinhood', attributes: { name: 'Robinhood Chain' } }] },
+  };
+
+  it('discovers the network by name, then reads image_url', async () => {
+    const api = service({ ...networks, '/networks/robinhood/tokens/': { data: { attributes: { image_url: LOGO } } } });
+    const said: string[] = [];
+    const src = geckoterminal();
+    expect(await src.lookup(TOKEN, { fetch: api.fetch, log: (m) => said.push(m) })).toBe(LOGO);
+    expect(api.calls.slice(0, 3)).toEqual([
+      'https://api.geckoterminal.com/api/v2/networks?page=1',
+      'https://api.geckoterminal.com/api/v2/networks?page=2',
+      `https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/${TOKEN}`,
+    ]);
+    expect(said.some((m) => /knows this chain as "robinhood"/.test(m))).toBe(true);
+    // Remembered: the next token costs one call.
+    await src.lookup('0x00000000000000000000000000000000000000a2', { fetch: api.fetch, log: quiet });
+    expect(api.calls.filter((c) => c.includes('/networks?page='))).toHaveLength(2);
+  });
+
+  it('treats missing.png as no image, and a pinned network skips discovery', async () => {
+    const api = service({ '/networks/rh/tokens/': { data: { attributes: { image_url: 'https://x/missing.png' } } } });
+    expect(await geckoterminal({ network: 'rh' }).lookup(TOKEN, { fetch: api.fetch, log: quiet })).toBeNull();
+    expect(api.calls).toEqual([`https://api.geckoterminal.com/api/v2/networks/rh/tokens/${TOKEN}`]);
+  });
+
+  it('disables itself, once and audibly, when the chain is not listed', async () => {
+    const api = service({ '/networks?page=1': { data: [{ id: 'eth', attributes: { name: 'Ethereum' } }] }, '/networks?page=2': { data: [] } });
+    const said: string[] = [];
+    const src = geckoterminal();
+    expect(await src.lookup(TOKEN, { fetch: api.fetch, log: (m) => said.push(m) })).toBeNull();
+    expect(await src.lookup(TOKEN, { fetch: api.fetch, log: (m) => said.push(m) })).toBeNull();
+    expect(said.filter((m) => /does not list/.test(m))).toHaveLength(1);
+    expect(api.calls.some((c) => c.includes('/tokens/'))).toBe(false);
   });
 });
 
@@ -228,6 +303,7 @@ describe('createSources', () => {
       'coingecko',
     ]);
     expect(createSources(['explorer', 'blockscout']).map((s) => s.name)).toEqual(['explorer', 'explorer']);
+    expect(createSources(['tickers', 'geckoterminal']).map((s) => s.name)).toEqual(['tickers', 'geckoterminal']);
     expect(createSources(['none'])).toHaveLength(0);
   });
 });

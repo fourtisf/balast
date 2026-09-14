@@ -121,7 +121,14 @@ export const env = {
    * Per-token logo sources, in order of preference. `none` disables them.
    * Each reads one image URL and nothing else (§4); see logo-sources.ts.
    */
-  logoSources: list('LOGO_SOURCES', ['explorer', 'coingecko', 'dexscreener', 'coinmarketcap']),
+  logoSources: list('LOGO_SOURCES', [
+    'explorer',
+    'tickers',
+    'geckoterminal',
+    'dexscreener',
+    'coingecko',
+    'coinmarketcap',
+  ]),
   /**
    * The chain's own block explorer (Blockscout), asked for token icons before
    * any aggregator. The default is the explorer the ethereum-lists/chains
