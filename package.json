@@ -19,6 +19,7 @@
     "find:tokens": "tsx server/scripts/find-tokens.ts",
     "tokens:indexed": "tsx server/scripts/indexed-tokens.ts",
     "logos:probe": "tsx server/scripts/probe-logos.ts",
+    "logos:status": "tsx server/scripts/logo-status.ts",
     "db:migrate": "prisma migrate deploy",
     "db:dev": "prisma migrate dev",
     "db:studio": "prisma studio",
