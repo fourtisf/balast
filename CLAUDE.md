@@ -1391,3 +1391,32 @@ log. The token list remains the override, and the derived mark remains what
 renders when nothing else does. Launchpad sources (Pons, Bags, Bottom.fun)
 need an endpoint from someone who knows them — each is one function here.
 
+### Depth, and a second typeface on the table
+
+ALFA looked at the first real board and asked for something that reads as
+premium. Two answers, one shipped and one offered.
+
+**Shipped: materials.** Every surface is now lit from above — a one-pixel
+highlight on the top edge, a faint gradient down the first third, a shadow
+that falls away below — and the page has a soft vignette behind it. Token
+badges have a sheen and an inner shadow, so a derived mark reads as a coin
+rather than a sticker; the top bar is glass; the brand button has a gradient
+and a glow. All of it is neutral light on neutral surfaces: the colour rule
+(§5) is untouched, and green still means brand, positive, or active. Badges
+paint their colour with `backgroundColor` now, because the `background`
+shorthand wiped the sheen.
+
+**Offered, not shipped: Inter for UI text.** §5 says JetBrains Mono
+throughout, and the mono-everywhere look is the "terminal" in the terminal
+aesthetic. `html.sans` is an opt-in class that sets labels, names and copy
+in Inter and keeps every figure in tabular mono so columns still line up.
+Both were rendered locally at the width ALFA actually sees — 1280 CSS px,
+which is a 1920 display at 150% — and sent as screenshots. Enabling it is
+one class on `<html>`; it stays off until ALFA picks.
+
+Verified with Playwright against the built site and simulated data. On the
+live site the largest difference is not CSS at all: monogram badges and
+flat sparklines are what a first sync looks like, and real logos are what
+change the feel most. See the logo-sources note above for where those come
+from and what is still unverified.
+

@@ -35,7 +35,10 @@ export function TokenBadge({
   return (
     <span
       className={className}
-      style={{ background, color: mark.ink }}
+      // backgroundColor, not the shorthand: the stylesheet layers a sheen
+      // (background-image) over the colour so the disc reads as a coin, and
+      // the shorthand would wipe it.
+      style={{ backgroundColor: background, color: mark.ink }}
       aria-hidden="true"
     >
       {token.logoUrl ? (

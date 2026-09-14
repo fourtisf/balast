@@ -24,7 +24,7 @@ export function Featured() {
     <div className="card feat">
       <div className="fh">
         {/* Balast's own pool, so it carries the mark rather than a monogram. */}
-        <div className="fl" style={{ background: 'var(--ac)' }}>
+        <div className="fl" style={{ backgroundColor: 'var(--ac)' }}>
           <Mark size={30} color="var(--on-ac)" title="Balast" />
         </div>
         <div className="fn">BALAST</div>
