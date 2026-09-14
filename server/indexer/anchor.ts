@@ -23,7 +23,7 @@
  * reports both — and `USDG_ADDRESS` still overrides everything.
  */
 
-import { CONTRACTS } from '../../lib/chain';
+import { etherCurrencies } from '../../lib/chain';
 import { prisma } from '../db';
 
 /** Symbols a day-one stablecoin on this chain might legitimately carry. */
@@ -35,7 +35,10 @@ export interface AnchorCandidate {
   address: string;
   symbol: string;
   decimals: number;
-  /** Pools pairing it with WETH. The anchor has to trade against WETH. */
+  /**
+   * Pools pairing it with ether — the wrapper or v4's native address(0).
+   * The anchor has to trade against ether; which spelling is not its business.
+   */
   wethPools: number;
   /** Swaps across those pools: depth, as opposed to mere existence. */
   swaps: number;
@@ -82,7 +85,11 @@ export async function resolveUsdg(configured?: string | null): Promise<AnchorRes
     };
   }
 
-  const weth = CONTRACTS.weth.toLowerCase();
+  // Either spelling of ether. A v4 pool that trades ether natively carries
+  // address(0) rather than the wrapper, and on this chain the ETH/USDG pool
+  // is the likeliest anchor there is — matching only the wrapper is how the
+  // site sat on "looking for the USD anchor" with the pool already indexed.
+  const eth = [...etherCurrencies()];
   const candidates = await prisma.$queryRaw<
     { address: string; symbol: string; decimals: number; weth_pools: number; swaps: number }[]
   >`
@@ -94,8 +101,8 @@ export async function resolveUsdg(configured?: string | null): Promise<AnchorRes
       COALESCE(SUM(s.swaps), 0)::int               AS swaps
     FROM tokens t
     JOIN pools p
-      ON (lower(p.token0) = lower(t.address) AND lower(p.token1) = ${weth})
-      OR (lower(p.token1) = lower(t.address) AND lower(p.token0) = ${weth})
+      ON (lower(p.token0) = lower(t.address) AND lower(p.token1) = ANY(${eth}))
+      OR (lower(p.token1) = lower(t.address) AND lower(p.token0) = ANY(${eth}))
     LEFT JOIN (
       SELECT pool_id, COUNT(*)::int AS swaps FROM swap_events GROUP BY pool_id
     ) s ON s.pool_id = p.id
@@ -118,7 +125,7 @@ export async function resolveUsdg(configured?: string | null): Promise<AnchorRes
       source: 'none',
       candidates: [],
       note:
-        `No token with symbol ${STABLE_SYMBOLS.join(' or ')} paired with WETH has been ` +
+        `No token with symbol ${STABLE_SYMBOLS.join(' or ')} paired with ether has been ` +
         'indexed yet. Dollar figures appear once one is — or set USDG_ADDRESS to pin it.',
     };
   }
@@ -131,7 +138,7 @@ export async function resolveUsdg(configured?: string | null): Promise<AnchorRes
       candidates: mapped,
       note:
         `Discovered ${best.symbol} at ${best.address} — the only token by that name ` +
-        `trading against WETH (${best.wethPools} pool(s), ${best.swaps} swaps).`,
+        `trading against ether (${best.wethPools} pool(s), ${best.swaps} swaps).`,
     };
   }
 

@@ -162,6 +162,9 @@ model IndexerCursor {
   lastIndexedBlock BigInt   @map("last_indexed_block")
   /// Block time of that block: the honest input to the lag shown in the top bar (§7).
   lastIndexedAt    DateTime @map("last_indexed_at")
+  /// The chain's head at that pass, so how far through a first sync it is can be
+  /// reported without the API having to ask a node. Null before the first pass.
+  headBlock        BigInt?  @map("head_block")
   updatedAt        DateTime @map("updated_at")
 
   @@map("indexer_cursors")

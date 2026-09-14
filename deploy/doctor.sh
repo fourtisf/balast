@@ -260,6 +260,24 @@ else
       bad "the indexer has never written a block"
       first "runuser -u $APP_USER -- pm2 logs balast-indexer --lines 30 --nostream"
       ;;
+    no-anchor)
+      # Blocks are being indexed but no ETH/USDG pool has been seen, so
+      # nothing has a dollar figure and every page shows the waiting panel.
+      # Whether that is a problem depends entirely on `syncing`: a first sync
+      # has not reached the pools yet, a caught-up one never will.
+      SYNCING=$(printf '%s' "$BODY" | grep -o '"syncing":[a-z]*' | head -1 | cut -d: -f2)
+      PCT=$(printf '%s' "$BODY" | grep -o '"progressPct":[0-9.]*' | head -1 | cut -d: -f2)
+      if [[ "$SYNCING" == "true" ]]; then
+        warn "no USD anchor yet — first sync at ${PCT:-?}% of the chain. This resolves itself."
+      else
+        bad "caught up, and no ETH/USDG pool found — every page is on the waiting panel"
+        also "runuser -u $APP_USER -- npm run --prefix $APP_DIR find:tokens"
+      fi
+      ;;
+    misconfigured)
+      bad "the API says it is misconfigured"
+      first "curl -s $API/api/health"
+      ;;
     *) bad "unexpected health body: ${BODY:0:160}" ;;
   esac
 fi

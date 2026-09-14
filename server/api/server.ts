@@ -28,6 +28,47 @@ import { buildSnapshot } from './snapshot';
 const USDG = process.env.USDG_ADDRESS ?? '';
 
 /**
+ * Blocks behind head past which the indexer is BACKFILLING rather than
+ * following. At ~100ms blocks a lag of a few thousand is seconds of chain, so
+ * the threshold is high enough not to call a brief catch-up a first sync.
+ */
+const SYNCING_BLOCKS = 50_000n;
+
+/**
+ * The sentence that tells an operator which of two situations they are in.
+ *
+ * "No USD anchor yet" is the same message whether the indexer is at block
+ * 400k of 62m — where the only correct action is to wait — or has caught up
+ * and genuinely found no ETH/USDG pool, where waiting is the one thing that
+ * will not help. The page showed the first sentence and not this one, so the
+ * dead end was indistinguishable from progress.
+ */
+function syncingNote(args: {
+  syncing: boolean;
+  progress: number | null;
+  behind: bigint | null;
+  pools: number;
+}): string {
+  const { syncing, progress, behind, pools } = args;
+  const found = `${pools.toLocaleString()} pool(s) discovered so far.`;
+  if (behind === null) {
+    return `${found} The indexer has not reported the chain head yet.`;
+  }
+  if (syncing) {
+    const pct = progress === null ? '' : ` (${progress.toFixed(2)}% of the chain)`;
+    return (
+      `The first sync is still running${pct}: ${behind.toLocaleString()} blocks behind head, ` +
+      `${found} It may simply not have reached the pool yet.`
+    );
+  }
+  return (
+    `The indexer is caught up (${behind.toLocaleString()} blocks behind head) and ${found} ` +
+    'Being caught up means waiting will not fix this: check that POOL_MANAGER and WETH in ' +
+    'lib/chain.ts are the addresses this chain actually uses, or set USDG_ADDRESS.'
+  );
+}
+
+/**
  * What, if anything, makes this API unable to serve real numbers.
  *
  * The API used to THROW on a missing USDG_ADDRESS and refuse to start, which
@@ -169,6 +210,21 @@ export async function buildServer(): Promise<FastifyInstance> {
     // makes every dollar figure wrong — so it is auditable from outside.
     const anchor = await resolveUsdg(USDG || null);
 
+    // How far through the chain the indexer is.
+    //
+    // Without this the waiting page could say only "no anchor yet", which is
+    // true in two situations that need opposite responses: a first sync still
+    // grinding through empty blocks (wait), and a finished sync that found no
+    // ETH/USDG pool (look at the addresses). The head is recorded by the
+    // poller each pass, so answering costs no RPC call.
+    const head = cursor?.headBlock ?? null;
+    const behind = head !== null && cursor ? head - cursor.lastIndexedBlock : null;
+    const syncing = behind !== null && behind > SYNCING_BLOCKS;
+    const progress =
+      head !== null && head > 0n && cursor
+        ? Math.min(100, Number((cursor.lastIndexedBlock * 10000n) / head) / 100)
+        : null;
+
     // Misconfiguration outranks everything: a never-indexed chain is the
     // SYMPTOM when the indexer cannot start, and reporting the symptom sends
     // whoever is looking to the wrong place.
@@ -190,7 +246,15 @@ export async function buildServer(): Promise<FastifyInstance> {
       status,
       stallThresholdSeconds: env.stallSeconds,
       indexed: cursor
-        ? { lastBlock: cursor.lastIndexedBlock.toString(), at: cursor.lastIndexedAt, lagSeconds }
+        ? {
+            lastBlock: cursor.lastIndexedBlock.toString(),
+            at: cursor.lastIndexedAt,
+            lagSeconds,
+            headBlock: head === null ? null : head.toString(),
+            blocksBehind: behind === null ? null : behind.toString(),
+            progressPct: progress,
+            syncing,
+          }
         : null,
       pools: counts?.pools ?? 0,
       swaps: counts?.swaps ?? 0,
@@ -205,7 +269,10 @@ export async function buildServer(): Promise<FastifyInstance> {
           : status === 'never-indexed'
             ? 'The indexer has never written a block. Check `pm2 logs balast-indexer`.'
             : status === 'no-anchor'
-              ? anchor.note
+              ? // The anchor's own reason, and then the fact that decides what
+                // to do about it: a sync that has not reached the pools yet is
+                // not the same problem as one that has and found none.
+                `${anchor.note} ${syncingNote({ syncing, progress, behind, pools: counts?.pools ?? 0 })}`
               : status === 'stalled'
               ? `The indexer is ${Math.round(lagSeconds ?? 0)}s behind, past the ${env.stallSeconds}s ` +
                 'stall threshold. The site is showing numbers that old.'

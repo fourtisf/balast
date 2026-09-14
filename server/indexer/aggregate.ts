@@ -35,17 +35,28 @@
  * WETH nor USDG on a side is left unpriced rather than guessed at.
  */
 
+import { etherCurrencies } from '../../lib/chain';
 import { prisma } from '../db';
 
 /** Tokens that can anchor a price, and the pool that prices WETH itself. */
 export interface PriceAnchors {
+  /**
+   * The wrapper's address. Every comparison against it goes through
+   * `isEtherSql`, which also matches v4's native address(0).
+   */
   weth: string;
   usdg: string;
-  wethDecimals: number;
-  usdgDecimals: number;
-  /** The one WETH/USDG pool. Null means nothing on the site has a USD figure. */
+  /**
+   * The one ether/USDG pool. Null means nothing on the site has a USD figure.
+   */
   anchorPoolId: string | null;
 }
+
+// There are deliberately no decimals here. Every ratio below reads them from
+// the `tokens` rows of the pool it is pricing, which is the only place they
+// are true: a hardcoded pair (WETH 18 / USDG 6) was carried on this interface
+// for a while, used by nothing, and would have been wrong by twelve orders of
+// magnitude the day USDG turned out to have 18 of them.
 
 export interface Bounds {
   fromBlock: bigint;
@@ -86,6 +97,22 @@ function safeIdentifier(value: string, what: string): string {
     throw new Error(`Refusing to interpolate ${what} into SQL: ${JSON.stringify(value)}`);
   }
   return value;
+}
+
+/**
+ * SQL for "this column is ether" — either spelling (`lib/chain.ts`).
+ *
+ * v4 pools that trade native ETH carry `address(0)`, not the wrapper, so a
+ * plain `= weth` test silently excludes them: unpriced, unlisted, and unable
+ * to anchor. One helper rather than the comparison written out in six places,
+ * for the same reason `tradedSide` is one function — the places disagreed
+ * once already.
+ */
+export function isEtherSql(expr: string, weth: string): string {
+  const list = etherCurrencies(safeIdentifier(weth, 'WETH address'))
+    .map((address) => `'${address}'`)
+    .join(', ');
+  return `lower(${expr}) IN (${list})`;
 }
 
 function checkAnchors(anchors: PriceAnchors): PriceAnchors {
@@ -147,8 +174,8 @@ export function tradedSide(args: {
   return `CASE
     WHEN lower(${addr1}) = lower('${usdg}') THEN ${whenToken0}
     WHEN lower(${addr0}) = lower('${usdg}') THEN ${whenToken1}
-    WHEN lower(${addr1}) = lower('${weth}') THEN ${whenToken0}
-    WHEN lower(${addr0}) = lower('${weth}') THEN ${whenToken1}
+    WHEN ${isEtherSql(addr1, weth)} THEN ${whenToken0}
+    WHEN ${isEtherSql(addr0, weth)} THEN ${whenToken1}
     ELSE ${args.otherwise ?? 'NULL'}
   END`;
 }
@@ -294,12 +321,12 @@ export async function rebuildFeeHours(
         t1.decimals AS dec1,
         ${SWAP_RATIO} AS ratio,
         CASE
-          WHEN lower(p.token1) = lower('${weth}') THEN wu.weth_usd
+          WHEN ${isEtherSql('p.token1', weth)} THEN wu.weth_usd
           WHEN lower(p.token1) = lower('${usdg}') THEN 1::numeric
           ELSE NULL
         END AS quote1_usd,
         CASE
-          WHEN lower(p.token0) = lower('${weth}') THEN wu.weth_usd
+          WHEN ${isEtherSql('p.token0', weth)} THEN wu.weth_usd
           WHEN lower(p.token0) = lower('${usdg}') THEN 1::numeric
           ELSE NULL
         END AS quote0_usd
@@ -429,12 +456,12 @@ export async function rebuildPoolState(anchors: PriceAnchors): Promise<number> {
     quoted AS (
       SELECT *,
         CASE
-          WHEN lower(addr0) = lower('${weth}') THEN weth_usd
+          WHEN ${isEtherSql('addr0', weth)} THEN weth_usd
           WHEN lower(addr0) = lower('${usdg}') THEN 1::numeric
           ELSE NULL
         END AS quote0_usd,
         CASE
-          WHEN lower(addr1) = lower('${weth}') THEN weth_usd
+          WHEN ${isEtherSql('addr1', weth)} THEN weth_usd
           WHEN lower(addr1) = lower('${usdg}') THEN 1::numeric
           ELSE NULL
         END AS quote1_usd

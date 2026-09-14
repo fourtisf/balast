@@ -23,8 +23,15 @@ import { DATA_SOURCE } from '@/lib/data';
 interface Health {
   status?: string;
   message?: string;
-  indexed?: { lastBlock?: string } | null;
+  indexed?: {
+    lastBlock?: string;
+    headBlock?: string | null;
+    blocksBehind?: string | null;
+    progressPct?: number | null;
+    syncing?: boolean;
+  } | null;
   pools?: number;
+  swaps?: number;
 }
 
 const API_BASE =
@@ -32,6 +39,43 @@ const API_BASE =
 
 /** Long enough not to hammer a struggling API, short enough to notice a fix. */
 const RETRY_MS = 15_000;
+
+/**
+ * How far through the chain the indexer is, when it is still working.
+ *
+ * §7 says an indexer that is behind must say so rather than let stale numbers
+ * pass as live. The same argument applies to an empty page: "nothing to show
+ * yet" and "nothing to show, and nothing more is coming" look identical
+ * without this, and they call for opposite responses. The numbers come from
+ * `/api/health`, which reads the head the poller recorded — so this costs no
+ * RPC call and cannot itself be the thing that is stuck.
+ */
+function SyncProgress({ health }: { health: Health | null }) {
+  const indexed = health?.indexed;
+  if (!indexed?.lastBlock || !indexed.headBlock) return null;
+  const pct = indexed.progressPct ?? null;
+  const last = Number(indexed.lastBlock);
+  const head = Number(indexed.headBlock);
+  if (!Number.isFinite(last) || !Number.isFinite(head) || head <= 0) return null;
+
+  return (
+    <div className="aw-sync">
+      <div className="aw-bar" role="presentation">
+        <span style={{ width: `${Math.max(0.5, Math.min(100, pct ?? 0))}%` }} />
+      </div>
+      <p className="aw-nums">
+        <span>
+          block {last.toLocaleString()} of {head.toLocaleString()}
+        </span>
+        <span>{pct === null ? '—' : `${pct.toFixed(2)}%`}</span>
+      </p>
+      <p className="aw-nums">
+        <span>{(health?.pools ?? 0).toLocaleString()} pools</span>
+        <span>{(health?.swaps ?? 0).toLocaleString()} swaps</span>
+      </p>
+    </div>
+  );
+}
 
 export function AwaitingIndexer() {
   const [health, setHealth] = useState<Health | null>(null);
@@ -93,6 +137,7 @@ export function AwaitingIndexer() {
               'numbers in the meantime.'}
         </p>
         {health?.message ? <p className="aw-why">{health.message}</p> : null}
+        <SyncProgress health={health} />
         {unreachable ? (
           <p className="aw-why">
             The front end is up but the API behind it is not responding. On the

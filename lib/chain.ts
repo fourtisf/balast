@@ -37,6 +37,42 @@ export const CONTRACTS = {
 
 export type ContractName = keyof typeof CONTRACTS;
 
+/**
+ * How Uniswap v4 spells native ether: the zero address.
+ *
+ * v4 has no WETH-only rule — a pool's `currency0` is `address(0)` when the
+ * pair trades native ETH, and on this chain that is what the flagship pairs
+ * do. Every price path here anchors to ether (§4.3), so a pool holding it
+ * natively has to be recognised as an ether pool or it is invisible: not
+ * listed, not priced, and unable to act as the USD anchor.
+ *
+ * This is NOT the same thing as `hooks == address(0)`, which means a pool has
+ * no hook. Same twenty zero bytes, different question — hence the two names.
+ */
+export const NATIVE_ETH = '0x0000000000000000000000000000000000000000';
+
+/**
+ * Both spellings of ether, lowercased.
+ *
+ * Treating them as one asset is a statement about the wrapper and not a
+ * convenience: aeWETH mints one token per ether deposited and burns one per
+ * ether withdrawn, so one aeWETH is one ETH by construction. Pricing a
+ * native-ETH pool through the aeWETH/USDG anchor is therefore exact, not an
+ * approximation — which is what §4.3's "one anchor, one path" requires.
+ *
+ * They stay separate ROWS in `tokens`: they are different addresses with
+ * different balances, and merging them would make a pool's own reserves
+ * unreconstructable from its events.
+ */
+export function etherCurrencies(weth: string = CONTRACTS.weth): readonly string[] {
+  return [NATIVE_ETH, weth.toLowerCase()];
+}
+
+/** Whether an address is ether in either spelling. */
+export function isEther(address: string, weth: string = CONTRACTS.weth): boolean {
+  return etherCurrencies(weth).includes(address.toLowerCase());
+}
+
 /** Day-one stablecoin on this chain is USDG, not USDC. There is no Aave (§2). */
 export const STABLECOIN_SYMBOL = 'USDG';
 

@@ -387,8 +387,6 @@ describe('reserves that go negative leave the depth unknown', () => {
     await rebuildAggregates({
       weth: CONTRACTS.weth.toLowerCase(),
       usdg: USDG.toLowerCase(),
-      wethDecimals: 18,
-      usdgDecimals: 6,
       anchorPoolId: await findAnchorPool(USDG),
     });
   });

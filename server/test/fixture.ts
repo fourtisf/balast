@@ -18,7 +18,7 @@
  */
 
 import { encodeAbiParameters, encodeEventTopics, parseAbiParameters, toHex } from 'viem';
-import { CONTRACTS } from '../../lib/chain';
+import { CONTRACTS, NATIVE_ETH } from '../../lib/chain';
 import { mulberry32 } from '../../lib/rng';
 import { POOL_MANAGER_ABI, V3_FACTORY_ABI, V3_POOL_ABI } from '../chain/abi';
 import { amountsForLiquidity, getSqrtRatioAtTick } from '../chain/tick-math';
@@ -43,6 +43,8 @@ function bytes32(n: number): `0x${string}` {
 
 /** WETH's real address, because the aggregation keys USD pricing off it. */
 export const WETH = CONTRACTS.weth.toLowerCase() as `0x${string}`;
+/** v4's native ether currency, typed as an address. */
+export const NATIVE = NATIVE_ETH as `0x${string}`;
 export const USDG = address(0xd6);
 
 /**
@@ -51,6 +53,9 @@ export const USDG = address(0xd6);
  * path are exercised. MOONCAT is the one whose contract does not answer.
  */
 export const FIXTURE_TOKENS: Record<string, TokenFacts> = {
+  // Native ether, as v4 spells it. No `totalSupply()` to read — see
+  // `readToken`, which answers for this address without an RPC call.
+  [NATIVE_ETH]: { address: NATIVE_ETH, symbol: 'ETH', name: 'Ether', decimals: 18, totalSupply: null },
   [WETH]: { address: WETH, symbol: 'WETH', name: 'Wrapped Ether', decimals: 18, totalSupply: 120_000n * 10n ** 18n },
   [USDG]: { address: USDG.toLowerCase(), symbol: 'USDG', name: 'Global Dollar', decimals: 6, totalSupply: 900_000_000n * 10n ** 6n },
   [address(0x01).toLowerCase()]: { address: address(0x01).toLowerCase(), symbol: 'NVDA', name: 'NVIDIA Token', decimals: 18, totalSupply: 112_000n * 10n ** 18n },
@@ -84,6 +89,9 @@ export const fixtureTokenReader = async (addr: string): Promise<TokenFacts> => {
  * test for the absurd case.
  */
 export const FIXTURE_USD: Record<string, number> = {
+  // One ether is one aeWETH by the wrapper's construction, so the two
+  // spellings cannot be priced differently here either.
+  [NATIVE_ETH]: 2500,
   [WETH]: 2500,
   [USDG.toLowerCase()]: 1,
   [address(0x01).toLowerCase()]: 187.2,
@@ -92,7 +100,7 @@ export const FIXTURE_USD: Record<string, number> = {
   [address(0x04).toLowerCase()]: 0.00163,
 };
 
-interface FixturePool {
+export interface FixturePool {
   /** bytes32 pool id. */
   id: `0x${string}`;
   currency0: `0x${string}`;
@@ -234,6 +242,28 @@ function toUnits(usd: number, token: `0x${string}`): bigint {
   return (BigInt(Math.round((usd / price) * 1e6)) * 10n ** BigInt(decimals)) / 1_000_000n;
 }
 
+/**
+ * The tick a pair initialises at, derived from `FIXTURE_USD` rather than
+ * picked by hand — a hand-picked tick is how a nonsense price got into this
+ * fixture once, and the bug it hid was an overflow that stopped the whole
+ * aggregation.
+ *
+ *   tick = log(price1_per_price0 * 10^(d1 - d0)) / log(1.0001)
+ */
+export function tickForPair(
+  currency0: `0x${string}`,
+  currency1: `0x${string}`,
+  spacing: number,
+): number {
+  const price = (c: string) => FIXTURE_USD[c.toLowerCase()] ?? 1;
+  const dec = (c: string) => FIXTURE_TOKENS[c.toLowerCase()]?.decimals ?? 18;
+  const ratio =
+    (price(currency0) / price(currency1)) *
+    10 ** (dec(currency1) - dec(currency0));
+  const tick = Math.log(ratio) / Math.log(1.0001);
+  return Math.round(tick / spacing) * spacing;
+}
+
 /** Deterministic and unique per (block, logIndex): the row's primary key. */
 function txHash(block: number, logIndex: number): string {
   return toHex(BigInt(block) * 1_000_000n + BigInt(logIndex), { size: 32 });
@@ -249,12 +279,22 @@ export interface FixtureChain {
  * Build the chain. Same seed, same logs, byte for byte — which is what makes
  * the two runs in the §9 test comparable at all.
  */
-export function buildFixtureChain(blocks = 11_000, seed = 4663): FixtureChain {
+export function buildFixtureChain(
+  blocks = 11_000,
+  seed = 4663,
+  /**
+   * The pools to generate. Defaults to the four above, so every existing
+   * replay produces the same logs byte for byte; a test that needs a
+   * differently shaped chain — a pool holding native ether, say — passes its
+   * own rather than perturbing this one.
+   */
+  pools: FixturePool[] = FIXTURE_POOLS,
+): FixtureChain {
   const rng = mulberry32(seed);
   const logs: RawLog[] = [];
 
   // Liquidity is seeded once per pool, wide, at its init block.
-  for (const pool of FIXTURE_POOLS) {
+  for (const pool of pools) {
     logs.push(initializeLog(pool, pool.initBlock, 0));
     logs.push(
       modifyLiquidityLog({
@@ -269,8 +309,8 @@ export function buildFixtureChain(blocks = 11_000, seed = 4663): FixtureChain {
     );
   }
 
-  const liveFrom = new Map(FIXTURE_POOLS.map((p) => [p.id, p.initBlock]));
-  const tickNow = new Map(FIXTURE_POOLS.map((p) => [p.id, p.tick]));
+  const liveFrom = new Map(pools.map((p) => [p.id, p.initBlock]));
+  const tickNow = new Map(pools.map((p) => [p.id, p.tick]));
 
   /**
    * Running reserves per pool, so the fixture conserves mass.
@@ -282,7 +322,7 @@ export function buildFixtureChain(blocks = 11_000, seed = 4663): FixtureChain {
    * anything.
    */
   const reserves = new Map<string, { r0: bigint; r1: bigint }>();
-  for (const pool of FIXTURE_POOLS) {
+  for (const pool of pools) {
     const seeded = amountsForLiquidity({
       sqrtPriceX96: getSqrtRatioAtTick(pool.tick),
       tickLower: pool.tick - 20 * pool.tickSpacing,
@@ -303,7 +343,7 @@ export function buildFixtureChain(blocks = 11_000, seed = 4663): FixtureChain {
     let logIndex = 0;
     const swapsHere = 1 + Math.floor(rng() * 3);
     for (let i = 0; i < swapsHere; i++) {
-      const pool = FIXTURE_POOLS[Math.floor(rng() * FIXTURE_POOLS.length)];
+      const pool = pools[Math.floor(rng() * pools.length)];
       if (block <= (liveFrom.get(pool.id) ?? 0)) continue;
 
       // Walk the tick a little, so prices move and the 24h change is real.
@@ -360,7 +400,7 @@ export function buildFixtureChain(blocks = 11_000, seed = 4663): FixtureChain {
     // Occasional liquidity change, so reserves move for reasons other than
     // swaps and the derived TVL is not a constant.
     if (rng() > 0.94) {
-      const pool = FIXTURE_POOLS[Math.floor(rng() * FIXTURE_POOLS.length)];
+      const pool = pools[Math.floor(rng() * pools.length)];
       if (block > (liveFrom.get(pool.id) ?? 0)) {
         const add = rng() > 0.4;
         const delta = (add ? 1n : -1n) * (pool.liquidity / 20n);
@@ -458,6 +498,60 @@ export class FixtureLogSource implements LogSource {
         log.blockNumber <= args.toBlock,
     );
   }
+}
+
+/**
+ * A chain whose pools hold NATIVE ether — v4's `address(0)` — rather than the
+ * wrapper.
+ *
+ * This is the shape the real chain turned out to have, and the shape every
+ * query here used to miss: the anchor search, the pool listing and the USD
+ * path all compared a pool's currencies against aeWETH alone, so an ETH/USDG
+ * pool was indexed, priced nothing, listed nowhere, and could not act as the
+ * anchor. The site sat on "looking for the USD anchor" with the anchor pool
+ * already in its own tables.
+ *
+ * Same generator, same seed, different currencies — so what this proves is
+ * the currency handling and nothing else.
+ */
+export const NATIVE_ETH_POOLS: FixturePool[] = [
+  // ETH/USDG. address(0) sorts below every token, so native ether is always
+  // currency0 — which makes this the mirror image of the wrapped anchor above,
+  // and a test of the traded-side rule as well.
+  {
+    id: bytes32(0xc0),
+    currency0: NATIVE,
+    currency1: USDG,
+    feePips: 500,
+    tickSpacing: 10,
+    hooks: address(0),
+    tick: tickForPair(NATIVE, USDG, 10),
+    liquidity: 8n * 10n ** 18n,
+    initBlock: 1,
+  },
+  {
+    id: bytes32(0xc1),
+    currency0: NATIVE,
+    currency1: address(0x01),
+    feePips: 3000,
+    tickSpacing: 60,
+    hooks: address(0),
+    tick: tickForPair(NATIVE, address(0x01), 60),
+    // Deeper than its wrapped mirror above. The generator sizes trades in
+    // dollars at static prices while the tick drifts, so a long enough run
+    // drains one side; a pool whose reserves go negative reads as UNKNOWN
+    // depth (§14) and would make this test measure that path instead.
+    liquidity: 100n * 10n ** 21n,
+    initBlock: 1,
+  },
+];
+
+/**
+ * The chain above. Shorter than the default: this proves currency handling,
+ * not a trailing-7d window.
+ */
+export function buildNativeEtherChain(blocks = 3_000): FixtureChain {
+  return buildFixtureChain(blocks, 4663, NATIVE_ETH_POOLS);
 }
 
 /**

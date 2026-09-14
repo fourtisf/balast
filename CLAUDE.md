@@ -1088,3 +1088,94 @@ The indexer also logs every pass while backfilling now, with percentage and
 blocks remaining. It previously logged only passes that found something, and
 on a chain that is mostly empty an hour of silence is indistinguishable from a
 hang.
+
+---
+
+## 18. The anchor that was already indexed
+
+Recorded because the site sat on **"looking for the USD anchor"** on every
+page while the pool it was looking for was in its own tables.
+
+### Uniswap v4 has no WETH
+
+A v4 pool's currencies are a `PoolKey`, not a token pair, and a pool that
+trades ether holds it **natively**: `currency0` is `address(0)`, not the
+wrapper. §2 gives aeWETH's address and §4.3 says everything prices through
+ether, so every currency comparison in the indexer was written against that
+one address — the anchor search, `findAnchorPool`, the USD `CASE` in each of
+the three aggregation steps, and the snapshot's listing filter.
+
+So an ETH/USDG pool — the likeliest anchor this chain has — was indexed,
+counted, and invisible to all four. The failure then cascaded exactly as it
+was designed to: no anchor means `buildSnapshot` returns null (§14: hold
+nothing rather than invent something), and null means all five pages show the
+waiting panel. One unmatched address blanked the site.
+
+The consequence was never limited to the anchor. Every ETH-quoted pool on
+this chain was excluded from the listing by the same comparison, so pinning
+`USDG_ADDRESS` by hand would have produced a working anchor and a still-empty
+board.
+
+`lib/chain.ts` now owns both spellings, and `isEtherSql` is the one SQL
+comparison, exported for the same reason `tradedSide` is: the places that
+answer "which side is ether" disagreed once already. Treating the two as one
+asset is a statement about the wrapper rather than a convenience — aeWETH
+mints one token per ether deposited, so pricing a native pool through the
+wrapped anchor is exact, not an approximation. They stay separate rows in
+`tokens`: different addresses hold different balances, and merging them would
+make a pool's reserves unreconstructable from its own events.
+
+Ether is also now **read** rather than probed. There is no contract at
+`address(0)`, so `readToken` failed all four calls and fell back to a
+truncated-address symbol and — the part that would have hidden this — to 18
+decimals, which happens to be right. It answers from `CHAIN.nativeCurrency`
+instead, with no supply, because ether's is not an ERC20 read and a fully
+diluted value for it would be invented (§7). It is also excluded from the
+supply-refresh queue, which is ordered nulls-first: left in, it would have
+held one of the few slots a pass has, for ever.
+
+`server/indexer/native-eth.test.ts` is the proof. It builds the same fixture
+chain out of native-ether pools and runs the real poller, the real SQL and
+the real snapshot over it; against the pre-fix comparison four of its six
+assertions fail, starting with the anchor. The older suites could not have
+caught this: their fixture is built from wrapped pools, so it proved the
+wrapped path and assumed the native one did not exist.
+
+### The waiting page could not tell waiting from stuck
+
+"Looking for the USD anchor" is the same sentence in two situations that call
+for opposite actions. A first sync that has not reached the pools yet needs
+someone to wait. A sync that is caught up and found no ETH/USDG pool needs
+someone to look at the addresses, and waiting is the one thing that cannot
+help it. The page said the sentence and not the fact that separates them.
+
+`/api/health` now carries the chain head, blocks behind, percentage and a
+`syncing` flag, and the waiting page draws them. The head is recorded on the
+cursor by the poller each pass (`indexer_cursors.head_block`, one migration),
+so answering costs no RPC call and the endpoint cannot itself be the thing
+that is stuck. `deploy/doctor.sh` learned the same distinction — it had no
+case for `no-anchor` or `misconfigured` at all, and reported the one state
+the box was actually in as "unexpected health body".
+
+### A hardcoded pair of decimals, used by nothing
+
+`PriceAnchors` carried `wethDecimals: 18` and `usdgDecimals: 6`. Every ratio
+in the aggregation reads decimals from the `tokens` rows of the pool it is
+pricing, which is the only place they are true, so these two were dead — and
+a dead field that looks authoritative is one somebody eventually believes.
+Had anything read them, a USDG with 18 decimals would have put every dollar
+figure on the site out by twelve orders of magnitude. Removed.
+
+### What this does not settle
+
+Whether this chain's pools are native, wrapped, or both is now irrelevant to
+the code — all three work — but the §2 addresses are **still unverified on
+the explorer**, and a wrong `poolManager` produces the same blank site with a
+different cause. `npm run verify:chain` answers that, and `npm run
+find:tokens` lists what the chain actually trades (native ether included, now
+that it is named rather than printed as an unknown address).
+
+Unchanged and still open: `V3_FACTORY` and `LAUNCHPAD_HOOKS` (§14), the
+six-hours-per-tick simulator clock and `/positions`'s forward-looking *Est.
+fee yield* (§12), and the protocol fee's immutable cap before P2 deploys.
+

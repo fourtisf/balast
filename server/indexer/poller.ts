@@ -201,8 +201,6 @@ export class Poller {
     return {
       weth: CONTRACTS.weth.toLowerCase(),
       usdg: resolved.address,
-      wethDecimals: 18,
-      usdgDecimals: 6,
       anchorPoolId: await findAnchorPool(resolved.address),
     };
   }
@@ -419,7 +417,7 @@ export class Poller {
     await classifyPools();
 
     const lastBlockTime = blockTimes.get(to) ?? head.timestamp;
-    await writeCursor(POOL_MANAGER_CURSOR, to, lastBlockTime);
+    await writeCursor(POOL_MANAGER_CURSOR, to, lastBlockTime, head.number);
 
     // Adapt for the next pass. Only while backfilling: once the indexer is
     // following head there is nothing to gain from a wider window and a

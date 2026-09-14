@@ -9,7 +9,7 @@
 
 import { Prisma } from '@prisma/client';
 import { getAddress } from 'viem';
-import { CONTRACTS } from '../../lib/chain';
+import { CHAIN, NATIVE_ETH, etherCurrencies } from '../../lib/chain';
 import { tokenMark } from '../../lib/token-mark';
 import { ERC20_ABI } from '../chain/abi';
 import { rpc } from '../chain/client';
@@ -100,6 +100,24 @@ export interface TokenFacts {
  * and dropping it would understate the chain totals.
  */
 export async function readToken(address: string): Promise<TokenFacts> {
+  // Native ether has no contract to ask, and asking anyway returns nothing:
+  // the symbol falls back to a truncated address, and — worse — the decimals
+  // fall back silently to 18, which happens to be right and would hide the
+  // omission. A v4 pool trading native ETH is one of the most likely pools on
+  // this chain, so it is named rather than left as `0000…0000`.
+  //
+  // No total supply: ether's is not an ERC20 read, and a fully diluted value
+  // for it would be an invented number (§7 — an em dash instead).
+  if (address.toLowerCase() === NATIVE_ETH) {
+    return {
+      address: NATIVE_ETH,
+      symbol: CHAIN.nativeCurrency.symbol,
+      name: CHAIN.nativeCurrency.name,
+      decimals: CHAIN.nativeCurrency.decimals,
+      totalSupply: null,
+    };
+  }
+
   const checksummed = getAddress(address);
   const fallback = `${address.slice(2, 6)}…${address.slice(-4)}`.toUpperCase();
 
@@ -197,7 +215,13 @@ export async function refreshSupplies(
   const cutoff = new Date(now.getTime() - maxAge * 60_000);
 
   const stale = await prisma.token.findMany({
-    where: { OR: [{ supplyReadAt: null }, { supplyReadAt: { lt: cutoff } }] },
+    where: {
+      // Native ether has no `totalSupply()` and never will, so it would sit at
+      // the head of this queue for ever — `nulls: 'first'` — and take one of
+      // the few slots a pass has, starving the tokens that do answer.
+      address: { not: NATIVE_ETH },
+      OR: [{ supplyReadAt: null }, { supplyReadAt: { lt: cutoff } }],
+    },
     orderBy: [{ supplyReadAt: { sort: 'asc', nulls: 'first' } }],
     take: limit,
     select: { address: true },
@@ -254,14 +278,16 @@ export async function classifyPools(): Promise<number> {
  * downstream then reads zero rather than being guessed.
  */
 export async function findAnchorPool(usdgAddress: string): Promise<string | null> {
-  const weth = CONTRACTS.weth.toLowerCase();
+  // Either spelling of ether: a v4 pool holding it natively carries
+  // address(0), and on this chain that is the likelier anchor of the two.
+  const eth = [...etherCurrencies()];
   const usdg = usdgAddress.toLowerCase();
   const rows = await prisma.$queryRaw<{ id: string }[]>`
     SELECT p.id
     FROM pools p
     LEFT JOIN pool_state ps ON ps.pool_id = p.id
-    WHERE (lower(p.token0) = ${weth} AND lower(p.token1) = ${usdg})
-       OR (lower(p.token0) = ${usdg} AND lower(p.token1) = ${weth})
+    WHERE (lower(p.token0) = ANY(${eth}) AND lower(p.token1) = ${usdg})
+       OR (lower(p.token0) = ${usdg} AND lower(p.token1) = ANY(${eth}))
     ORDER BY COALESCE(ps.liquidity, 0) DESC, p.created_block ASC
     LIMIT 1
   `;

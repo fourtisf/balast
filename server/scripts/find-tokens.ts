@@ -23,7 +23,7 @@
 import '../load-env';
 
 import { decodeEventLog, getAddress } from 'viem';
-import { CHAIN, CONTRACTS } from '../../lib/chain';
+import { CHAIN, CONTRACTS, NATIVE_ETH } from '../../lib/chain';
 import { ERC20_ABI, POOL_MANAGER_ABI } from '../chain/abi';
 import { rpc } from '../chain/client';
 import { RPC_URLS } from '../chain/endpoints';
@@ -127,6 +127,15 @@ async function main(): Promise<void> {
   for (let i = 0; i < tokens.length; i += GROUP) {
     await Promise.all(
       tokens.slice(i, i + GROUP).map(async (token) => {
+        // Native ether is a currency here, not a contract: every read below
+        // would fail and it would print as an unknown address, in the one
+        // listing an operator uses to identify this chain's tokens.
+        if (token.address === NATIVE_ETH) {
+          token.symbol = CHAIN.nativeCurrency.symbol;
+          token.name = CHAIN.nativeCurrency.name;
+          token.decimals = CHAIN.nativeCurrency.decimals;
+          return;
+        }
         const read = async (fn: 'symbol' | 'name' | 'decimals') => {
           try {
             return await rpc((c) =>

@@ -119,16 +119,26 @@ export async function writeCursor(
   contract: string,
   block: bigint,
   blockTime: Date,
+  headBlock?: bigint,
 ): Promise<void> {
+  const now = new Date();
   await prisma.indexerCursor.upsert({
     where: { contract },
     create: {
       contract,
       lastIndexedBlock: block,
       lastIndexedAt: blockTime,
-      updatedAt: new Date(),
+      headBlock: headBlock ?? null,
+      updatedAt: now,
     },
-    update: { lastIndexedBlock: block, lastIndexedAt: blockTime, updatedAt: new Date() },
+    update: {
+      lastIndexedBlock: block,
+      lastIndexedAt: blockTime,
+      // Left alone when a caller does not know it, rather than nulled: a
+      // stale head still beats no head for "how far through is this".
+      ...(headBlock === undefined ? {} : { headBlock }),
+      updatedAt: now,
+    },
   });
 }
 

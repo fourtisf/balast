@@ -34,7 +34,7 @@ import type {
 import { MIN_DATA_HOURS, YIELD_WINDOW_HOURS } from '../../lib/yield';
 import { prisma } from '../db';
 import { resolveUsdg } from '../indexer/anchor';
-import { tradedSide } from '../indexer/aggregate';
+import { isEtherSql, tradedSide } from '../indexer/aggregate';
 import { POOL_MANAGER_CURSOR } from '../indexer/poller';
 
 /** Buckets in a row's fee sparkline, and therefore hours per bucket. */
@@ -125,8 +125,8 @@ async function queryPools(usdg: string, asOf: Date): Promise<PoolQueryRow[]> {
       SELECT p.id, p.token0, p.token1
       FROM pools p
       LEFT JOIN pool_state ps ON ps.pool_id = p.id
-      WHERE (lower(p.token0) = '${weth}' AND lower(p.token1) = '${usdgLower}')
-         OR (lower(p.token0) = '${usdgLower}' AND lower(p.token1) = '${weth}')
+      WHERE (${isEtherSql('p.token0', weth)} AND lower(p.token1) = '${usdgLower}')
+         OR (lower(p.token0) = '${usdgLower}' AND ${isEtherSql('p.token1', weth)})
       ORDER BY COALESCE(ps.liquidity, 0) DESC, p.created_block ASC
       LIMIT 1
     ),
@@ -239,7 +239,7 @@ async function queryPools(usdg: string, asOf: Date): Promise<PoolQueryRow[]> {
       -- USDG outranks WETH as the quote, matching the rule above.
       CASE
         WHEN lower(p.token0) = '${usdgLower}' OR lower(p.token1) = '${usdgLower}' THEN 'USDG'
-        WHEN lower(p.token0) = '${weth}'      OR lower(p.token1) = '${weth}'      THEN 'ETH'
+        WHEN ${isEtherSql('p.token0', weth)} OR ${isEtherSql('p.token1', weth)} THEN 'ETH'
         ELSE NULL
       END AS quote_symbol,
 
@@ -289,8 +289,8 @@ async function queryPools(usdg: string, asOf: Date): Promise<PoolQueryRow[]> {
     LEFT JOIN priced pthen ON pthen.pool_id = p.id AND pthen.moment = pr.since_24h
     -- A pool with neither WETH nor USDG on a side cannot be priced through
     -- the one allowed path, so it is not listed rather than listed at zero.
-    WHERE lower(p.token0) IN ('${weth}', '${usdgLower}')
-       OR lower(p.token1) IN ('${weth}', '${usdgLower}')
+    WHERE ${isEtherSql('p.token0', weth)} OR lower(p.token0) = '${usdgLower}'
+       OR ${isEtherSql('p.token1', weth)} OR lower(p.token1) = '${usdgLower}'
     ORDER BY COALESCE(ps.tvl_usd, 0) DESC
   `;
 

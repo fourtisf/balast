@@ -250,3 +250,68 @@ describe('USDG_ADDRESS', () => {
     }
   });
 });
+
+/**
+ * What the waiting page reads while there is no anchor.
+ *
+ * "Looking for the USD anchor" is the same sentence in two situations that
+ * call for opposite responses: a first sync that has not reached the pools
+ * yet, where the only correct action is to wait, and a finished sync that
+ * found no ETH/USDG pool, where waiting is the one thing that cannot help.
+ * The page showed the first sentence and not the fact that separates them,
+ * so the dead end was indistinguishable from progress — for hours.
+ */
+describe('/api/health while there is no anchor', () => {
+  /** A cursor with nothing indexed behind it: the shape of a first sync. */
+  async function cursorAt(lastBlock: bigint, headBlock: bigint) {
+    const { resetDatabase } = await import('../test/db');
+    await resetDatabase();
+    await prisma.indexerCursor.create({
+      data: {
+        contract: 'v4:0x8366a39cc670b4001a1121b8f6a443a643e40951',
+        lastIndexedBlock: lastBlock,
+        lastIndexedAt: new Date(),
+        headBlock,
+        updatedAt: new Date(),
+      },
+    });
+    const bare = await (await import('./server')).buildServer();
+    try {
+      const response = await bare.inject({ method: 'GET', url: '/api/health' });
+      return { code: response.statusCode, body: response.json() };
+    } finally {
+      await bare.close();
+    }
+  }
+
+  it('reports how far through the chain a first sync is', async () => {
+    delete process.env.USDG_ADDRESS;
+    vi.resetModules();
+    const { code, body } = await cursorAt(6_264_470n, 62_644_703n);
+
+    expect(code).toBe(503);
+    expect(body.status).toBe('no-anchor');
+    expect(body.indexed.headBlock).toBe('62644703');
+    expect(body.indexed.blocksBehind).toBe('56380233');
+    expect(body.indexed.progressPct).toBeCloseTo(10, 1);
+    expect(body.indexed.syncing).toBe(true);
+    // The sentence that says waiting is the right thing to do.
+    expect(body.message).toMatch(/first sync is still running/i);
+  });
+
+  it('says so plainly when it is caught up and has found nothing', async () => {
+    vi.resetModules();
+    const { body } = await cursorAt(62_644_700n, 62_644_703n);
+
+    expect(body.status).toBe('no-anchor');
+    expect(body.indexed.syncing).toBe(false);
+    // Caught up: this is a configuration question, not a waiting game.
+    expect(body.message).toMatch(/caught up/i);
+    expect(body.message).toMatch(/POOL_MANAGER|USDG_ADDRESS/);
+  });
+
+  afterAll(() => {
+    process.env.USDG_ADDRESS = USDG_ADDRESS;
+    vi.resetModules();
+  });
+});
