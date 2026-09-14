@@ -44,6 +44,10 @@ model Token {
   /// refreshed on a cadence rather than once at discovery.
   supplyReadAt DateTime? @map("supply_read_at")
   logoUrl      String?   @map("logo_url")
+  /// When the external logo sources were last asked about this token. Null
+  /// means never; set even when nothing was found, so a token nobody lists
+  /// is not asked about on every pass against rate-limited public APIs.
+  logoCheckedAt DateTime? @map("logo_checked_at")
   /// Brand colour. Metadata, not a design decision (§5).
   logoColor    String?   @map("logo_color")
   /// Pons, Bags, Bottom.fun — set when the token came from a launchpad (§4).

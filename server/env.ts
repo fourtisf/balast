@@ -85,6 +85,13 @@ export const env = {
 
   /** §4.4: push on real events, debounced to about a second per pool. */
   streamDebounceMs: int('STREAM_DEBOUNCE_MS', 1_000),
+  /**
+   * How often the snapshot may be rebuilt. Requests are answered from the
+   * last build immediately; this is the floor between builds, so a first
+   * sync ticking every second cannot keep the expensive query running flat
+   * out. See server.ts `snapshot()`.
+   */
+  snapshotMinRebuildMs: int('SNAPSHOT_MIN_REBUILD_MS', 5_000),
 
   /**
    * Requests per window per client, for the public API.
@@ -108,6 +115,14 @@ export const env = {
    * a stall, not a busy moment.
    */
   stallSeconds: int('INDEXER_STALL_SECONDS', 300),
+
+  /**
+   * Per-token logo sources, in order of preference. `none` disables them.
+   * Each reads one image URL and nothing else (§4); see logo-sources.ts.
+   */
+  logoSources: list('LOGO_SOURCES', ['coingecko', 'dexscreener', 'coinmarketcap']),
+  /** Milliseconds between logo lookups: one token per interval, every source. */
+  logoLookupMs: int('LOGO_LOOKUP_MS', 6_000),
 
   /**
    * Pools to index first. Empty means "everything the PoolManager emits",

@@ -1,0 +1,218 @@
+/**
+ * The per-token logo sources, against fake services.
+ *
+ * These are the only calls in `server/` that leave the chain and the
+ * database, so what they read is pinned: one image URL per token, discarded
+ * unless it is a safe https URL, and nothing else. The live services could
+ * not be reached from the session that wrote this, so the shapes here are
+ * the documented ones — and every parser treats anything else as "not
+ * found" rather than as data.
+ */
+
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { CHAIN, NATIVE_ETH } from '../../lib/chain';
+import { prisma } from '../db';
+import { isReachable, resetDatabase } from '../test/db';
+import {
+  coingecko,
+  coinmarketcap,
+  createSources,
+  dexscreener,
+  lookupLogos,
+  type Fetch,
+  type LogoSource,
+} from './logo-sources';
+
+const TOKEN = '0x00000000000000000000000000000000000000a1';
+const LOGO = 'https://cdn.example/a1.png';
+
+/** A fake service: URL substring → JSON body. Records every call. */
+function service(routes: Record<string, unknown>): { fetch: Fetch; calls: string[] } {
+  const calls: string[] = [];
+  const fetch: Fetch = async (url) => {
+    calls.push(url);
+    const hit = Object.keys(routes).find((key) => url.includes(key));
+    if (hit === undefined) return { ok: false, status: 404, json: async () => ({}) };
+    return { ok: true, status: 200, json: async () => routes[hit] };
+  };
+  return { fetch, calls };
+}
+
+const quiet = () => {};
+
+describe('coingecko', () => {
+  it('discovers the platform by chainId, then reads image.large from the contract lookup', async () => {
+    const api = service({
+      '/asset_platforms': [
+        { id: 'ethereum', chain_identifier: 1 },
+        { id: 'robinhood-chain', chain_identifier: CHAIN.id },
+      ],
+      '/coins/robinhood-chain/contract/': { image: { thumb: 'https://x/t.png', large: LOGO } },
+    });
+    const src = coingecko();
+    expect(await src.lookup(TOKEN, { fetch: api.fetch, log: quiet })).toBe(LOGO);
+    expect(api.calls[0]).toContain('/asset_platforms');
+    expect(api.calls[1]).toContain(`/coins/robinhood-chain/contract/${TOKEN}`);
+    // The platform is remembered: a second token costs one call, not two.
+    await src.lookup('0x00000000000000000000000000000000000000a2', { fetch: api.fetch, log: quiet });
+    expect(api.calls.filter((c) => c.includes('/asset_platforms'))).toHaveLength(1);
+  });
+
+  it('disables itself, once and audibly, when the chain is not listed', async () => {
+    const api = service({ '/asset_platforms': [{ id: 'ethereum', chain_identifier: 1 }] });
+    const said: string[] = [];
+    const src = coingecko();
+    expect(await src.lookup(TOKEN, { fetch: api.fetch, log: (m) => said.push(m) })).toBeNull();
+    expect(await src.lookup(TOKEN, { fetch: api.fetch, log: (m) => said.push(m) })).toBeNull();
+    expect(said.filter((m) => /does not list chainId/.test(m))).toHaveLength(1);
+    // And never asks for a contract it cannot address.
+    expect(api.calls.some((c) => c.includes('/contract/'))).toBe(false);
+  });
+
+  it('asks for ethereum itself for native ether', async () => {
+    const api = service({ '/coins/ethereum': { image: { large: 'https://x/eth.png' } } });
+    expect(await coingecko().lookup(NATIVE_ETH, { fetch: api.fetch, log: quiet })).toBe('https://x/eth.png');
+    expect(api.calls.some((c) => c.includes('/asset_platforms'))).toBe(false);
+  });
+
+  it('refuses an image that is not a safe https URL, and survives garbage', async () => {
+    const bad = service({
+      '/asset_platforms': [{ id: 'rh', chain_identifier: CHAIN.id }],
+      '/contract/': { image: { large: 'javascript:alert(1)' } },
+    });
+    expect(await coingecko().lookup(TOKEN, { fetch: bad.fetch, log: quiet })).toBeNull();
+    const garbage = service({ '/asset_platforms': 'not a list' });
+    expect(await coingecko().lookup(TOKEN, { fetch: garbage.fetch, log: quiet })).toBeNull();
+    const down: Fetch = async () => {
+      throw new Error('ECONNRESET');
+    };
+    expect(await coingecko().lookup(TOKEN, { fetch: down, log: quiet })).toBeNull();
+  });
+});
+
+describe('dexscreener', () => {
+  it('takes the image from the pair whose base token is this address', async () => {
+    const api = service({
+      '/latest/dex/tokens/': {
+        pairs: [
+          { baseToken: { address: '0x00000000000000000000000000000000000000ff' }, info: { imageUrl: 'https://x/wrong.png' } },
+          { baseToken: { address: TOKEN.toUpperCase() }, info: { imageUrl: LOGO } },
+        ],
+      },
+    });
+    expect(await dexscreener().lookup(TOKEN, { fetch: api.fetch, log: quiet })).toBe(LOGO);
+  });
+
+  it('is null for a token with pairs but no image, and never asks about ether', async () => {
+    const api = service({ '/latest/dex/tokens/': { pairs: [{ baseToken: { address: TOKEN } }] } });
+    expect(await dexscreener().lookup(TOKEN, { fetch: api.fetch, log: quiet })).toBeNull();
+    expect(await dexscreener().lookup(NATIVE_ETH, { fetch: api.fetch, log: quiet })).toBeNull();
+    expect(api.calls).toHaveLength(1);
+  });
+});
+
+describe('coinmarketcap', () => {
+  it('disables itself without a key, once', async () => {
+    const api = service({});
+    const said: string[] = [];
+    const src = coinmarketcap({ apiKey: null });
+    await src.lookup(TOKEN, { fetch: api.fetch, log: (m) => said.push(m) });
+    await src.lookup(TOKEN, { fetch: api.fetch, log: (m) => said.push(m) });
+    expect(api.calls).toHaveLength(0);
+    expect(said.filter((m) => /CMC_API_KEY/.test(m))).toHaveLength(1);
+  });
+
+  it('reads data[id].logo with the key in the header', async () => {
+    const api = service({ '/v2/cryptocurrency/info?address=': { data: { '123': { logo: LOGO } } } });
+    const seen: Record<string, string>[] = [];
+    const fetch: Fetch = (url, init) => {
+      seen.push(init?.headers ?? {});
+      return api.fetch(url, init);
+    };
+    expect(await coinmarketcap({ apiKey: 'k' }).lookup(TOKEN, { fetch, log: quiet })).toBe(LOGO);
+    expect(seen[0]['X-CMC_PRO_API_KEY']).toBe('k');
+  });
+});
+
+describe('createSources', () => {
+  it('builds the named sources in order and ignores names it does not know', () => {
+    expect(createSources(['dexscreener', 'none', 'coingecko']).map((s) => s.name)).toEqual([
+      'dexscreener',
+      'coingecko',
+    ]);
+    expect(createSources(['none'])).toHaveLength(0);
+  });
+});
+
+describe('lookupLogos', () => {
+  beforeAll(async () => {
+    if (!(await isReachable())) {
+      throw new Error('These tests need a Postgres at TEST_DATABASE_URL. See README.');
+    }
+  });
+  afterAll(async () => {
+    await prisma.$disconnect();
+  });
+
+  async function seedToken(address: string, symbol: string): Promise<void> {
+    await prisma.token.create({
+      data: { address, symbol, name: symbol, decimals: 18, firstSeen: new Date('2026-07-01') },
+    });
+  }
+
+  function sourceAnswering(answers: Record<string, string | null>): LogoSource & { asked: string[] } {
+    const asked: string[] = [];
+    return {
+      name: 'fake',
+      asked,
+      async lookup(address) {
+        asked.push(address);
+        return answers[address] ?? null;
+      },
+    };
+  }
+
+  it('records a found logo, and a miss, and does not re-ask within the retry window', async () => {
+    await resetDatabase();
+    await seedToken(TOKEN, 'A1');
+    await seedToken('0x00000000000000000000000000000000000000a2', 'A2');
+    const src = sourceAnswering({ [TOKEN]: LOGO });
+    const now = new Date('2026-09-14T12:00:00Z');
+
+    // Two calls, one token each: the first finds A1's logo, the second
+    // misses A2 — and both are marked as checked.
+    expect(await lookupLogos({ sources: [src], now, limit: 1, fetch: service({}).fetch })).toBe(1);
+    expect(await lookupLogos({ sources: [src], now, limit: 1, fetch: service({}).fetch })).toBe(0);
+    const rows = await prisma.token.findMany({ orderBy: { address: 'asc' } });
+    expect(rows[0].logoUrl).toBe(LOGO);
+    expect(rows[0].logoCheckedAt?.toISOString()).toBe(now.toISOString());
+    expect(rows[1].logoUrl).toBeNull();
+    expect(rows[1].logoCheckedAt?.toISOString()).toBe(now.toISOString());
+
+    // A day later: nothing to ask. A week later: the miss is asked again.
+    const asked = src.asked.length;
+    await lookupLogos({ sources: [src], now: new Date(now.getTime() + 86_400_000), fetch: service({}).fetch });
+    expect(src.asked.length).toBe(asked);
+    await lookupLogos({ sources: [src], now: new Date(now.getTime() + 8 * 86_400_000), fetch: service({}).fetch });
+    expect(src.asked.length).toBe(asked + 1);
+    expect(src.asked[asked]).toBe('0x00000000000000000000000000000000000000a2');
+  });
+
+  it('tries sources in order and stops at the first that answers', async () => {
+    await resetDatabase();
+    await seedToken(TOKEN, 'A1');
+    const first = sourceAnswering({});
+    const second = sourceAnswering({ [TOKEN]: LOGO });
+    const third = sourceAnswering({ [TOKEN]: 'https://x/never.png' });
+    expect(await lookupLogos({ sources: [first, second, third], fetch: service({}).fetch })).toBe(1);
+    expect(third.asked).toHaveLength(0);
+    expect((await prisma.token.findUniqueOrThrow({ where: { address: TOKEN } })).logoUrl).toBe(LOGO);
+  });
+
+  it('does nothing with no sources', async () => {
+    await resetDatabase();
+    await seedToken(TOKEN, 'A1');
+    expect(await lookupLogos({ sources: [], fetch: service({}).fetch })).toBe(0);
+    expect((await prisma.token.findUniqueOrThrow({ where: { address: TOKEN } })).logoCheckedAt).toBeNull();
+  });
+});

@@ -1354,3 +1354,40 @@ runs on the indexer's first pass after a restart and logs when it does; the
 pass is preceded by the deployment-block bisection and the full rebuild, so
 the label lags a deploy by a minute or two.
 
+### "Loading the snapshot" on every refresh, and logos from outside
+
+**Every refresh waited on the expensive query.** Two things multiplied.
+The API answered `/api/snapshot` from its cache only when the cache was
+younger than the stream debounce — one second — and every websocket client
+forced its own rebuild on every indexer tick, which during a first sync is
+every second. So the query that prices, sums and sparklines every pool ran
+continuously, page loads queued behind it, and the panel sat on screen for
+as long as the queue was. And the query did all of that work for every pool
+before applying the listing bar: 2,600 pools of correlated lookups for a
+board of fifty.
+
+The bar is a `listed` CTE now, in front of every per-pool CTE. And the
+snapshot is served **stale-while-revalidate**: the last build is answered
+immediately, a rebuild starts in the background at most once per
+`SNAPSHOT_MIN_REBUILD_MS` (five seconds), and a socket is pushed only when
+the revision changed. The first request after a start is the only one that
+waits. A few seconds of staleness is invisible next to the lag the top bar
+already shows (§7).
+
+**Logos.** §4 permits them from outside, and the list in `config/tokens.json`
+was never going to cover a launchpad chain. `server/indexer/logo-sources.ts`
+asks CoinGecko, DexScreener and (with `CMC_API_KEY`) CoinMarketCap for one
+image URL per token and nothing else — not price, not supply, not decimals.
+One token every `LOGO_LOOKUP_MS`, listed tokens first, a miss not asked
+again for a week (`logo_checked_at`, one migration), a source that does not
+know this chain disabling itself and saying so once. CoinGecko's platform id
+is discovered from its platform list by chainId 4663 rather than guessed.
+
+**What is not verified:** the session that wrote this could not reach any
+of those services, so the parsers are written to the documented shapes and
+treat anything else as "not found". Whether CoinGecko or DexScreener has
+this chain at all is a fact the indexer will discover on the first pass and
+log. The token list remains the override, and the derived mark remains what
+renders when nothing else does. Launchpad sources (Pons, Bags, Bottom.fun)
+need an endpoint from someone who knows them — each is one function here.
+

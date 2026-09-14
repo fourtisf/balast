@@ -18,6 +18,9 @@ process.env.DATABASE_URL = url;
 // The fixture's tokens are small; the listing threshold is exercised by the
 // one test that sets it, and must not silently thin every other suite's board.
 process.env.LISTING_MIN_FDV_USD ??= '0';
+// No external logo lookups from a test run: the one suite that exercises
+// them hands the poller its own sources and a fake fetch.
+process.env.LOGO_SOURCES ??= 'none';
 // Never allow a test run to migrate or truncate a real database.
 if (!/balast_test/.test(url)) {
   throw new Error(

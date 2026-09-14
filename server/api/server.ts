@@ -163,11 +163,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   let cached: { snapshot: MarketSnapshot | null; at: number } | null = null;
   let building: Promise<MarketSnapshot | null> | null = null;
 
-  async function snapshot(force = false): Promise<MarketSnapshot | null> {
-    if (!force && cached && Date.now() - cached.at < env.streamDebounceMs) {
-      return cached.snapshot;
-    }
-    // Coalesce concurrent requests into one query.
+  /** One query at a time, whoever asks. */
+  function rebuild(): Promise<MarketSnapshot | null> {
     if (!building) {
       building = buildSnapshot({ usdgAddress: USDG || null })
         .then((value) => {
@@ -179,6 +176,29 @@ export async function buildServer(): Promise<FastifyInstance> {
         });
     }
     return building;
+  }
+
+  /**
+   * The snapshot, served stale and refreshed behind the request.
+   *
+   * It used to be rebuilt for any request older than the stream debounce —
+   * one second — and every websocket client forced its own rebuild on every
+   * indexer tick, which during a first sync is every second. The expensive
+   * query ran continuously, page loads queued behind it, and "loading the
+   * snapshot" sat on screen on every refresh.
+   *
+   * Now the last built snapshot is answered immediately, and a rebuild is
+   * started in the background at most once per SNAPSHOT_MIN_REBUILD_MS. The
+   * first request after a start is the only one that waits. A few seconds
+   * of staleness is invisible next to the lag figure the top bar already
+   * shows (§7), and the snapshot carries its own as-of time.
+   */
+  function snapshot(): Promise<MarketSnapshot | null> {
+    if (!cached) return rebuild();
+    if (Date.now() - cached.at >= env.snapshotMinRebuildMs) {
+      void rebuild().catch((error) => app.log.warn({ err: error }, 'snapshot rebuild failed'));
+    }
+    return Promise.resolve(cached.snapshot);
   }
 
   /**
@@ -342,13 +362,17 @@ export async function buildServer(): Promise<FastifyInstance> {
     let closed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
+    // Push only what changed: the same revision is not sent twice, so a
+    // tick that arrives before the next rebuild costs this socket nothing.
+    let sentRevision = -1;
     const send = async () => {
       timer = null;
       if (closed) return;
-      const value = await snapshot(true);
-      if (closed || !value) return;
+      const value = await snapshot();
+      if (closed || !value || value.revision === sentRevision) return;
       try {
         connection.send(serialise(value));
+        sentRevision = value.revision;
       } catch {
         /* the socket went away between the query and the send */
       }

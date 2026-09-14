@@ -35,6 +35,7 @@ import {
 import { resolveUsdg } from './anchor';
 import { planIngest } from './ingest';
 import { refreshLogos } from './logos';
+import { createSources, lookupLogos, type Fetch, type LogoSource } from './logo-sources';
 import {
   loadFeeTiers,
   loadKnownPools,
@@ -133,6 +134,9 @@ export interface PollerOptions {
   /** Where token symbol/name/decimals come from. Defaults to the token contract. */
   tokenReader?: TokenReader;
   log?: (message: string) => void;
+  /** Per-token logo sources. Defaults to LOGO_SOURCES; tests pass their own with a fake fetch. */
+  logoSources?: LogoSource[];
+  logoFetch?: Fetch;
 }
 
 export class Poller {
@@ -149,6 +153,10 @@ export class Poller {
   private lastAnchorAddress: string | null = null;
   /** The native-ether row is asserted once per process; see repairNativeToken. */
   private nativeRepaired = false;
+  private readonly logoSources: LogoSource[];
+  private readonly logoFetch?: Fetch;
+  /** Wall clock of the last per-token logo lookup: one token per LOGO_LOOKUP_MS. */
+  private lastLogoLookupAt = 0;
   private readonly startBlock: bigint;
   /**
    * Blocks per pass, which ADAPTS as it goes.
@@ -192,6 +200,8 @@ export class Poller {
     this.v3Factory = options.v3Factory?.toLowerCase() ?? null;
     this.tokenReader = options.tokenReader;
     this.log = options.log ?? (() => {});
+    this.logoSources = options.logoSources ?? createSources(env.logoSources);
+    this.logoFetch = options.logoFetch;
   }
 
   /**
@@ -214,6 +224,31 @@ export class Poller {
       usdg: resolved.address,
       anchorPoolId: await findAnchorPool(resolved.address),
     };
+  }
+
+  /**
+   * One token's logo per LOGO_LOOKUP_MS, whatever the pass is doing.
+   *
+   * On the clock rather than per pass, because a first sync passes every
+   * second and the sources are public and rate-limited. Never throws: a
+   * logo is decoration, and the pass must not depend on one.
+   */
+  private async maybeLookupLogo(): Promise<number> {
+    if (this.logoSources.length === 0) return 0;
+    const now = Date.now();
+    if (now - this.lastLogoLookupAt < env.logoLookupMs) return 0;
+    this.lastLogoLookupAt = now;
+    try {
+      return await lookupLogos({
+        sources: this.logoSources,
+        now: new Date(now),
+        limit: 1,
+        fetch: this.logoFetch,
+        log: this.log,
+      });
+    } catch {
+      return 0;
+    }
   }
 
   /**
@@ -263,7 +298,8 @@ export class Poller {
         // It is also the only network call in this process that is not to a
         // node, and it is allowed to fail silently (§4 permits logos from
         // external sources; a missing one changes no number).
-        logosFound: await refreshLogos({ chainId: CHAIN.id, log: this.log }),
+        logosFound:
+          (await refreshLogos({ chainId: CHAIN.id, log: this.log })) + (await this.maybeLookupLogo()),
         lagSeconds: 0,
         caughtUp: true,
         blockRange: Number(this.blockRange),
@@ -496,9 +532,9 @@ export class Poller {
       // Only when a pool was discovered: a logo list does not change between
       // blocks, and this is the one call in here that leaves the chain.
       logosFound:
-        initializePlan.pools.length > 0
+        (initializePlan.pools.length > 0
           ? await refreshLogos({ chainId: CHAIN.id, log: this.log })
-          : 0,
+          : 0) + (await this.maybeLookupLogo()),
       lagSeconds,
       caughtUp: to >= head.number,
       blockRange: Number(to - from + 1n),

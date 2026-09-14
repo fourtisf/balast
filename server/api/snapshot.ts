@@ -129,6 +129,29 @@ async function queryPools(usdg: string, asOf: Date, minFdvUsd: number): Promise<
         $1::timestamp - (${YIELD_WINDOW_HOURS} * interval '1 hour') AS since_window
     ),
 
+    -- Which pools the board will show, decided FIRST. Every per-pool CTE
+    -- below used to run for all of them — correlated price lookups, fee
+    -- sums, fourteen sparkline buckets — and the bar was applied at the very
+    -- end. On the real chain that was 2,600 pools of work for a board of
+    -- fifty, on every request, and the page waited on it.
+    listed AS (
+      SELECT p.id
+      FROM pools p
+      LEFT JOIN pool_state ps ON ps.pool_id = p.id
+      -- A pool with neither WETH nor USDG on a side cannot be priced through
+      -- the one allowed path, so it is not listed rather than listed at zero.
+      WHERE (${isEtherSql('p.token0', weth)} OR lower(p.token0) = '${usdgLower}'
+         OR ${isEtherSql('p.token1', weth)} OR lower(p.token1) = '${usdgLower}')
+        -- The listing bar (env.ts LISTING_MIN_FDV_USD): dust stays indexed and
+        -- unlisted. The ether/USDG market is exempt — ether's FDV is zero by
+        -- construction, not by size.
+        AND (
+          COALESCE(ps.mc_usd, 0) >= ${minFdvUsd}
+          OR (${isEtherSql('p.token0', weth)} AND lower(p.token1) = '${usdgLower}')
+          OR (lower(p.token0) = '${usdgLower}' AND ${isEtherSql('p.token1', weth)})
+        )
+    ),
+
     -- The anchor's price at two moments, for an honest 24h change (§4.3).
     anchor_pool AS (
       SELECT p.id, p.token0, p.token1
@@ -160,6 +183,7 @@ async function queryPools(usdg: string, asOf: Date, minFdvUsd: number): Promise<
          ORDER BY sw.block_num DESC, sw.log_index DESC
          LIMIT 1) AS ratio
       FROM pools p
+      JOIN (SELECT id FROM listed UNION SELECT id FROM anchor_pool) want ON want.id = p.id
       JOIN tokens t0 ON lower(t0.address) = lower(p.token0)
       JOIN tokens t1 ON lower(t1.address) = lower(p.token1)
       CROSS JOIN moments m
@@ -207,6 +231,7 @@ async function queryPools(usdg: string, asOf: Date, minFdvUsd: number): Promise<
         COALESCE(SUM(CASE WHEN f.hour >= pr.since_24h THEN f.volume_usd END), 0)  AS volume_24h_usd,
         COALESCE(SUM(CASE WHEN f.hour >= pr.since_24h THEN f.swaps END), 0)::int  AS trades_24h
       FROM pools p
+      JOIN listed l ON l.id = p.id
       CROSS JOIN params pr
       LEFT JOIN pool_fee_hourly f ON f.pool_id = p.id AND f.hour >= pr.since_window
       GROUP BY p.id
@@ -217,6 +242,7 @@ async function queryPools(usdg: string, asOf: Date, minFdvUsd: number): Promise<
       SELECT p.id AS pool_id,
         array_agg(COALESCE(b.total, 0)::float8 ORDER BY b.bucket) AS spark
       FROM pools p
+      JOIN listed l ON l.id = p.id
       CROSS JOIN params pr
       CROSS JOIN LATERAL (
         SELECT g.bucket,
@@ -288,6 +314,7 @@ async function queryPools(usdg: string, asOf: Date, minFdvUsd: number): Promise<
 
       s.spark
     FROM pools p
+    JOIN listed l ON l.id = p.id
     CROSS JOIN params pr
     JOIN tokens t0 ON lower(t0.address) = lower(p.token0)
     JOIN tokens t1 ON lower(t1.address) = lower(p.token1)
@@ -296,18 +323,6 @@ async function queryPools(usdg: string, asOf: Date, minFdvUsd: number): Promise<
     LEFT JOIN spark s ON s.pool_id = p.id
     LEFT JOIN priced pnow  ON pnow.pool_id  = p.id AND pnow.moment  = pr.as_of
     LEFT JOIN priced pthen ON pthen.pool_id = p.id AND pthen.moment = pr.since_24h
-    -- A pool with neither WETH nor USDG on a side cannot be priced through
-    -- the one allowed path, so it is not listed rather than listed at zero.
-    WHERE (${isEtherSql('p.token0', weth)} OR lower(p.token0) = '${usdgLower}'
-       OR ${isEtherSql('p.token1', weth)} OR lower(p.token1) = '${usdgLower}')
-      -- The listing bar (env.ts LISTING_MIN_FDV_USD): dust stays indexed and
-      -- unlisted. The ether/USDG market is exempt — ether's FDV is zero by
-      -- construction, not by size.
-      AND (
-        COALESCE(ps.mc_usd, 0) >= ${minFdvUsd}
-        OR (${isEtherSql('p.token0', weth)} AND lower(p.token1) = '${usdgLower}')
-        OR (lower(p.token0) = '${usdgLower}' AND ${isEtherSql('p.token1', weth)})
-      )
     ORDER BY COALESCE(ps.tvl_usd, 0) DESC
   `;
 
