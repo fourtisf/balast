@@ -46,6 +46,14 @@ import {
   writeSwaps,
 } from './store';
 
+/**
+ * Logs in a pass above which the range is narrowed.
+ *
+ * Not about memory: it is the signal that the next window at this width would
+ * likely be refused, and narrowing before that saves the wasted round trip.
+ */
+const BUSY_LOGS = 2_000;
+
 /** The cursor key for the one v4 contract every pool lives in. */
 export const POOL_MANAGER_CURSOR = `v4:${CONTRACTS.poolManager.toLowerCase()}`;
 
@@ -86,6 +94,8 @@ export interface PassResult {
   suppliesRefreshed: number;
   /** Token logos picked up from the token list, if one is configured. */
   logosFound: number;
+  /** Blocks this pass covered. Visible so the adaptation is observable. */
+  blockRange: number;
   /** Seconds between the last indexed block's time and head's. Shown in the top bar (§7). */
   lagSeconds: number;
   caughtUp: boolean;
@@ -116,6 +126,8 @@ export interface PollerOptions {
   blockRange?: number;
   /** Override for tests; production uses §2's 32. */
   reorgDepth?: number;
+  /** Ceiling for the adaptive range. Lowered on the first refusal. */
+  maxBlockRange?: number;
   /** Where token symbol/name/decimals come from. Defaults to the token contract. */
   tokenReader?: TokenReader;
   log?: (message: string) => void;
@@ -127,7 +139,26 @@ export class Poller {
   /** Last resolution, so a change of anchor can be logged once rather than every pass. */
   private lastAnchorNote = '';
   private readonly startBlock: bigint;
-  private readonly blockRange: bigint;
+  /**
+   * Blocks per pass, which ADAPTS as it goes.
+   *
+   * A fixed 2,000 is right once the indexer is following head and wrong by
+   * four orders of magnitude during a first sync: this chain is 62 million
+   * blocks deep and almost all of it is empty, so a fixed window meant some
+   * thirty thousand round trips — about thirty-four hours — before reaching
+   * anything worth indexing.
+   *
+   * Empty ranges widen, busy ranges narrow, and a range the endpoint refuses
+   * lowers a learned ceiling. That last part is why this is adaptive rather
+   * than just "set it larger": every endpoint caps `eth_getLogs` differently
+   * and none of them say so up front, so the poller finds the cap by hitting
+   * it once and then stays under it.
+   */
+  private blockRange: bigint;
+  /** Never go below this: a busy range still has to make progress. */
+  private readonly minRange: bigint;
+  /** Learned from refusals. Starts optimistic and only ever comes down. */
+  private maxRange: bigint;
   private readonly reorgDepth: bigint;
   private readonly log: (message: string) => void;
   private readonly tokenReader?: TokenReader;
@@ -140,7 +171,11 @@ export class Poller {
     this.source = options.source;
     this.usdgAddress = options.usdgAddress?.toLowerCase() ?? null;
     this.startBlock = options.startBlock ?? env.startBlock;
-    this.blockRange = BigInt(options.blockRange ?? env.blockRange);
+    this.minRange = BigInt(options.blockRange ?? env.blockRange);
+    this.blockRange = this.minRange;
+    // 50k is above what most public endpoints allow, deliberately: the first
+    // refusal teaches the real ceiling, and one wasted call is worth hours.
+    this.maxRange = BigInt(options.maxBlockRange ?? env.maxBlockRange);
     this.reorgDepth = BigInt(options.reorgDepth ?? CHAIN.reorgDepth);
     this.v3Pools = (options.v3Pools ?? []).map((a) => a.toLowerCase());
     this.v3Factory = options.v3Factory?.toLowerCase() ?? null;
@@ -220,6 +255,7 @@ export class Poller {
         logosFound: await refreshLogos({ chainId: CHAIN.id, log: this.log }),
         lagSeconds: 0,
         caughtUp: true,
+        blockRange: Number(this.blockRange),
       };
     }
 
@@ -229,7 +265,38 @@ export class Poller {
       ...(this.v3Factory ? [this.v3Factory] : []),
       ...this.v3Pools,
     ];
-    const logs = await this.source.getLogs({ address: addresses, fromBlock: from, toBlock: to });
+    let logs;
+    try {
+      logs = await this.source.getLogs({ address: addresses, fromBlock: from, toBlock: to });
+    } catch (error) {
+      // Almost always the endpoint refusing the width — "query returned more
+      // than N results", "block range too large". Endpoints differ and none
+      // announce their cap, so it is found by hitting it once: halve, record
+      // the ceiling, and let the next pass retry the same range narrower. The
+      // cursor does not move, so nothing is skipped.
+      const width = to - from + 1n;
+      this.maxRange = max(this.minRange, width / 2n);
+      this.blockRange = this.maxRange;
+      this.log(
+        `  endpoint refused ${width} blocks (${(error as Error).message.split('\n')[0]}) — ` +
+          `range now ${this.blockRange}`,
+      );
+      return {
+        fromBlock: from,
+        toBlock: cursor ?? from,
+        headBlock: head.number,
+        events: 0,
+        swapsWritten: 0,
+        liquidityWritten: 0,
+        poolsFound: 0,
+        tokensFound: 0,
+        suppliesRefreshed: 0,
+        logosFound: 0,
+        lagSeconds: 0,
+        caughtUp: false,
+        blockRange: Number(this.blockRange),
+      };
+    }
     const blockTimes = await this.source.getBlockTimes(from, to);
 
     const events: ChainEvent[] = [];
@@ -354,6 +421,25 @@ export class Poller {
     const lastBlockTime = blockTimes.get(to) ?? head.timestamp;
     await writeCursor(POOL_MANAGER_CURSOR, to, lastBlockTime);
 
+    // Adapt for the next pass. Only while backfilling: once the indexer is
+    // following head there is nothing to gain from a wider window and a
+    // narrow one keeps latency low.
+    const behind = head.number - to;
+    if (behind > this.blockRange) {
+      if (logs.length === 0) {
+        // Empty. This is the case that matters — most of a 62-million-block
+        // chain is empty, and doubling turns tens of thousands of passes into
+        // hundreds.
+        this.blockRange = min(this.maxRange, this.blockRange * 2n);
+      } else if (logs.length > BUSY_LOGS) {
+        // Dense enough that the next window risks a refusal, and each pass is
+        // doing real work anyway.
+        this.blockRange = max(this.minRange, this.blockRange / 2n);
+      }
+    } else {
+      this.blockRange = this.minRange;
+    }
+
     const lagSeconds = Math.max(
       0,
       (head.timestamp.getTime() - lastBlockTime.getTime()) / 1000,
@@ -377,6 +463,7 @@ export class Poller {
           : 0,
       lagSeconds,
       caughtUp: to >= head.number,
+      blockRange: Number(to - from + 1n),
     };
   }
 

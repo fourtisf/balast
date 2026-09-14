@@ -54,6 +54,16 @@ export const env = {
    * eth_getLogs well below 10k blocks.
    */
   blockRange: int('INDEXER_BLOCK_RANGE', 2_000),
+  /**
+   * Ceiling for the adaptive range during a first sync.
+   *
+   * The range above is the FLOOR, used once the indexer is following head.
+   * Backfilling 62 million mostly-empty blocks at that width would be some
+   * thirty thousand round trips; widening on empty ranges turns it into
+   * hundreds. The poller lowers this itself the first time an endpoint
+   * refuses a range, so the number only has to be optimistic, not correct.
+   */
+  maxBlockRange: int('INDEXER_MAX_BLOCK_RANGE', 50_000),
   /** Seconds between passes when already caught up to head. */
   pollIntervalMs: int('INDEXER_POLL_MS', 1_000),
 

@@ -93,12 +93,18 @@ async function main(): Promise<void> {
     try {
       const result = await poller.runPass();
       backoffMs = 1_000;
-      if (result.events > 0 || result.poolsFound > 0) {
+      // Every pass while backfilling, not only the ones that found something:
+      // on a 62-million-block chain most ranges are empty, and silence for an
+      // hour is indistinguishable from a hang.
+      const behind = Number(result.headBlock - result.toBlock);
+      if (result.events > 0 || result.poolsFound > 0 || !result.caughtUp) {
+        const pct = ((Number(result.toBlock) / Number(result.headBlock)) * 100).toFixed(2);
         log(
-          `blocks ${result.fromBlock}-${result.toBlock} of ${result.headBlock}: ` +
+          `blocks ${result.fromBlock}-${result.toBlock} of ${result.headBlock} (${pct}%, ` +
+            `${behind.toLocaleString()} behind, window ${result.blockRange.toLocaleString()}): ` +
             `${result.events} events, +${result.swapsWritten} swaps, ` +
             `+${result.liquidityWritten} liquidity, +${result.poolsFound} pools, ` +
-            `+${result.tokensFound} tokens, lag ${result.lagSeconds.toFixed(1)}s`,
+            `+${result.tokensFound} tokens`,
         );
         // Tell the API something changed; it debounces before pushing (§4.4).
         await publishTick({ toBlock: result.toBlock.toString(), lagSeconds: result.lagSeconds });

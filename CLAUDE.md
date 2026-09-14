@@ -1056,3 +1056,35 @@ abandoned rather than trusted.
 Writing the test for it found a real bug: the genesis probe sat outside the
 bisection's try/catch, so a pruned node would have thrown at indexer startup
 instead of falling back.
+
+### Thirty-four hours of empty blocks
+
+With the crash loop fixed the indexer ran, and the next problem was arithmetic:
+block 47,000 of 62,644,703, at 2,000 blocks a pass. Some thirty thousand round
+trips — about thirty-four hours — before reaching anything worth indexing.
+
+The deployment-block bisection was supposed to skip that, and it correctly
+refused to: **all four public endpoints are pruned**, so `eth_getCode` cannot
+answer for an old block. It said so and fell back rather than guessing, which
+is right — a `START_BLOCK` above a pool's creation means never seeing the mint
+that funded it.
+
+So the fix is on the other side: the range adapts. Empty ranges double toward
+a ceiling, busy ones halve back, and once the indexer is following head it
+returns to the floor, where a narrow window keeps latency low.
+
+The ceiling is learned rather than configured. Endpoints cap `eth_getLogs`
+differently and none announce it, so the poller starts optimistic, and the
+first refusal — "query returned more than N results", "block range too large"
+— halves the width and records a ceiling it stays under. The cursor does not
+move on a refusal, so nothing is skipped.
+
+The property this could not cost is §9. A window that changes size mid-sync is
+a harder version of the block-zero-versus-incremental comparison that
+criterion is built on, so there is a test producing byte-identical
+`pool_fee_hourly` rows from an adaptive run and a fixed-window one.
+
+The indexer also logs every pass while backfilling now, with percentage and
+blocks remaining. It previously logged only passes that found something, and
+on a chain that is mostly empty an hour of silence is indistinguishable from a
+hang.
