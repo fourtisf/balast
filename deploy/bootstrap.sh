@@ -133,11 +133,17 @@ fi
 
 echo "==> build"
 cd "$APP_DIR"
-as_app npm ci
+# Prisma's CLI does its own `.env` discovery and does not find the file when
+# run through `runuser`. Pass it explicitly rather than depend on that search
+# path — `npm ci` needs it too, because postinstall runs `prisma generate`,
+# which validates the schema even though it never connects.
+DB_URL=$(grep -E '^DATABASE_URL=' "$APP_DIR/.env" | head -1 | cut -d= -f2- | tr -d '"')
+[[ -n "$DB_URL" ]] || { echo "no DATABASE_URL in $APP_DIR/.env"; exit 1; }
+as_app env DATABASE_URL="$DB_URL" npm ci
 as_app npm run build
 
 echo "==> migrate"
-as_app npx prisma migrate deploy
+as_app env DATABASE_URL="$DB_URL" npx prisma migrate deploy
 
 echo "==> pm2"
 # Rotate the logs. Three processes writing to six files with no rotation fills

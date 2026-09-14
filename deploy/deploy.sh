@@ -17,9 +17,30 @@ cd "$APP_DIR"
 
 as_app() { runuser -u "$APP_USER" -- "$@"; }
 
+# Prisma's CLI does its own `.env` discovery, and it does not find the file
+# when run through `runuser` — it reported "Environment variable not found:
+# DATABASE_URL" against a file sitting in the working directory. Rather than
+# work out whose fault that is, pass the value explicitly: a deploy should not
+# depend on another tool's search path.
+#
+# Only DATABASE_URL is read. Sourcing the whole file would pull every other
+# secret into this shell for no reason.
+db_url() {
+  grep -E '^DATABASE_URL=' "$APP_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"'
+}
+
+DATABASE_URL=$(db_url)
+if [[ -z "$DATABASE_URL" ]]; then
+  echo "no DATABASE_URL in $APP_DIR/.env — the migration and the build need it"
+  exit 1
+fi
+export DATABASE_URL
+
 as_app git fetch origin "$BRANCH"
 as_app git checkout -B "$BRANCH" "origin/$BRANCH"
-as_app npm ci
+# postinstall runs `prisma generate`, which validates the schema and so needs
+# DATABASE_URL present even though it never connects.
+as_app env DATABASE_URL="$DATABASE_URL" npm ci
 
 # DATA_SOURCE comes from .env and ecosystem.config.js, not from here. Pinning
 # it on the build line is how a box ends up serving simulated numbers because
@@ -28,7 +49,7 @@ as_app npm run build
 
 # Migrations before the reload: the new code may need the new columns, and
 # `migrate deploy` only applies what is pending, so this is a no-op most runs.
-as_app npx prisma migrate deploy
+as_app env DATABASE_URL="$DATABASE_URL" npx prisma migrate deploy
 
 # startOrReload, not reload.
 #

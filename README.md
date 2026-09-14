@@ -264,11 +264,33 @@ left for whoever has them.
 ### Before the first sync
 
 ```bash
-npm run verify:chain
+npm run find:tokens     # what does this chain actually trade?
+npm run verify:chain    # are the §2 addresses right?
 ```
 
-It needs no database — deliberately, since its whole point is to check the
+Neither needs a database — deliberately, since the whole point is to check the
 chain before the database matters.
+
+`find:tokens` scans the PoolManager's `Initialize` events, reads each token's
+symbol and decimals off its own contract, and ranks them by how many pools
+reference them. It finds `USDG_ADDRESS` for you, confirms WETH appears where
+expected, and reports the earliest `Initialize` it saw as a lower bound for
+`START_BLOCK`. If two tokens both call themselves USDG it lists both rather
+than choosing: the wrong anchor makes every USD figure on the site wrong in a
+way nothing downstream can detect.
+
+Set what it finds without opening an editor:
+
+```bash
+./deploy/set-env.sh USDG_ADDRESS 0x...
+./deploy/set-env.sh START_BLOCK 4821337
+./deploy/set-env.sh                      # show current values, secrets masked
+runuser -u balast -- pm2 restart balast-indexer balast-api --update-env
+```
+
+It replaces the line or appends it, validates anything ending `_ADDRESS`, and
+leaves the rest of the file byte-identical — including the generated database
+password, which a substitution over a secrets file can silently mangle.
 
 All seven addresses in §2 are marked unverified in `lib/chain.ts`. This checks
 each one holds code, that the PoolManager has actually emitted the v4 events we
