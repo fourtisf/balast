@@ -47,10 +47,24 @@ export function MiniCards() {
   const { pools } = useMarket();
   const { openStake } = useUi();
 
-  const mostTraded = pools.reduce((a, b) => (b.volume24hUsd > a.volume24hUsd ? b : a));
-  const bestYield = pools
-    .filter((p) => p.feeYield.basis === 'trailing7d')
-    .reduce((a, b) => (yieldPct(b.feeYield) > yieldPct(a.feeYield) ? b : a));
+  // Both can be empty on a live chain — every pool unpriced during a first
+  // sync, or none yet with seven days of fees — and `reduce` with no initial
+  // value throws on an empty array. It did, and took the whole page down to
+  // the error boundary over a card that should simply have said "not yet".
+  const mostTraded = maxBy(pools, (p) => p.volume24hUsd);
+  const bestYield = maxBy(
+    pools.filter((p) => p.feeYield.basis === 'trailing7d'),
+    (p) => yieldPct(p.feeYield),
+  );
+
+  if (!mostTraded) {
+    return (
+      <div className="mini-cards">
+        <MiniEmpty label="Most traded · 24h" why="No priced pool yet." />
+        <MiniEmpty label="Highest fee yield · trailing 7d" why="No pool with seven days of fees yet." />
+      </div>
+    );
+  }
 
   return (
     <div className="mini-cards">
@@ -71,6 +85,7 @@ export function MiniCards() {
         </div>
       </button>
 
+      {bestYield ? (
       <button className="card mc" onClick={() => openStake(bestYield.id)}>
         <div className="lab">Highest fee yield · trailing 7d</div>
         <div className="r">
@@ -86,6 +101,30 @@ export function MiniCards() {
           <AreaSpark values={bestYield.feeHistory} negative={false} />
         </div>
       </button>
+      ) : (
+        // §7: a yield is trailing 7d or it is not shown. Until one pool has
+        // seven days of fees, this card has nothing honest to rank.
+        <MiniEmpty label="Highest fee yield · trailing 7d" why="No pool with seven days of fees yet." />
+      )}
+    </div>
+  );
+}
+
+/** The largest by `key`, or null for an empty list — never a throw. */
+function maxBy<T>(list: T[], key: (item: T) => number): T | null {
+  let best: T | null = null;
+  for (const item of list) {
+    if (best === null || key(item) > key(best)) best = item;
+  }
+  return best;
+}
+
+/** A mini card with nothing to rank yet. Same frame, no button — there is nothing to open. */
+function MiniEmpty({ label, why }: { label: string; why: string }) {
+  return (
+    <div className="card mc mc-empty" role="status">
+      <div className="lab">{label}</div>
+      <div className="sub">{why}</div>
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
-import { count, usdExact } from '@/lib/format';
+import { count, duration, usdExact } from '@/lib/format';
 
 /** Above this the indexer is behind and the top bar has to say so (§7). */
 const LAG_THRESHOLD_SECONDS = 30;
@@ -75,7 +75,7 @@ export function TopBar() {
             <i />
             {behind ? (
               <>
-                <span className="lag-word">Indexer</span> {Math.round(indexerLagSeconds)}s behind
+                <span className="lag-word">Indexer</span> {duration(indexerLagSeconds)} behind
               </>
             ) : (
               <span className="lag-live">Live</span>

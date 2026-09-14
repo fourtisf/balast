@@ -16,7 +16,7 @@ import { CHAIN, CONTRACTS } from '../../lib/chain';
 import { POOL_MANAGER_ABI, V3_POOL_ABI } from '../chain/abi';
 import { env } from '../env';
 import type { PriceAnchors } from './aggregate';
-import { rebuildAggregates } from './aggregate';
+import { rebuildAggregates, rebuildFlowHours } from './aggregate';
 import {
   classifyPools,
   ensureTokens,
@@ -138,6 +138,13 @@ export class Poller {
   private readonly usdgAddress: string | null;
   /** Last resolution, so a change of anchor can be logged once rather than every pass. */
   private lastAnchorNote = '';
+  /**
+   * The anchor the aggregates were last built against. When it changes —
+   * including from "none" to "found", which on a real chain happens some
+   * passes into the first sync — every priced table is rebuilt in full
+   * rather than for the hours this pass touched. See the pass body.
+   */
+  private lastAnchorAddress: string | null = null;
   private readonly startBlock: bigint;
   /**
    * Blocks per pass, which ADAPTS as it goes.
@@ -408,12 +415,33 @@ export class Poller {
     const suppliesRefreshed = await refreshSupplies(head.timestamp, {
       read: this.tokenReader,
     });
-    // No anchor yet means no dollar figure is derivable — the raw rows above
-    // are still written, and the rebuild that prices them happens on whatever
-    // pass first finds USDG. Skipping the aggregation here is not data loss.
+    const bounds = { fromBlock: from, toBlock: to };
+
+    // Token flow needs no anchor — it is amounts, not dollars — so it is
+    // staged every pass. It used to be skipped along with the priced tables
+    // whenever the anchor was unknown, and on the real chain the anchor was
+    // unknown for the first few million blocks: when it finally resolved,
+    // only the hours of THAT pass had flow rows, so every pool's reserves
+    // were its recent swaps without the mint that funded them. Negative
+    // reserves read as unknown depth (§14), and the whole site showed TVL $0.
+    await rebuildFlowHours(bounds);
+
     if (anchors) {
-      await rebuildAggregates(anchors, { fromBlock: from, toBlock: to });
+      if (anchors.usdg !== this.lastAnchorAddress) {
+        // A new anchor prices history, not just this window. §17 promised
+        // that the pass discovering USDG reprices everything retroactively;
+        // bounded to the touched hours it never did. Once per anchor — and
+        // once per restart, which is a cheap way to make a repair a no-op.
+        this.log(`  anchor ${anchors.usdg}: rebuilding every priced table from the raw rows`);
+        await rebuildAggregates(anchors);
+        this.lastAnchorAddress = anchors.usdg;
+      } else {
+        await rebuildAggregates(anchors, bounds);
+      }
     }
+    // No anchor yet means no dollar figure is derivable. The raw rows and the
+    // flow above are still written; the full rebuild on the pass that first
+    // finds USDG prices them. Skipping the priced tables here is not data loss.
     await classifyPools();
 
     const lastBlockTime = blockTimes.get(to) ?? head.timestamp;

@@ -1219,3 +1219,46 @@ way the anchor search ranks — and prints exactly the resolution the indexer
 and the API would make. It touches no endpoint, so it works when every public
 RPC is refusing, which on this chain is the normal state.
 
+### The first real snapshot: TVL $0 everywhere, and a page that crashed on it
+
+The branch reached the box, the anchor resolved, and the site rendered for
+the first time against real data — with `TOTAL FEES $805`, `TVL $0`, and
+`/pools` on the error boundary: *Reduce of empty array with no initial
+value*. Three faults, each only visible with a late anchor.
+
+**Flow was skipped along with the priced tables.** `pool_flow_hourly` is
+token amounts, not dollars, and needs no anchor; but the poller skipped the
+whole aggregation while the anchor was unknown. On the real chain that was
+the first few million blocks. When the anchor finally resolved, the bounded
+rebuild staged flow for the discovering pass's hours only, so every pool's
+reserves were its recent swaps minus the mint that funded it: negative,
+therefore *unknown depth* (§14), therefore TVL $0 on every row and in the
+top bar. Flow is staged every pass now, anchor or not.
+
+**"Retroactive" was bounded.** §17 says the pass that discovers USDG prices
+history; the rebuild it ran was scoped to that pass's hours, so it did not.
+A change of anchor — including none to found, and including a restart — now
+runs one unbounded rebuild of every priced table. Once per anchor, and the
+restart case is deliberate: it makes a repair on a live box a redeploy, not
+a migration.
+
+Neither was catchable by the existing fixtures, whose anchor pool is created
+at block 1 — the anchor is known from the first pass and nothing is ever
+skipped. `server/indexer/late-anchor.test.ts` creates it two thirds of the
+way through the chain, syncs in windows small enough that several passes
+complete before it exists, and asserts two things: every pool's depth is
+known, and the rows match — as text — a sync that had the address configured
+from the start. Against the old poller the first fails with exactly the box's
+symptom (`expected 0 to be greater than 0`) and the flow table is missing
+half its hours.
+
+**The page crashed on an honest empty.** `MiniCards` ranked pools with
+`reduce` and no initial value: an empty list throws, and the "highest fee
+yield" card filters to pools with seven days of fees, which on a young chain
+is none. A card that should have said "not yet" took the whole page to the
+error boundary. Both rankings go through a `maxBy` that returns null, and
+null renders a quiet card with the reason.
+
+Smaller: the top bar read `5937929s behind`, which is honest and unreadable;
+it reads `68d 17h behind` now (§7 wants the lag shown, not encoded).
+

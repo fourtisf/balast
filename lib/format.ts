@@ -56,6 +56,23 @@ export function countdown(seconds: number): string {
   return `${m}m left`;
 }
 
+/**
+ * 5_937_929 -> "68d 17h", 7_384 -> "2h 3m", 42 -> "42s".
+ *
+ * For the indexer lag in the top bar (§7). Seven digits of seconds is honest
+ * and unreadable, and a first sync on this chain is measured in days.
+ */
+export function duration(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s % 60}s`;
+  return `${s}s`;
+}
+
 export function inHours(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   if (h >= 1) return `in ${h}h`;

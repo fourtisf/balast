@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ageLabel, countdown, inHours, price, signedPct, usd, usdExact, weth } from './format';
+import { ageLabel, countdown, duration, inHours, price, signedPct, usd, usdExact, weth } from './format';
 
 describe('usd', () => {
   it('scales to B / M / K / plain', () => {
@@ -75,5 +75,15 @@ describe('weth and usdExact', () => {
     expect(weth(0.88, 2)).toBe('0.88 WETH');
     expect(usdExact(5_142_908)).toBe('$5,142,908');
     expect(usdExact(2521.08, 2)).toBe('$2,521.08');
+  });
+});
+
+describe('duration', () => {
+  it('reads as days and hours once the lag is days, and never as seven digits of seconds', () => {
+    expect(duration(5_937_929)).toBe('68d 17h');
+    expect(duration(7_384)).toBe('2h 3m');
+    expect(duration(125)).toBe('2m 5s');
+    expect(duration(42)).toBe('42s');
+    expect(duration(-3)).toBe('0s');
   });
 });
