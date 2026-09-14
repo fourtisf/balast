@@ -27,6 +27,31 @@ import { buildSnapshot } from './snapshot';
 const USDG = process.env.USDG_ADDRESS ?? '';
 
 /**
+ * What, if anything, makes this API unable to serve real numbers.
+ *
+ * The API used to THROW on a missing USDG_ADDRESS and refuse to start, which
+ * is backwards: it is the one process that could say what is wrong, and
+ * instead it crash-looped — 24 restarts, no explanation anywhere, and a
+ * front end that could not even ask. A configuration error should be loudly
+ * visible, not fatal.
+ *
+ * So it starts, answers, and reports this. `/api/health` returns it with a
+ * 503 so a monitor still catches it, and `/api/snapshot` refuses with the
+ * same reason, which the waiting page then shows the operator.
+ */
+function configurationProblem(): string | null {
+  if (!USDG) {
+    return (
+      'USDG_ADDRESS is not set. The WETH/USDG pool is the only path to a USD ' +
+      'figure, so without it every dollar amount would read zero. Run ' +
+      '`npm run find:tokens` on the server, then ' +
+      '`./deploy/set-env.sh USDG_ADDRESS 0x...`.'
+    );
+  }
+  return null;
+}
+
+/**
  * JSON cannot carry a bigint, and every amount that crosses this boundary has
  * already been converted to a number by the SQL. This is the guard for the
  * one that has not: it throws rather than silently emitting `null`.
@@ -136,8 +161,13 @@ export async function buildServer(): Promise<FastifyInstance> {
              (SELECT COUNT(*) FROM swap_events)::int AS swaps
     `;
 
-    const status =
-      cursor === null
+    // Misconfiguration outranks everything: a never-indexed chain is the
+    // SYMPTOM when the indexer cannot start, and reporting the symptom sends
+    // whoever is looking to the wrong place.
+    const problem = configurationProblem();
+    const status = problem
+      ? 'misconfigured'
+      : cursor === null
         ? 'never-indexed'
         : lagSeconds !== null && lagSeconds > env.stallSeconds
           ? 'stalled'
@@ -158,18 +188,26 @@ export async function buildServer(): Promise<FastifyInstance> {
       weth: CONTRACTS.weth,
       usdg: USDG || null,
       message:
-        status === 'never-indexed'
-          ? 'The indexer has never written a block. Check USDG_ADDRESS and `pm2 logs balast-indexer`.'
-          : status === 'stalled'
-            ? `The indexer is ${Math.round(lagSeconds ?? 0)}s behind, past the ${env.stallSeconds}s ` +
-              'stall threshold. The site is showing numbers that old.'
-            : undefined,
+        status === 'misconfigured'
+          ? problem!
+          : status === 'never-indexed'
+            ? 'The indexer has never written a block. Check `pm2 logs balast-indexer`.'
+            : status === 'stalled'
+              ? `The indexer is ${Math.round(lagSeconds ?? 0)}s behind, past the ${env.stallSeconds}s ` +
+                'stall threshold. The site is showing numbers that old.'
+              : undefined,
     };
 
     return reply.code(status === 'ok' ? 200 : 503).send(body);
   });
 
   app.get('/api/snapshot', async (_request, reply) => {
+    const problem = configurationProblem();
+    if (problem) {
+      // Not "no data yet": a reason. The waiting page shows this verbatim, so
+      // whoever opens the site sees what to fix instead of a blank panel.
+      return reply.code(503).send({ error: 'misconfigured', message: problem });
+    }
     const value = await snapshot();
     if (!value) {
       // Nothing indexed yet. 503 rather than an empty snapshot: the client
@@ -221,14 +259,14 @@ export async function buildServer(): Promise<FastifyInstance> {
 }
 
 export async function start(): Promise<FastifyInstance> {
-  if (!USDG) {
-    throw new Error(
-      'USDG_ADDRESS is required: it is the site\'s one USD anchor (§4.3). ' +
-        'Without it every USD figure would read zero.',
-    );
-  }
   const app = await buildServer();
   await app.listen({ port: env.apiPort, host: env.apiHost });
+
+  // Loud, and still serving. The old behaviour was to throw here, which took
+  // the process down and left nothing able to report the cause.
+  const problem = configurationProblem();
+  if (problem) app.log.error(`NOT SERVING REAL DATA: ${problem}`);
+
   if (busKind() === 'in-process') {
     app.log.warn(
       'No REDIS_URL: the tick bus is in-process. Fine for one API instance; ' +

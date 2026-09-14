@@ -942,3 +942,31 @@ The database check also says **which** failure it is, rather than "cannot
 connect": cluster down, wrong port in `.env`, `listen_addresses` refusing
 127.0.0.1, or bad credentials. The generic message sent someone to check
 whether postgres was running — and it was, on another port.
+
+### An API that died instead of explaining
+
+`start()` threw on a missing `USDG_ADDRESS` and refused to listen. On the real
+box that produced 24 restarts, no explanation anywhere, and a front end that
+could not even ask what was wrong — while the page it served said only
+"waiting for the indexer", which was true and useless.
+
+That is backwards. The API is the one process in a position to say what is
+missing, and a configuration error should be loudly visible rather than fatal.
+It starts now, and reports:
+
+- `/api/health` → 503 with `status: "misconfigured"` and a message naming
+  both the variable and the two commands that set it.
+- `/api/snapshot` → 503 with the same reason rather than a bare "no data".
+
+**Misconfiguration outranks `never-indexed`** in that status, deliberately: a
+chain with no indexed blocks is the SYMPTOM of an indexer that cannot start,
+and reporting the symptom sends whoever is looking to the wrong place.
+
+The indexer still refuses to start without the anchor, and that stays right —
+it would otherwise write rows priced at zero. PM2's `errored` state is the
+visible signal there.
+
+`components/providers/AwaitingIndexer.tsx` asks `/api/health` and shows the
+reason under the honest-empty message. The waiting page now tells an operator
+what to fix instead of leaving them to guess, which is the difference between
+a blank wall and a diagnosis.

@@ -1,7 +1,8 @@
 'use client';
 
 import { createContext, useCallback, useContext, useMemo, useSyncExternalStore, type ReactNode } from 'react';
-import { DATA_SOURCE, getProvider } from '@/lib/data';
+import { getProvider } from '@/lib/data';
+import { AwaitingIndexer } from './AwaitingIndexer';
 import type { MarketSnapshot, Pool, Vault } from '@/lib/data/types';
 
 const MarketContext = createContext<MarketSnapshot | null>(null);
@@ -36,29 +37,6 @@ export function MarketProvider({ children }: { children: ReactNode }) {
   if (!snapshot) return <AwaitingIndexer />;
 
   return <MarketContext.Provider value={snapshot}>{children}</MarketContext.Provider>;
-}
-
-/**
- * Shown while the live provider has nothing to render: either the first fetch
- * is still in flight, or the indexer has not written its first block.
- *
- * It says which, and it does not draw a single figure.
- */
-function AwaitingIndexer() {
-  return (
-    <div className="awaiting" role="status">
-      <div className="aw-in">
-        <span className="eyebrow">
-          {DATA_SOURCE === 'live' ? 'Waiting for the indexer' : 'Loading'}
-        </span>
-        <p>
-          No indexed blocks yet, so there is nothing honest to show. The boards
-          appear as soon as the first swap is attributed — no placeholder
-          numbers in the meantime.
-        </p>
-      </div>
-    </div>
-  );
 }
 
 export function useMarket(): MarketSnapshot {

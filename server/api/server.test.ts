@@ -6,7 +6,7 @@
  * matter more than the bodies.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
 
@@ -160,5 +160,64 @@ describe('rate limiting', () => {
       // what matters is that it is never refused as rate-limited.
       expect(response.statusCode).not.toBe(429);
     }
+  });
+});
+
+describe('a missing USDG_ADDRESS', () => {
+  /**
+   * The API used to throw here and refuse to start — 24 restarts on the real
+   * box, no explanation anywhere, and a front end that could not even ask
+   * what was wrong. A configuration error has to be loudly visible, not
+   * fatal: this is the one process in a position to say what is missing.
+   *
+   * `vi.resetModules` because server.ts reads USDG_ADDRESS at import, which
+   * is the behaviour we want in production.
+   */
+  let bare: FastifyInstance;
+
+  beforeAll(async () => {
+    vi.resetModules();
+    const saved = process.env.USDG_ADDRESS;
+    delete process.env.USDG_ADDRESS;
+    const { buildServer } = await import('./server');
+    bare = await buildServer();
+    await bare.ready();
+    if (saved !== undefined) process.env.USDG_ADDRESS = saved;
+  });
+
+  afterAll(async () => {
+    await bare?.close();
+    vi.resetModules();
+  });
+
+  it('still starts, rather than crash-looping', async () => {
+    // If buildServer had thrown, beforeAll would have failed and we would
+    // never get here. Asserting it answers is the point.
+    const response = await bare.inject({ method: 'GET', url: '/api/health' });
+    expect(response.statusCode).toBe(503);
+  });
+
+  it('reports the reason, and names what to set', async () => {
+    const body = (await bare.inject({ method: 'GET', url: '/api/health' })).json();
+    expect(body.status).toBe('misconfigured');
+    expect(body.message).toMatch(/USDG_ADDRESS is not set/);
+    // The message is what the waiting page shows the operator, so it has to
+    // carry the fix and not just the complaint.
+    expect(body.message).toMatch(/find:tokens/);
+    expect(body.message).toMatch(/set-env\.sh/);
+  });
+
+  it('ranks misconfiguration above never-indexed', async () => {
+    // A chain with no indexed blocks is the SYMPTOM of an indexer that cannot
+    // start. Reporting the symptom sends whoever is looking to the wrong place.
+    const body = (await bare.inject({ method: 'GET', url: '/api/health' })).json();
+    expect(body.status).not.toBe('never-indexed');
+  });
+
+  it('refuses the snapshot with the same reason, not an empty one', async () => {
+    const response = await bare.inject({ method: 'GET', url: '/api/snapshot' });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error).toBe('misconfigured');
+    expect(response.json().message).toMatch(/USDG_ADDRESS/);
   });
 });

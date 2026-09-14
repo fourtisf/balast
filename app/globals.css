@@ -467,3 +467,10 @@ td.fd{animation:fd 1.1s ease-out}
    deliberate rather than a blank circle. */
 .logo img,.fl img,.mc-logo img{width:100%;height:100%;border-radius:inherit;
   object-fit:cover;display:block}
+
+/* The reason the boards are empty, under the honest-empty message. Quieter
+   than the sentence above it: it is operator detail, not the headline. */
+.aw-why{margin-top:14px;padding-top:14px;border-top:1px solid var(--bd-n);
+  font-size:12px;line-height:1.6;color:var(--fg-3)}
+.aw-why code{font-family:inherit;color:var(--fg-2);
+  background:var(--raise);border-radius:5px;padding:1px 5px}

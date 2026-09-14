@@ -123,6 +123,10 @@ simulator cannot drift apart.
 down or the indexer has not written a block, the snapshot stays null and the UI
 says *waiting for the indexer* — it never falls back to simulated numbers.
 
+That page also asks `/api/health` and shows **why**. "Waiting for the indexer"
+on its own is true and useless; the answer is usually a configuration value
+that has not been set, and the page names it.
+
 ### What the indexer does
 
 ```
