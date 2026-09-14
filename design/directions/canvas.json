@@ -1,40 +1,90 @@
 {
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Light layouts"
+    },
+    {
+      "id": "page-2",
+      "name": "Other directions"
+    }
+  ],
   "artboards": [
     {
       "file": "Main.dc.html",
+      "title": "B1 \u00b7 Atlas \u2014 cards, top nav",
+      "x": 0,
+      "y": 0,
+      "w": 1280,
+      "h": 900,
+      "page": "page-1"
+    },
+    {
+      "file": "ExplorerB2.dc.html",
+      "title": "B2 \u00b7 Explorer \u2014 chart + list",
+      "x": 1380,
+      "y": 0,
+      "w": 1280,
+      "h": 900,
+      "page": "page-1"
+    },
+    {
+      "file": "JournalB3.dc.html",
+      "title": "B3 \u00b7 Journal \u2014 leaderboard",
+      "x": 0,
+      "y": 1040,
+      "w": 1280,
+      "h": 900,
+      "page": "page-1"
+    },
+    {
+      "file": "LedgerB.dc.html",
+      "title": "B \u00b7 Ledger \u2014 the table you saw",
+      "x": 1380,
+      "y": 1040,
+      "w": 1280,
+      "h": 900,
+      "page": "page-1"
+    },
+    {
+      "file": "VaultA.dc.html",
       "title": "A \u00b7 Vault \u2014 dark luxury",
       "x": 0,
       "y": 0,
       "w": 1280,
-      "h": 900
-    },
-    {
-      "file": "LedgerB.dc.html",
-      "title": "B \u00b7 Ledger \u2014 light editorial",
-      "x": 1380,
-      "y": 0,
-      "w": 1280,
-      "h": 900
+      "h": 900,
+      "page": "page-2"
     },
     {
       "file": "TerminalC.dc.html",
       "title": "C \u00b7 Terminal Pro \u2014 dense",
-      "x": 2760,
+      "x": 1380,
       "y": 0,
       "w": 1280,
-      "h": 900
+      "h": 900,
+      "page": "page-2"
     }
   ],
   "annotations": [
     {
-      "id": "brief",
+      "id": "light-brief",
       "x": 0,
-      "y": -150,
-      "w": 420,
-      "text": "Balast /pools \u2014 three directions, same live data (14 Sep), 1280 CSS px = a 1920 display at 150%.\nA Vault: dark, serif headline, big rows, one wide market list. Trade-off: fewer rows on screen.\nB Ledger: warm paper, light. Trade-off: breaks the dark brand; needs a real light palette pass.\nC Terminal Pro: current DNA, denser, two boards side by side. Trade-off: reads as a tool, not a product.\nToken marks are placeholders \u2014 real logos slot in the same discs."
+      "y": -170,
+      "w": 460,
+      "page": "page-1",
+      "text": "Light palette (from B), three different structures. Same live data, 1280 CSS px.\nB1 Atlas: no sidebar, markets as cards \u2014 reads as a product. Trade-off: fewer numbers per token at a glance.\nB2 Explorer: featured market with a real chart beside a ranked list \u2014 reads as an exchange. Trade-off: one token dominates the page.\nB3 Journal: typographic hero and a leaderboard with big numerals \u2014 reads as a publication. Trade-off: six rows per screen.\nToken marks are placeholders \u2014 real logos slot into the same discs."
+    },
+    {
+      "id": "other-brief",
+      "x": 0,
+      "y": -120,
+      "w": 380,
+      "page": "page-2",
+      "text": "The dark directions from the first round, kept for reference."
     }
   ],
   "launch": {
-    "view": "canvas"
+    "view": "canvas",
+    "page": "page-1"
   }
 }
