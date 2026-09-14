@@ -319,6 +319,18 @@ export class Poller {
       feePipsByPool: await loadFeeTiers(),
     });
 
+    if (plan.unpriced.length > 0) {
+      // Should not happen now the Initialize price is stored on the pool row.
+      // If it does, the pool's depth reads as unknown rather than wrong, and
+      // this is how anyone finds out — it used to be a thrown error that
+      // stopped the indexer on every pass instead.
+      const pools = [...new Set(plan.unpriced.map((u) => u.poolId))];
+      this.log(
+        `  ${plan.unpriced.length} liquidity event(s) unvalued across ${pools.length} ` +
+          `pool(s) — no price known at that point: ${pools.slice(0, 3).join(', ')}`,
+      );
+    }
+
     const swapsWritten = await writeSwaps(plan);
     const liquidityWritten = await writeLiquidity(plan);
 

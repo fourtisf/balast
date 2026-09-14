@@ -1005,3 +1005,54 @@ identical to having configured the address up front.
 `START_BLOCK` and `V3_FACTORY` remain genuinely optional rather than
 discovered: the first is a performance choice, the second cannot be inferred
 from logs the factory itself emits.
+
+### The crash loop: a price computed and thrown away
+
+With the anchor discovering itself the indexer finally reached the real chain
+— and then stopped on every pass with "No price known for pool … the batch is
+missing its Initialize", retrying the same range forever and indexing nothing.
+
+Three of my own mistakes in a line:
+
+1. `planIngest` computes `plan.states`, which carries the price from
+   `Initialize`. **Nothing ever wrote it.** The field was built and never
+   persisted.
+2. `loadPriceState`'s fallback read `pool_state.sqrt_price_x96`, which
+   `rebuildPoolState` takes from the pool's LAST SWAP — so a pool that has not
+   traded yet has zero there and was filtered out by the `> 0` condition.
+3. And skipping the aggregation when no anchor exists left `pool_state` empty
+   regardless.
+
+So a `ModifyLiquidity` for a pool created in an earlier pass had no price, and
+v4 emits no token amounts on that event, so it could not be valued.
+
+**The Initialize price now lives on the pool row** (`init_sqrt_price_x96`,
+`init_tick`) — an immutable fact from the log, which makes the state loaded
+from the database exactly what an in-memory replay would have had. §9 still
+holds; there is a test for that alongside the fix.
+
+The second half matters as much: it **threw**. One pool's reserves being
+unvalued is a far smaller loss than every pool's data being frozen, and §7
+already renders unknown depth as an em dash. Such an event is now recorded on
+the plan and logged, and the pass completes.
+
+### Starting from genesis
+
+Left at `START_BLOCK=0` the indexer scans from block zero. On this chain that
+is 62 million blocks of mostly nothing — some thirty thousand passes before
+reaching anything worth indexing, and the observed run was at block 7,872
+after several minutes.
+
+`eth_getCode` is empty before a contract exists and non-empty after, which is
+monotonic, so `server/chain/deployment.ts` bisects for the PoolManager's
+deployment block in about 26 calls and starts there.
+
+It needs an archive node, and a pruned one answers old blocks with empty —
+which would look exactly like "deployed at head" and set a `START_BLOCK` above
+every pool's creation, so each pool's funding mint would be missed and its
+depth would read as unknown for good. That case is detected and the search
+abandoned rather than trusted.
+
+Writing the test for it found a real bug: the genesis probe sat outside the
+bisection's try/catch, so a pruned node would have thrown at indexer startup
+instead of falling back.

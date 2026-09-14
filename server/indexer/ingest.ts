@@ -35,6 +35,9 @@ export interface PoolRow {
   protocol: Protocol;
   createdBlock: bigint;
   createdAt: Date;
+  /** The price and tick from Initialize — the pool's only price until it trades. */
+  initSqrtPrice: bigint;
+  initTick: number;
 }
 
 export interface SwapRow {
@@ -83,6 +86,18 @@ export interface IngestPlan {
   swaps: SwapRow[];
   liquidity: LiquidityRow[];
   states: StateRow[];
+  /**
+   * Liquidity events that could not be valued, because no price was known for
+   * their pool at that point in the stream.
+   *
+   * Reported rather than thrown. Throwing halted the pass, so the indexer
+   * retried the same range forever and made no progress at all — and it
+   * halted on a pool's reserves, which is a smaller loss than every pool's
+   * data being frozen. With the Initialize price now stored on the pool row
+   * this should not happen; if it does, the count says so and the pool's
+   * depth reads as unknown, which §7 already has a state for.
+   */
+  unpriced: { poolId: string; blockNumber: bigint }[];
 }
 
 /**
@@ -112,7 +127,7 @@ export interface IngestContext {
  * `Swap` that actually preceded it and value it at the wrong price.
  */
 export function planIngest(events: ChainEvent[], context: IngestContext): IngestPlan {
-  const plan: IngestPlan = { pools: [], swaps: [], liquidity: [], states: [] };
+  const plan: IngestPlan = { pools: [], swaps: [], liquidity: [], states: [], unpriced: [] };
   // Copies, so a caller can reuse the context for a second batch unchanged.
   const sqrtPrice = new Map(context.sqrtPriceByPool);
   const feePips = new Map(context.feePipsByPool);
@@ -135,6 +150,8 @@ export function planIngest(events: ChainEvent[], context: IngestContext): Ingest
           protocol: event.protocol,
           createdBlock: event.blockNumber,
           createdAt: event.blockTime,
+          initSqrtPrice: event.sqrtPriceX96,
+          initTick: event.tick,
         });
         sqrtPrice.set(event.poolId, event.sqrtPriceX96);
         feePips.set(event.poolId, event.feePips);
@@ -190,14 +207,14 @@ export function planIngest(events: ChainEvent[], context: IngestContext): Ingest
           // the derived amounts are reproducible.
           const price = sqrtPrice.get(event.poolId);
           if (price === undefined) {
-            // A ModifyLiquidity with no preceding Initialize or Swap for its
-            // pool means the batch started mid-pool. Recording a zero-value
-            // row would understate the pool's reserves for good, so skip it
-            // and let the caller widen its range. Loud, not silent.
-            throw new Error(
-              `No price known for pool ${event.poolId} at block ${event.blockNumber} — ` +
-                'the batch is missing its Initialize. Re-scan from the pool\'s creation block.',
-            );
+            // No Initialize and no Swap for this pool anywhere in the batch or
+            // in what the caller loaded. Record it and move on: this used to
+            // throw, which halted the whole pass and left the indexer
+            // retrying the same range forever, making no progress on any
+            // pool. One pool's reserves being unknown is the smaller loss,
+            // and §7 already renders unknown depth as an em dash.
+            plan.unpriced.push({ poolId: event.poolId, blockNumber: event.blockNumber });
+            break;
           }
           const derived = amountsForLiquidity({
             sqrtPriceX96: price,

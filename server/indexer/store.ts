@@ -41,6 +41,8 @@ export async function writePools(plan: IngestPlan): Promise<void> {
         protocol: pool.protocol,
         createdBlock: pool.createdBlock,
         createdAt: pool.createdAt,
+        initSqrtPrice: dec(pool.initSqrtPrice),
+        initTick: pool.initTick,
       },
       // A pool's immutable facts cannot change, so a replay rewrites the same
       // values. `stakeable` is deliberately not touched: it is set by
@@ -51,6 +53,8 @@ export async function writePools(plan: IngestPlan): Promise<void> {
         hooks: pool.hooks,
         createdBlock: pool.createdBlock,
         createdAt: pool.createdAt,
+        initSqrtPrice: dec(pool.initSqrtPrice),
+        initTick: pool.initTick,
       },
     });
   }
@@ -150,11 +154,16 @@ export async function loadPriceState(
 
   // A pool that has never traded still has the price its Initialize set, and
   // a ModifyLiquidity before the first swap has to be valued at it.
+  //
+  // Read from the POOL row, not from pool_state. pool_state takes its price
+  // from the pool's last swap, so a pool that has not swapped has zero there
+  // and was filtered out — which is what left a freshly created pool with no
+  // price at all and halted the indexer. The pool row carries the Initialize
+  // price directly, which is the value an in-memory replay would have had.
   const created = await prisma.$queryRaw<{ id: string; sqrt_price_x96: string }[]>`
-    SELECT p.id, ps.sqrt_price_x96::text
+    SELECT p.id, p.init_sqrt_price_x96::text AS sqrt_price_x96
     FROM pools p
-    JOIN pool_state ps ON ps.pool_id = p.id
-    WHERE ps.sqrt_price_x96 > 0
+    WHERE p.init_sqrt_price_x96 IS NOT NULL AND p.init_sqrt_price_x96 > 0
   `;
   for (const row of created) {
     if (!map.has(row.id)) map.set(row.id, BigInt(row.sqrt_price_x96));

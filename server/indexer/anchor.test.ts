@@ -150,3 +150,81 @@ describe('an indexer with no anchor configured', () => {
     expect(early.priced).toBeGreaterThan(0);
   });
 });
+
+describe('a pool whose liquidity arrives in a later batch', () => {
+  /**
+   * The crash loop on the real chain.
+   *
+   * A pool is created in one pass and its `ModifyLiquidity` lands in the next.
+   * v4 emits no token amounts on that event, so it has to be valued at the
+   * pool's price — and the pool had not traded yet, so its only price was the
+   * one from `Initialize`, which was computed in memory and never persisted.
+   * The ingest step could then only throw, which failed the pass, which made
+   * the poller retry the same range forever: zero progress on any pool,
+   * repeating the same error every two seconds.
+   *
+   * Two things fixed it. The Initialize price is stored on the pool row, and
+   * an event that still cannot be valued is recorded rather than thrown —
+   * one pool's reserves being unknown is a far smaller loss than every pool's
+   * data being frozen.
+   */
+  it('values it, and does not fail the pass', async () => {
+    await resetDatabase();
+    const source = new FixtureLogSource(chain, 0);
+    const poller = blindPoller(source, 200);
+
+    // Small windows, so pools and their liquidity land in different passes.
+    const results = [];
+    for (let head = 200; head <= 2_000; head += 200) {
+      source.setHead(head);
+      results.push(...(await poller.syncToHead()));
+    }
+
+    // Every pass completed. Before the fix the first one to straddle a pool's
+    // creation threw, and syncToHead never returned.
+    expect(results.length).toBeGreaterThan(0);
+    expect(await prisma.pool.count()).toBeGreaterThan(0);
+
+    // And the liquidity was valued, not skipped.
+    const [row] = await prisma.$queryRaw<{ total: number; valued: number }[]>`
+      SELECT COUNT(*)::int AS total,
+             COUNT(*) FILTER (WHERE amount0 <> 0 OR amount1 <> 0)::int AS valued
+      FROM liquidity_events
+    `;
+    expect(row.total).toBeGreaterThan(0);
+    expect(row.valued).toBe(row.total);
+  });
+
+  it('stores the Initialize price on the pool row', async () => {
+    // The value that was computed and thrown away. Without it on the row
+    // there is nothing to recover a never-traded pool's price from:
+    // pool_state takes its price from the last swap, and there is not one.
+    const pools = await prisma.pool.findMany({
+      select: { id: true, initSqrtPrice: true, initTick: true },
+    });
+    expect(pools.length).toBeGreaterThan(0);
+    for (const pool of pools) {
+      expect(pool.initSqrtPrice).not.toBeNull();
+      expect(Number(pool.initSqrtPrice)).toBeGreaterThan(0);
+      expect(pool.initTick).not.toBeNull();
+    }
+  });
+
+  it('still replays byte-identically, which the fix must not have cost', async () => {
+    // The Initialize price is a fact from the log, so using it changes what
+    // the ingest can value but not what it computes. §9 still has to hold.
+    const incremental = await prisma.$queryRaw<{ pool_id: string; hour: string; f0: string }[]>`
+      SELECT pool_id, to_char(hour, 'YYYY-MM-DD HH24:MI') AS hour, fees_token0::text AS f0
+      FROM pool_fee_hourly ORDER BY pool_id, hour
+    `;
+
+    await resetDatabase();
+    await blindPoller(new FixtureLogSource(chain, 2_000), 5_000).syncToHead();
+
+    const wholesale = await prisma.$queryRaw<{ pool_id: string; hour: string; f0: string }[]>`
+      SELECT pool_id, to_char(hour, 'YYYY-MM-DD HH24:MI') AS hour, fees_token0::text AS f0
+      FROM pool_fee_hourly ORDER BY pool_id, hour
+    `;
+    expect(wholesale).toEqual(incremental);
+  });
+});

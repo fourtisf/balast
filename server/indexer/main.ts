@@ -17,7 +17,9 @@
 // server/load-env.ts — Node does not read `.env` files and neither does PM2.
 import '../load-env';
 
+import { CONTRACTS } from '../../lib/chain';
 import { assertChainId, getHead } from '../chain/client';
+import { findDeploymentBlock } from '../chain/deployment';
 import { env } from '../env';
 import { prisma } from '../db';
 import { publishTick } from '../api/bus';
@@ -52,9 +54,27 @@ async function main(): Promise<void> {
     );
   }
 
+  // Where to start. Left at 0 this scans from genesis — 62 million blocks of
+  // mostly nothing on this chain — so if it is unset, find the PoolManager's
+  // deployment block by bisection first. About 26 calls against an archive
+  // node, against thirty thousand passes of empty range.
+  let startBlock = env.startBlock;
+  if (startBlock === 0n) {
+    log('START_BLOCK is 0 — looking for the PoolManager\'s deployment block');
+    const found = await findDeploymentBlock(CONTRACTS.poolManager, head.number);
+    log(`  ${found.note}`);
+    if (found.block !== null && found.block > 0n) {
+      startBlock = found.block;
+      log(`  starting at ${startBlock}; set START_BLOCK=${startBlock} to skip this next time`);
+    } else {
+      log('  starting from 0. This will take a long time — set START_BLOCK to shorten it.');
+    }
+  }
+
   const poller = new Poller({
     source: new ViemLogSource(),
     usdgAddress: USDG,
+    startBlock,
     v3Factory,
     v3Pools: (process.env.V3_POOLS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
     log,

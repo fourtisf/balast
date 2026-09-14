@@ -58,21 +58,29 @@ model Token {
 }
 
 model Pool {
-  id           String   @id
-  address      String
-  chainId      Int      @map("chain_id")
-  token0       String
-  token1       String
-  feeTier      Int      @map("fee_tier")
-  tickSpacing  Int      @map("tick_spacing")
-  hooks        String?
+  id            String   @id
+  address       String
+  chainId       Int      @map("chain_id")
+  token0        String
+  token1        String
+  feeTier       Int      @map("fee_tier")
+  tickSpacing   Int      @map("tick_spacing")
+  hooks         String?
   /// "v4" or "v3" — some older pools on this chain are v3 (§4).
-  protocol     String
-  createdBlock BigInt   @map("created_block")
+  protocol      String
+  createdBlock  BigInt   @map("created_block")
+  /// The price and tick the pool was initialised at.
+  ///
+  /// An immutable fact from the Initialize log, and the only price a pool has
+  /// before its first swap. Without it stored, a ModifyLiquidity arriving in
+  /// a later batch for a pool that has not traded yet cannot be valued — and
+  /// the ingest step could only throw, which halted the indexer completely.
+  initSqrtPrice Decimal? @map("init_sqrt_price_x96") @db.Decimal(78, 0)
+  initTick      Int?     @map("init_tick")
   /// Set from the block timestamp of Initialize, so pool age is chain time.
-  createdAt    DateTime @map("created_at")
+  createdAt     DateTime @map("created_at")
   /// Pre-graduation launchpad liquidity is listed but NOT stakeable (§4).
-  stakeable    Boolean  @default(true)
+  stakeable     Boolean  @default(true)
 
   tokenA Token @relation("token0", fields: [token0], references: [address])
   tokenB Token @relation("token1", fields: [token1], references: [address])
