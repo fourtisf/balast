@@ -46,6 +46,13 @@ export type ContractName = keyof typeof CONTRACTS;
 export const EXPLORER_URL = 'https://robinhoodchain.blockscout.com';
 
 /**
+ * The chain's public RPC, for a wallet that does not know the chain yet.
+ * The first of the registry's endpoints (server/chain/endpoints.ts carries
+ * the full list, with failover, for the indexer).
+ */
+export const PUBLIC_RPC_URL = 'https://rpc.mainnet.chain.robinhood.com';
+
+/**
  * How Uniswap v4 spells native ether: the zero address.
  *
  * v4 has no WETH-only rule — a pool's `currency0` is `address(0)` when the

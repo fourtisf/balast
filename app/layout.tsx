@@ -5,6 +5,7 @@ import { UiProvider } from '@/components/providers/UiProvider';
 import { Footer } from '@/components/shell/Footer';
 import { StakeDrawer } from '@/components/shell/StakeDrawer';
 import { TopNav } from '@/components/shell/TopNav';
+import { WalletModal } from '@/components/shell/WalletModal';
 import { Toast } from '@/components/ui/Toast';
 import { SITE_URL } from '@/lib/site';
 import './globals.css';
@@ -72,6 +73,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Footer />
             </main>
             <StakeDrawer />
+            <WalletModal />
             <Toast />
           </MarketProvider>
         </UiProvider>

@@ -22,6 +22,7 @@ import {
   geckoterminal,
   onchain,
   tickers,
+  upgradeStockLogos,
   lookupLogos,
   type Fetch,
   type LogoSource,
@@ -456,6 +457,31 @@ describe('lookupLogos', () => {
       headers: { get: (name: string) => (name === 'content-type' ? 'text/html; charset=utf-8' : null) },
     });
     expect(await lookupLogos({ sources: [sourceAnswering({ [TOKEN]: LOGO })], fetch: html })).toBe(0);
+  });
+
+  it('replaces a stock token\'s recorded logo with its ticker icon, and leaves other tokens alone', async () => {
+    await resetDatabase();
+    const feather = 'https://explorer.example/robinhood-feather.png';
+    await prisma.token.create({
+      data: { address: TOKEN, symbol: 'NVDA', name: 'NVIDIA \u2022 Robinhood Token', decimals: 18, firstSeen: new Date('2026-07-01'), logoUrl: feather },
+    });
+    await prisma.token.create({
+      data: { address: '0x00000000000000000000000000000000000000a2', symbol: 'GME', name: 'GME', decimals: 18, firstSeen: new Date('2026-07-01'), logoUrl: feather },
+    });
+    const facts = async (address: string) =>
+      address === TOKEN ? { symbol: 'NVDA', name: 'NVIDIA \u2022 Robinhood Token' } : { symbol: 'GME', name: 'GME' };
+    const base = 'https://icons.example/ticker_icons/';
+    const source = tickers({ facts, base });
+    // The icon exists and loads; the fake answers ok for the icons host.
+    const fetch = service({ 'icons.example': {} }).fetch;
+    expect(await upgradeStockLogos({ source, base, fetch })).toBe(1);
+    expect((await prisma.token.findUniqueOrThrow({ where: { address: TOKEN } })).logoUrl).toBe(
+      'https://icons.example/ticker_icons/NVDA.png',
+    );
+    // Not a stock token: untouched.
+    expect((await prisma.token.findUniqueOrThrow({ where: { address: '0x00000000000000000000000000000000000000a2' } })).logoUrl).toBe(feather);
+    // Already carrying a ticker icon: not asked again.
+    expect(await upgradeStockLogos({ source, base, fetch })).toBe(0);
   });
 
   it('does nothing with no sources', async () => {

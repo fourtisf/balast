@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
-import { duration } from '@/lib/format';
+import { duration, shortWallet } from '@/lib/format';
 import { Community } from './Community';
 import { Mark } from './Logo';
 
@@ -30,7 +30,7 @@ const NAV = [
  */
 export function TopNav() {
   const { indexerLagSeconds } = useMarket();
-  const { query, setQuery, wallet, connect } = useUi();
+  const { query, setQuery, wallet, openWallet } = useUi();
   const pathname = usePathname();
   const router = useRouter();
   const behind = indexerLagSeconds > LAG_THRESHOLD_SECONDS;
@@ -107,8 +107,14 @@ export function TopNav() {
           )}
         </span>
 
-        <button className="btn btn-ink" onClick={connect}>
-          {wallet ?? (
+        <button
+          className="btn btn-ink"
+          onClick={openWallet}
+          title={wallet ? `${wallet.address} · ${wallet.name}` : undefined}
+        >
+          {wallet ? (
+            <span className="num">{shortWallet(wallet.address)}</span>
+          ) : (
             <>
               <span className="wallet-long">Connect wallet</span>
               <span className="wallet-short">Connect</span>

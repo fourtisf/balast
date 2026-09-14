@@ -666,6 +666,48 @@ export function createSources(names: readonly string[]): LogoSource[] {
 }
 
 export const RETRY_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Give every tokenised stock its ticker icon, even one that already has a
+ * logo from somewhere else.
+ *
+ * The explorer answers with Robinhood's own feather for every one of its
+ * stock tokens — the issuer's mark, not the company's — and it was asked
+ * first, so NVDA, TSLA and AMD all wore the same bird. The ticker icon
+ * outranks any other source for a stock, so on start the logo process
+ * replaces whatever is on record for a "Robinhood Token" with the ticker
+ * icon when one exists and loads. Returns how many changed.
+ */
+export async function upgradeStockLogos(options: {
+  source?: LogoSource;
+  /** Where ticker icons live; a token already carrying one is left alone. */
+  base?: string;
+  fetch?: Fetch;
+  log?: Log;
+}): Promise<number> {
+  const source = options.source ?? tickers();
+  const base = (options.base ?? TICKER_ICON_BASE).replace(/\/+$/, '');
+  const fetch = options.fetch ?? (globalThis.fetch as unknown as Fetch);
+  const log = options.log ?? (() => {});
+  const stocks = await prisma.$queryRaw<{ address: string; symbol: string; logo_url: string | null }[]>`
+    SELECT address, symbol, logo_url FROM tokens
+    WHERE name ~* 'robinhood\\s+token'
+      AND (logo_url IS NULL OR logo_url NOT LIKE ${`${base}/%`})
+    ORDER BY first_seen ASC
+  `;
+  let changed = 0;
+  for (const stock of stocks) {
+    const url = await source.lookup(stock.address, { fetch, log });
+    if (!url || !(await imageLoads(fetch, url))) continue;
+    await prisma.token.update({
+      where: { address: stock.address },
+      data: { logoUrl: url, logoCheckedAt: new Date() },
+    });
+    changed++;
+    log(`  ${stock.symbol}: ticker icon replaces ${stock.logo_url ?? 'nothing'}`);
+  }
+  return changed;
+}
 /** After CoinGecko's platform list fails: how long before it is asked again. */
 export const PLATFORM_RETRY_MS = 10 * 60 * 1000;
 /** After a 429 from CoinGecko: how long the source stays quiet. */

@@ -497,3 +497,23 @@ h1 em{font-style:italic;color:var(--ac)}
 .foot-ca{color:var(--fg-2)}
 @media (max-width:1400px){.search{width:220px}}
 @media (max-width:640px){.nav .community{display:none}}
+
+/* ---------- wallet dialog ----------
+   Centred, on the same scrim as the drawer. The list is whatever the
+   browser announced (EIP-6963); each row is the wallet's own icon and name. */
+.modal-scrim{position:fixed;inset:0;background:var(--scrim);z-index:97;display:grid;place-items:center;padding:16px}
+.modal{position:relative;width:min(440px,100%);background:var(--panel);border:1px solid var(--bd-n);border-radius:var(--r-card);box-shadow:var(--shadow-card);padding:22px 22px 20px}
+.modal-h{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+.modal h2{font-family:var(--serif);font-weight:400;font-size:28px;line-height:1.1;letter-spacing:-.01em;margin:0;flex:1}
+.modal .lede{font-size:13.5px;margin-bottom:14px}
+.wallet-list{display:flex;flex-direction:column;gap:8px}
+.wallet-opt{display:flex;align-items:center;gap:12px;width:100%;padding:11px 14px;border:1px solid var(--bd-n);border-radius:var(--r);background:var(--panel-2);text-align:left;transition:var(--t-hover)}
+.wallet-opt:hover{border-color:var(--bd);background:var(--raise)}
+.wallet-opt[disabled]{opacity:.6;cursor:wait}
+.wallet-opt img{width:30px;height:30px;border-radius:8px;flex:none}
+.wallet-opt>span{display:flex;flex-direction:column;min-width:0}
+.wallet-opt .n{font-weight:600;font-size:14px}
+.wallet-opt .s{font-size:12px;color:var(--fg-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wallet-empty{padding:14px;border:1px solid var(--bd-n);border-radius:var(--r);background:var(--panel-2);font-size:13.5px;line-height:1.6;color:var(--fg-2)}
+.wallet-empty a{text-decoration:underline;text-underline-offset:3px;color:var(--fg)}
+.wallet-addr{font-size:13px;word-break:break-all;padding:12px 14px;background:var(--panel-2);border:1px solid var(--bd-n);border-radius:var(--r)}

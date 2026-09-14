@@ -1718,3 +1718,26 @@ open proxy — and the route is outside the rate limit, because a hundred
 badges on one page load is normal, not a loop. `logos:status` now lists
 the board's rows with the URL on record and whether it loads from the box;
 `logos:probe` prints the URL on record beside each token.
+
+### The issuer's bird, and a wallet dialog
+
+**Every tokenised stock wore Robinhood's feather.** The explorer answers
+with the issuer's mark for every one of its stock tokens — and it was asked
+first, so NVDA, TSLA and AMD were the same bird. `tickers` now outranks the
+explorer for a "Robinhood Token", and on start the logo process replaces
+whatever such a token has on record with its ticker icon when one exists
+and loads. SpaceX and the ETFs have no ticker icon in the repository and
+keep the feather: Robinhood's mark on Robinhood's token is not wrong, just
+not what a person wanted to see.
+
+**Connect wallet is a dialog now** (`components/shell/WalletModal.tsx`,
+`lib/wallet.ts`). EIP-6963: every installed extension announces itself with
+a name, an icon and a provider, so the dialog lists what the person has —
+MetaMask, Rabby, Coinbase Wallet — rather than one button that grabs
+`window.ethereum` and hopes. Connecting asks for an account, then for
+Robinhood Chain (switch, or add and switch; declining the switch is not an
+error, nothing here signs), and remembers the wallet so a reload reconnects
+quietly through `eth_accounts`. Connected, the button shows the address and
+the dialog offers copy, explorer and disconnect. It traps focus and closes
+on Escape like the drawer. No WalletConnect yet: that needs a project id
+and a large dependency, and until P2 there is nothing to sign with a phone.

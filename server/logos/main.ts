@@ -22,7 +22,7 @@ import { CHAIN } from '../../lib/chain';
 import { publishTick } from '../api/bus';
 import { prisma } from '../db';
 import { env } from '../env';
-import { createSources, imageLoads, lookupLogos, type Fetch } from '../indexer/logo-sources';
+import { createSources, imageLoads, lookupLogos, upgradeStockLogos, type Fetch } from '../indexer/logo-sources';
 import { refreshLogos } from '../indexer/logos';
 
 /** How often the token list is re-read. It is a file or a URL; an hour is plenty. */
@@ -95,6 +95,15 @@ async function main(): Promise<void> {
   if (recorded.length > 0) {
     log(`${recorded.length} recorded logo(s) checked, ${dropped} forgotten`);
     if (dropped > 0) await nudge();
+  }
+
+  // Tokenised stocks wear their ticker icon, whatever another source said.
+  if (!shuttingDown && sources.some((s) => s.name === 'tickers')) {
+    const upgraded = await upgradeStockLogos({ log });
+    if (upgraded > 0) {
+      log(`${upgraded} stock token(s) now carry their ticker icon`);
+      await nudge();
+    }
   }
 
   let listReadAt = 0;
