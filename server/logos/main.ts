@@ -22,7 +22,7 @@ import { CHAIN } from '../../lib/chain';
 import { publishTick } from '../api/bus';
 import { prisma } from '../db';
 import { env } from '../env';
-import { createSources, lookupLogos } from '../indexer/logo-sources';
+import { createSources, imageLoads, lookupLogos, type Fetch } from '../indexer/logo-sources';
 import { refreshLogos } from '../indexer/logos';
 
 /** How often the token list is re-read. It is a file or a URL; an hour is plenty. */
@@ -70,6 +70,31 @@ async function main(): Promise<void> {
       log(`${signal} — stopping after this lookup`);
       shuttingDown = true;
     });
+  }
+
+  // Every logo already on record is checked once, because the first ones
+  // were recorded before anything checked that they load — and four discs
+  // on the board were empty. One that does not load is forgotten, so the
+  // token is asked about again with the load check in place.
+  const recorded = await prisma.token.findMany({
+    where: { logoUrl: { not: null } },
+    select: { address: true, symbol: true, logoUrl: true },
+  });
+  let dropped = 0;
+  for (const token of recorded) {
+    if (shuttingDown) break;
+    if (await imageLoads(globalThis.fetch as unknown as Fetch, token.logoUrl!)) continue;
+    await prisma.token.update({
+      where: { address: token.address },
+      data: { logoUrl: null, logoCheckedAt: null },
+    });
+    dropped++;
+    log(`forgot a logo for ${token.symbol} that does not load: ${token.logoUrl}`);
+    await sleep(250);
+  }
+  if (recorded.length > 0) {
+    log(`${recorded.length} recorded logo(s) checked, ${dropped} forgotten`);
+    if (dropped > 0) await nudge();
   }
 
   let listReadAt = 0;

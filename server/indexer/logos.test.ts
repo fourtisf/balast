@@ -5,12 +5,17 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { CONTRACTS } from '../../lib/chain';
+import { prisma } from '../db';
+import { resetDatabase } from '../test/db';
 import { isSafeLogoUrl, refreshLogos } from './logos';
 
 describe('isSafeLogoUrl', () => {
-  it('accepts http and https', () => {
+  it('accepts https, and only https', () => {
     expect(isSafeLogoUrl('https://example.com/a.png')).toBe(true);
-    expect(isSafeLogoUrl('http://example.com/a.png')).toBe(true);
+    // An http image on an https page is blocked by the browser, silently:
+    // an empty disc on the board rather than a logo.
+    expect(isSafeLogoUrl('http://example.com/a.png')).toBe(false);
   });
 
   it('rejects every scheme that could execute or embed', () => {
@@ -90,11 +95,21 @@ describe('refreshLogos', () => {
     expect(messages.join(' ')).toMatch(/unavailable/i);
   });
 
-  it('reads the committed list without a network call', async () => {
-    // config/tokens.json is where real logos go until this chain has a public
-    // list. It ships empty, so this asserts it parses and yields nothing
-    // rather than throwing — the state every fresh deployment starts in.
-    const count = await refreshLogos({ url: 'config/tokens.json', chainId: 4663 });
-    expect(count).toBe(0);
+  it('reads the committed list without a network call, and applies it to tokens it knows', async () => {
+    // config/tokens.json is where real logos go until this chain has a
+    // public list. It ships with ether — the one token no source can be
+    // asked about by address — so on a fresh database it parses and yields
+    // nothing, and once the wrapper's row exists it gets its logo from the
+    // list, with no network call either way.
+    await resetDatabase();
+    expect(await refreshLogos({ url: 'config/tokens.json', chainId: 4663 })).toBe(0);
+    const weth = CONTRACTS.weth.toLowerCase();
+    await prisma.token.create({
+      data: { address: weth, symbol: 'WETH', name: 'Wrapped Ether', decimals: 18, firstSeen: new Date('2026-07-01') },
+    });
+    expect(await refreshLogos({ url: 'config/tokens.json', chainId: 4663 })).toBe(1);
+    expect((await prisma.token.findUniqueOrThrow({ where: { address: weth } })).logoUrl).toBe(
+      'https://balast.xyz/tokens/eth.svg',
+    );
   });
 });

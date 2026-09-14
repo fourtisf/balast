@@ -48,15 +48,16 @@ const DEFAULT_TOKEN_LIST = 'config/tokens.json';
 const MAX_URL_LENGTH = 512;
 
 /**
- * Only http(s). A token list is third-party data, so a `javascript:` or
+ * Only https. A token list is third-party data, so a `javascript:` or
  * `data:` URI reaching an `img src` in the browser is an injection vector,
- * not a logo.
+ * not a logo. Plain http is refused too: the site is served over https and
+ * a browser blocks an http image on it silently, which is exactly the
+ * empty-disc failure the badge must never show.
  */
 export function isSafeLogoUrl(url: unknown): url is string {
   if (typeof url !== 'string' || url.length === 0 || url.length > MAX_URL_LENGTH) return false;
   try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+    return new URL(url).protocol === 'https:';
   } catch {
     return false;
   }

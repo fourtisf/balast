@@ -398,8 +398,8 @@ describe('lookupLogos', () => {
 
     // Two calls, one token each: the first finds A1's logo, the second
     // misses A2 — and both are marked as checked.
-    expect(await lookupLogos({ sources: [src], now, limit: 1, fetch: service({}).fetch })).toBe(1);
-    expect(await lookupLogos({ sources: [src], now, limit: 1, fetch: service({}).fetch })).toBe(0);
+    expect(await lookupLogos({ sources: [src], now, limit: 1, fetch: service({ 'cdn.example': {} }).fetch })).toBe(1);
+    expect(await lookupLogos({ sources: [src], now, limit: 1, fetch: service({ 'cdn.example': {} }).fetch })).toBe(0);
     const rows = await prisma.token.findMany({ orderBy: { address: 'asc' } });
     expect(rows[0].logoUrl).toBe(LOGO);
     expect(rows[0].logoCheckedAt?.toISOString()).toBe(now.toISOString());
@@ -421,9 +421,41 @@ describe('lookupLogos', () => {
     const first = sourceAnswering({});
     const second = sourceAnswering({ [TOKEN]: LOGO });
     const third = sourceAnswering({ [TOKEN]: 'https://x/never.png' });
-    expect(await lookupLogos({ sources: [first, second, third], fetch: service({}).fetch })).toBe(1);
+    expect(await lookupLogos({ sources: [first, second, third], fetch: service({ 'cdn.example': {} }).fetch })).toBe(1);
     expect(third.asked).toHaveLength(0);
     expect((await prisma.token.findUniqueOrThrow({ where: { address: TOKEN } })).logoUrl).toBe(LOGO);
+  });
+
+  it('does not record an image that does not load, and lets the next source try', async () => {
+    await resetDatabase();
+    await seedToken(TOKEN, 'A1');
+    const broken = sourceAnswering({ [TOKEN]: 'https://blocked.example/a1.png' });
+    const good = sourceAnswering({ [TOKEN]: LOGO });
+    const said: string[] = [];
+    // blocked.example answers 404 to the load check; cdn.example answers ok.
+    const fetch = service({ 'cdn.example': {} }).fetch;
+    expect(await lookupLogos({ sources: [broken, good], fetch, log: (m) => said.push(m) })).toBe(1);
+    expect((await prisma.token.findUniqueOrThrow({ where: { address: TOKEN } })).logoUrl).toBe(LOGO);
+    expect(said.some((m) => /does not load: https:\/\/blocked.example/.test(m))).toBe(true);
+    // Every source failing to load leaves the token without a logo, marked as asked.
+    await resetDatabase();
+    await seedToken(TOKEN, 'A1');
+    expect(await lookupLogos({ sources: [broken], fetch })).toBe(0);
+    const row = await prisma.token.findUniqueOrThrow({ where: { address: TOKEN } });
+    expect(row.logoUrl).toBeNull();
+    expect(row.logoCheckedAt).not.toBeNull();
+  });
+
+  it('refuses an image whose content type is not an image', async () => {
+    await resetDatabase();
+    await seedToken(TOKEN, 'A1');
+    const html: Fetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+      headers: { get: (name: string) => (name === 'content-type' ? 'text/html; charset=utf-8' : null) },
+    });
+    expect(await lookupLogos({ sources: [sourceAnswering({ [TOKEN]: LOGO })], fetch: html })).toBe(0);
   });
 
   it('does nothing with no sources', async () => {

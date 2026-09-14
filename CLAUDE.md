@@ -1675,3 +1675,27 @@ A contract can name any host it likes and this process runs on the box next
 to the API; the test pins that refusal. Whether this chain's launchpads
 publish anything the source can read is, as with the others, a fact the
 probe reports.
+
+### An empty disc is not a logo
+
+Four rows on the board — SPCX, AMD, TSLA, NVDA — showed a saturated disc
+with nothing in it: a logo URL had been recorded, and the browser could
+not fetch it. A source had named an image that answers only to its own
+site, or over http, or with an html page. Three rules now stand between a
+source's answer and the board:
+
+- **A logo is recorded only once it has been seen to load** from the box:
+  one GET, 2xx, and an image content type when the server states one. A
+  source whose image does not load is logged and the next source gets its
+  turn; the check is tested against a 404 and against `text/html`.
+- **https only.** An http image on an https page is blocked by the browser
+  silently, which is exactly the empty disc.
+- **The badge falls back to the monogram** when the image errors, or is
+  found complete with no pixels after mount — an image that fails before
+  React attaches never fires the error event, so both are checked. Under a
+  logo with a transparent background sits the pastel mark, not the stored
+  brand colour from the old palette.
+
+On start the logo process checks every logo already on record and forgets
+the ones that do not load, so the tokens are asked about again under the
+new rules.

@@ -45,7 +45,38 @@ export type Log = (message: string) => void;
 export type Fetch = (
   url: string,
   init?: { headers?: Record<string, string>; signal?: AbortSignal },
-) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
+) => Promise<{
+  ok: boolean;
+  status: number;
+  json(): Promise<unknown>;
+  /** Present on a real Response; a fake may omit it. */
+  headers?: { get(name: string): string | null };
+}>;
+
+/**
+ * Whether an image URL actually serves an image, from where this process
+ * runs. A source can name a URL that answers 403 to everyone but its own
+ * site, or an html page, or nothing — and the badge then shows an empty
+ * disc. So a logo is recorded only once it has been seen to load: one GET,
+ * status 2xx, and a content type that is an image when the server says one.
+ */
+export async function imageLoads(fetch: Fetch, url: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      headers: { accept: 'image/*,*/*;q=0.5', 'user-agent': USER_AGENT },
+      signal: controller.signal,
+    });
+    if (!response.ok) return false;
+    const type = response.headers?.get('content-type');
+    return !type || /^image\//i.test(type) || /octet-stream/i.test(type);
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export interface LogoSource {
   readonly name: string;
@@ -647,11 +678,16 @@ export async function lookupLogos(options: LookupOptions): Promise<number> {
     let url: string | null = null;
     let via = '';
     for (const source of sources) {
-      url = await source.lookup(token.address, { fetch, log });
-      if (url) {
-        via = source.name;
-        break;
+      const named = await source.lookup(token.address, { fetch, log });
+      if (!named) continue;
+      // Seen to load, or not recorded: the next source gets its turn.
+      if (!(await imageLoads(fetch, named))) {
+        log(`  ${source.name} named an image for ${token.symbol} that does not load: ${named}`);
+        continue;
       }
+      url = named;
+      via = source.name;
+      break;
     }
     await prisma.token.update({
       where: { address: token.address },
