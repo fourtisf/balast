@@ -903,3 +903,42 @@ input to every price.
 A listed logo that changes now replaces the recorded one, rather than only
 filling a blank. A corrected logo should reach the site without anyone
 truncating a table to make it happen.
+
+### The hardcoded database port
+
+`bootstrap.sh` created the role and database over postgres's **unix socket**,
+which finds the default cluster whatever port it listens on, and then wrote a
+`DATABASE_URL` with a hardcoded `5432`. Where those disagree the database
+exists and the URL cannot reach it, and the error — `P1001: Can't reach
+database server` — reads exactly like postgres being down.
+
+This is not an edge case on a shared box. Debian puts a second cluster on
+5433 when 5432 is taken, and this VPS already ran PostgreSQL for other sites.
+
+Detecting the port turned out to be its own small problem: `psql` cannot
+answer it, because its socket is named `.s.PGSQL.<port>` and it defaults to
+5432 — asking the cluster its port over the socket requires already knowing
+the port. `deploy/pg-port.sh` asks the system instead, in order of
+authority: Debian's cluster registry, then the socket files, then a TCP
+listener. Every socket `psql` call in bootstrap now passes `-p` for the same
+reason.
+
+Bootstrap also corrects the port in an existing `.env` rather than leaving it,
+because the port is a fact about the machine and not a preference — verified
+against a password containing `#` and `&`, where only the port changes.
+
+### A verdict that ranked the wrong failure
+
+The doctor ranked failures by dependency order alone, so with the database
+unreachable AND `USDG_ADDRESS` empty it told the operator to go look up a
+token address. Those are independent: an empty `USDG_ADDRESS` stops the
+indexer and nothing else, while an unreachable database stops everything.
+
+There are two tiers now. `first` is for a failure the rest of the box cannot
+work around; `also` is for one that blocks only itself. The verdict prints
+`next` and then `then`.
+
+The database check also says **which** failure it is, rather than "cannot
+connect": cluster down, wrong port in `.env`, `listen_addresses` refusing
+127.0.0.1, or bad credentials. The generic message sent someone to check
+whether postgres was running — and it was, on another port.

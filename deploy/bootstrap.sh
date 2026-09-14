@@ -67,16 +67,38 @@ echo "==> postgres"
 systemctl enable --now postgresql
 DB_NAME=balast
 DB_USER=balast
-if ! runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1; then
+
+# Ask the cluster what port it is ACTUALLY on.
+#
+# Everything below talks to postgres over its unix socket, which finds the
+# default cluster whatever port that cluster listens on. DATABASE_URL uses
+# TCP. Hardcoding 5432 into it therefore produced a database that existed and
+# a URL that could not reach it — "P1001: Can't reach database server" — and
+# on a box that already ran PostgreSQL for something else Debian puts the new
+# cluster on 5433, so this is the normal case on a shared server, not an edge.
+# shellcheck source=deploy/pg-port.sh
+source "$APP_DIR/deploy/pg-port.sh" 2>/dev/null || source "$(dirname "${BASH_SOURCE[0]}")/pg-port.sh"
+PG_PORT=$(pg_detect_port || true)
+if [[ -z "$PG_PORT" ]]; then
+  echo "!! postgres is not answering on its unix socket. Clusters on this box:"
+  pg_lsclusters 2>/dev/null || echo "   (pg_lsclusters unavailable)"
+  systemctl --no-pager status postgresql 2>&1 | head -12 || true
+  exit 1
+fi
+echo "   cluster is on port $PG_PORT"
+
+# -p on every one of these: psql defaults to 5432 even over the socket,
+# because the socket file is named .s.PGSQL.<port>.
+if ! runuser -u postgres -- psql -p "$PG_PORT" -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1; then
   DB_PASS="$(openssl rand -hex 24)"
-  runuser -u postgres -- psql -qc "CREATE ROLE $DB_USER LOGIN PASSWORD '$DB_PASS'"
+  runuser -u postgres -- psql -p "$PG_PORT" -qc "CREATE ROLE $DB_USER LOGIN PASSWORD '$DB_PASS'"
   echo "   created role $DB_USER"
 else
   DB_PASS=""
   echo "   role $DB_USER already exists — leaving its password alone"
 fi
-if ! runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1; then
-  runuser -u postgres -- createdb -O "$DB_USER" "$DB_NAME"
+if ! runuser -u postgres -- psql -p "$PG_PORT" -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1; then
+  runuser -u postgres -- createdb -p "$PG_PORT" -O "$DB_USER" "$DB_NAME"
   echo "   created database $DB_NAME"
 fi
 
@@ -122,11 +144,11 @@ if [[ ! -f "$APP_DIR/.env" ]]; then
     # nothing can still be using it.
     echo "   .env is missing and the $DB_USER role already exists — rotating its password"
     DB_PASS="$(openssl rand -hex 24)"
-    runuser -u postgres -- psql -qc "ALTER ROLE $DB_USER PASSWORD '$DB_PASS'"
+    runuser -u postgres -- psql -p "$PG_PORT" -qc "ALTER ROLE $DB_USER PASSWORD '$DB_PASS'"
   fi
   cat > "$APP_DIR/.env" <<ENVEOF
 DATA_SOURCE=live
-DATABASE_URL="postgresql://$DB_USER:$DB_PASS@127.0.0.1:5432/$DB_NAME?schema=public"
+DATABASE_URL="postgresql://$DB_USER:$DB_PASS@127.0.0.1:$PG_PORT/$DB_NAME?schema=public"
 REDIS_URL="redis://127.0.0.1:6379"
 API_PORT=3001
 API_HOST=127.0.0.1
@@ -144,7 +166,36 @@ ENVEOF
   echo "   wrote $APP_DIR/.env"
 else
   echo "   $APP_DIR/.env already exists — left alone"
+  # ...except the port, which is a fact about this machine rather than a
+  # preference. An .env written when the cluster was assumed to be on 5432
+  # points at nothing, and the symptom is a P1001 twenty steps later.
+  CURRENT_PORT=$(grep -E '^DATABASE_URL=' "$APP_DIR/.env" | head -1 \
+    | sed -E 's|.*@[^:]+:([0-9]+)/.*|\1|')
+  if [[ -n "$CURRENT_PORT" && "$CURRENT_PORT" != "$PG_PORT" ]]; then
+    echo "   !! its DATABASE_URL points at port $CURRENT_PORT, the cluster is on $PG_PORT"
+    TMP_ENV=$(mktemp)
+    sed -E "s|(^DATABASE_URL=.*@[^:]+):[0-9]+(/.*)|\1:$PG_PORT\2|" "$APP_DIR/.env" > "$TMP_ENV"
+    chown --reference="$APP_DIR/.env" "$TMP_ENV"
+    chmod --reference="$APP_DIR/.env" "$TMP_ENV"
+    mv "$TMP_ENV" "$APP_DIR/.env"
+    echo "      corrected to $PG_PORT"
+  fi
 fi
+
+# Prove the URL actually connects, here, rather than letting a migration
+# twenty steps later be the first thing that tries it.
+ENV_DB_URL=$(grep -E '^DATABASE_URL=' "$APP_DIR/.env" | head -1 | cut -d= -f2- | tr -d '"')
+# psql refuses Prisma's ?schema= suffix outright, so strip it for this check.
+if ! psql "${ENV_DB_URL%%\?*}" -tAc 'select 1' >/dev/null 2>&1; then
+  echo "!! the DATABASE_URL in $APP_DIR/.env does not connect."
+  echo "   cluster port:      $PG_PORT"
+  echo "   listen_addresses:  $(pg_listen_addresses "$PG_PORT")"
+  echo "   A cluster with listen_addresses unset answers on its socket and"
+  echo "   refuses 127.0.0.1, which looks identical to postgres being down."
+  pg_lsclusters 2>/dev/null || true
+  exit 1
+fi
+echo "   database reachable over TCP on $PG_PORT"
 
 echo "==> build"
 cd "$APP_DIR"

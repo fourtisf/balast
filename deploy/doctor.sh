@@ -28,10 +28,26 @@ head_() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
 FAILED=0
 NEXT=""
-# The first failure is the real one. Later checks are noise until it is fixed.
-first() { [[ -z "$NEXT" ]] && NEXT="$1"; }
+ALSO=""
+
+# Two tiers, because not every failure blocks the ones after it.
+#
+# `first` is for something the rest of the box cannot work around: no code, no
+# .env, no database. Dependency order then makes the earliest one the real
+# one, and everything below it is noise.
+#
+# `also` is for a real failure that blocks only itself — an empty
+# USDG_ADDRESS stops the indexer and nothing else. Ranking that above an
+# unreachable database sent the operator to look up a token address while the
+# database was down, which is exactly the wrong order. It did.
+first() { [[ -z "$NEXT" ]] && NEXT="$1"; return 0; }
+also()  { [[ -z "$ALSO" ]] && ALSO="$1"; return 0; }
 
 as_app() { runuser -u "$APP_USER" -- "$@" 2>/dev/null; }
+
+# shellcheck source=deploy/pg-port.sh
+source "$APP_DIR/deploy/pg-port.sh" 2>/dev/null \
+  || source "$(dirname "${BASH_SOURCE[0]}")/pg-port.sh"
 env_get() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"'; }
 
 # `?schema=public` is Prisma's, not libpq's — psql refuses the whole URL over
@@ -90,10 +106,10 @@ else
   if [[ -z "$USDG" ]]; then
     # Not a warning. The indexer will not start, by design.
     bad "USDG_ADDRESS is empty — the indexer refuses to start without it"
-    first "cd $APP_DIR && npm run find:tokens   # then ./deploy/set-env.sh USDG_ADDRESS 0x..."
+    also "cd $APP_DIR && npm run find:tokens   # then ./deploy/set-env.sh USDG_ADDRESS 0x..."
   elif [[ ! "$USDG" =~ ^0x[0-9a-fA-F]{40}$ ]]; then
     bad "USDG_ADDRESS is not an address: $USDG"
-    first "cd $APP_DIR && ./deploy/set-env.sh USDG_ADDRESS 0x..."
+    also "cd $APP_DIR && ./deploy/set-env.sh USDG_ADDRESS 0x..."
   else
     ok "USDG_ADDRESS $USDG"
   fi
@@ -111,13 +127,23 @@ fi
 head_ "database"
 if [[ -n "${DB_URL:-}" ]]; then
   PSQL_URL=$(pg_url "$DB_URL")
+  ENV_PORT=$(printf '%s' "$DB_URL" | sed -E 's|.*@[^:]+:([0-9]+)/.*|\1|')
+  # What port is the cluster on, asked over the socket rather than assumed?
+  # Everything that sets this box up talks to postgres over its socket, which
+  # finds the default cluster whatever its port; DATABASE_URL uses TCP. When
+  # those disagree the database exists and the URL cannot reach it, and the
+  # error — "Can't reach database server" — reads exactly like postgres being
+  # down. Debian puts a second cluster on 5433, so on a shared box this is the
+  # normal case rather than an edge one.
+  REAL_PORT=$(pg_detect_port || true)
+
   if psql "$PSQL_URL" -tAc 'select 1' >/dev/null 2>&1; then
-    ok "postgres reachable"
+    ok "postgres reachable on port ${ENV_PORT:-?}"
     APPLIED=$(psql "$PSQL_URL" -tAc \
       "select count(*) from _prisma_migrations where finished_at is not null" 2>/dev/null || echo "")
     if [[ -z "$APPLIED" ]]; then
       bad "no _prisma_migrations table — migrations have never run"
-      first "cd $APP_DIR && runuser -u $APP_USER -- env DATABASE_URL=\"\$(grep ^DATABASE_URL= .env | cut -d= -f2- | tr -d '\"')\" npx prisma migrate deploy"
+      first "bash $APP_DIR/deploy/deploy.sh"
     else
       ON_DISK=$(find "$APP_DIR/prisma/migrations" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l)
       if [[ "$APPLIED" -lt "$ON_DISK" ]]; then
@@ -131,9 +157,24 @@ if [[ -n "${DB_URL:-}" ]]; then
         printf '        %-18s %s row(s)\n' "$t" "$N"
       done
     fi
+  elif [[ -z "$REAL_PORT" ]]; then
+    bad "postgres is not answering on its unix socket — the cluster is down or absent"
+    first "pg_lsclusters; systemctl status postgresql --no-pager"
+  elif [[ -n "$ENV_PORT" && "$ENV_PORT" != "$REAL_PORT" ]]; then
+    # The specific failure, named. Without this the message is "cannot
+    # connect", which sends you to check whether postgres is running — and it
+    # is, on a different port.
+    bad ".env points at port $ENV_PORT but the cluster is on $REAL_PORT"
+    first "bash $APP_DIR/deploy/bootstrap.sh   # corrects the port in .env"
   else
-    bad "cannot connect with the DATABASE_URL in .env"
-    first "systemctl status postgresql"
+    LISTEN=$(pg_listen_addresses "$REAL_PORT")
+    if [[ "$LISTEN" != *"localhost"* && "$LISTEN" != *"127.0.0.1"* && "$LISTEN" != "*" ]]; then
+      bad "the cluster answers on its socket but listen_addresses is '$LISTEN' — it refuses 127.0.0.1"
+      first "edit listen_addresses in postgresql.conf, then: systemctl restart postgresql"
+    else
+      bad "port $ENV_PORT is right and the cluster is up, so the role or password is wrong"
+      first "bash $APP_DIR/deploy/bootstrap.sh   # rotates the password and rewrites .env"
+    fi
   fi
 else
   warn "skipped — no DATABASE_URL"
@@ -262,6 +303,10 @@ fi
 echo "  Something above is broken. The first failure is the one that matters —"
 echo "  everything downstream of it will look broken too."
 if [[ -n "$NEXT" ]]; then
-  printf '\n\033[1mnext\033[0m\n  %s\n\n' "$NEXT"
+  printf '\n\033[1mnext\033[0m\n  %s\n' "$NEXT"
+  [[ -n "$ALSO" ]] && printf '\n\033[1mthen\033[0m\n  %s\n' "$ALSO"
+  printf '\n'
+elif [[ -n "$ALSO" ]]; then
+  printf '\n\033[1mnext\033[0m\n  %s\n\n' "$ALSO"
 fi
 exit 1
