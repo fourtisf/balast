@@ -1699,3 +1699,22 @@ source's answer and the board:
 On start the logo process checks every logo already on record and forgets
 the ones that do not load, so the tokens are asked about again under the
 new rules.
+
+### Logos served from here
+
+The empty discs became monograms, and AMD and TSLA — whose ticker icons
+exist and load — stayed monograms. That is the same fault one step later: a
+URL on record that loads from the box and not from a browser, so the load
+check passes, the source that would have worked never gets its turn, and
+the page shows nothing. Two clients, two answers, and no way to reconcile
+them from either side.
+
+So there is one client now. `GET /api/logo/{address}` fetches the URL on
+record the way the logo process did when it checked it, holds the bytes in
+memory for a day, and answers 404 for anything that is not an image; the
+badge asks that route and nothing else. "The box can load it" and "the page
+shows it" are the same test. Only URLs on record are fetched — it is not an
+open proxy — and the route is outside the rate limit, because a hundred
+badges on one page load is normal, not a loop. `logos:status` now lists
+the board's rows with the URL on record and whether it loads from the box;
+`logos:probe` prints the URL on record beside each token.

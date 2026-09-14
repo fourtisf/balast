@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { isEther } from '@/lib/chain';
+import { logoProxy } from '@/lib/site';
 import { monogram, tokenMark } from '@/lib/token-mark';
 import type { TokenMeta } from '@/lib/data/types';
 
@@ -46,7 +47,14 @@ export function TokenBadge({
   className?: string;
 }) {
   const mark = tokenMark(token.address);
-  const candidate = token.logoUrl ?? (isEther(token.address) ? ETHER_LOGO : undefined);
+  // A recorded logo is loaded through our own API (lib/site.ts, logoProxy),
+  // so what the page shows is exactly what the box could fetch. Ether's is
+  // this site's own file and needs no proxy.
+  const candidate = token.logoUrl
+    ? logoProxy(token.address)
+    : isEther(token.address)
+      ? ETHER_LOGO
+      : undefined;
   const [failed, setFailed] = useState<string | null>(null);
   const image = useRef<HTMLImageElement | null>(null);
 
@@ -56,7 +64,8 @@ export function TokenBadge({
   }, [candidate]);
 
   const logoUrl = candidate !== undefined && failed !== candidate ? candidate : undefined;
-  const onInk = logoUrl !== undefined && DARK_THEME_ICON_HOST.test(logoUrl);
+  // The ink decision is about where the image came from, not how it is served.
+  const onInk = logoUrl !== undefined && DARK_THEME_ICON_HOST.test(token.logoUrl ?? '');
 
   return (
     <span

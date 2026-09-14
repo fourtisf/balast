@@ -59,6 +59,72 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
+describe('/api/logo/:address', () => {
+  const ADDRESS = '0x00000000000000000000000000000000000000c1';
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const upstream = (type: string, ok = true) => {
+    let calls = 0;
+    const fetch = async () => {
+      calls++;
+      return {
+        ok,
+        status: ok ? 200 : 403,
+        headers: { get: (name: string) => (name === 'content-type' ? type : null) },
+        arrayBuffer: async () => PNG.buffer.slice(PNG.byteOffset, PNG.byteOffset + PNG.byteLength),
+      };
+    };
+    return { fetch, calls: () => calls };
+  };
+
+  it('serves the logo on record from here, once per day, and 404 for a token without one', async () => {
+    await prisma.token.create({
+      data: { address: ADDRESS, symbol: 'C1', name: 'C1', decimals: 18, firstSeen: new Date('2026-07-01'), logoUrl: 'https://cdn.example/c1.png' },
+    });
+    const source = upstream('image/png');
+    const { buildServer } = await import('./server');
+    const built = await buildServer({ logoFetch: source.fetch });
+    await built.ready();
+    try {
+      const first = await built.inject({ method: 'GET', url: `/api/logo/${ADDRESS}` });
+      expect(first.statusCode).toBe(200);
+      expect(first.headers['content-type']).toContain('image/png');
+      expect(first.rawPayload.equals(PNG)).toBe(true);
+      expect(first.headers['cache-control']).toContain('max-age=86400');
+      // Held in memory: a second badge costs the source nothing.
+      const second = await built.inject({ method: 'GET', url: `/api/logo/${ADDRESS.toUpperCase().replace('0X', '0x')}` });
+      expect(second.statusCode).toBe(200);
+      expect(source.calls()).toBe(1);
+      // No logo on record: 404, and nothing fetched. Not an address: 400.
+      const none = await built.inject({ method: 'GET', url: '/api/logo/0x00000000000000000000000000000000000000c2' });
+      expect(none.statusCode).toBe(404);
+      expect(source.calls()).toBe(1);
+      expect((await built.inject({ method: 'GET', url: '/api/logo/not-an-address' })).statusCode).toBe(400);
+    } finally {
+      await built.close();
+      await prisma.token.delete({ where: { address: ADDRESS } });
+    }
+  });
+
+  it('answers 404 when the URL on record does not serve an image', async () => {
+    await prisma.token.create({
+      data: { address: ADDRESS, symbol: 'C1', name: 'C1', decimals: 18, firstSeen: new Date('2026-07-01'), logoUrl: 'https://cdn.example/c1.png' },
+    });
+    const { buildServer } = await import('./server');
+    const html = await buildServer({ logoFetch: upstream('text/html').fetch });
+    const refused = await buildServer({ logoFetch: upstream('image/png', false).fetch });
+    await html.ready();
+    await refused.ready();
+    try {
+      expect((await html.inject({ method: 'GET', url: `/api/logo/${ADDRESS}` })).statusCode).toBe(404);
+      expect((await refused.inject({ method: 'GET', url: `/api/logo/${ADDRESS}` })).statusCode).toBe(404);
+    } finally {
+      await html.close();
+      await refused.close();
+      await prisma.token.delete({ where: { address: ADDRESS } });
+    }
+  });
+});
+
 describe('/api/health', () => {
   it('answers 503 before the indexer has ever written a block', async () => {
     // A 200 here would tell an uptime monitor everything is fine while the

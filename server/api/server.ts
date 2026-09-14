@@ -21,6 +21,7 @@ import type { MarketSnapshot } from '../../lib/data/types';
 import { prisma } from '../db';
 import { env } from '../env';
 import { POOL_MANAGER_CURSOR } from '../indexer/poller';
+import { USER_AGENT } from '../indexer/logo-sources';
 import { resolveUsdg } from '../indexer/anchor';
 import { busKind, subscribeTicks } from './bus';
 import { buildSnapshot } from './snapshot';
@@ -110,7 +111,25 @@ function serialise(snapshot: MarketSnapshot): string {
   });
 }
 
-export async function buildServer(): Promise<FastifyInstance> {
+/** The subset of `fetch` the logo route uses, so a test can hand in a fake. */
+export type LogoFetch = (
+  url: string,
+  init?: { headers?: Record<string, string>; signal?: AbortSignal },
+) => Promise<{
+  ok: boolean;
+  status: number;
+  headers: { get(name: string): string | null };
+  arrayBuffer(): Promise<ArrayBuffer>;
+}>;
+
+/** A logo the API is holding, or the memory that there is none to hold. */
+type CachedLogo = { at: number; type: string; body: Buffer } | { at: number; miss: true };
+const LOGO_TTL_MS = 24 * 60 * 60 * 1000;
+const LOGO_MISS_TTL_MS = 10 * 60 * 1000;
+const LOGO_CACHE_MAX = 2_000;
+const LOGO_MAX_BYTES = 2 * 1024 * 1024;
+
+export async function buildServer(options: { logoFetch?: LogoFetch } = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
 
   await app.register(cors, {
@@ -138,7 +157,11 @@ export async function buildServer(): Promise<FastifyInstance> {
     // The websocket is one request that then stays open for hours. Counting
     // it against a per-minute budget would drop reconnects after a restart,
     // which is exactly when every client reconnects at once.
-    allowList: (request) => request.url.startsWith('/api/stream'),
+    // The logo route is one request per badge on the board, served from
+    // memory after the first: a hundred of them on one page load is normal,
+    // not a loop.
+    allowList: (request) =>
+      request.url.startsWith('/api/stream') || request.url.startsWith('/api/logo/'),
     keyGenerator: (request) =>
       (request.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
       request.ip,
@@ -337,6 +360,81 @@ export async function buildServer(): Promise<FastifyInstance> {
     };
 
     return reply.code(needsSomeone ? 503 : 200).send(body);
+  });
+
+  /**
+   * A token's logo, served from here.
+   *
+   * The board once showed four empty discs: logo URLs that loaded from the
+   * box and not from a browser, or the reverse — a host that answers one
+   * client and refuses another. The browser now asks this route, this
+   * route fetches the URL on record exactly as the logo process did when it
+   * checked that the image loads, and the two tests become one. The bytes
+   * are held in memory for a day, so a hundred badges cost the source one
+   * request; a URL that stops serving an image is remembered as a miss for
+   * ten minutes rather than asked about on every page load.
+   *
+   * Only URLs on record are fetched — this is not an open proxy — and only
+   * an image comes back: anything else is a 404, and the badge falls back
+   * to the monogram.
+   */
+  const logoCache = new Map<string, CachedLogo>();
+  const logoFetch = options.logoFetch ?? (globalThis.fetch as unknown as LogoFetch);
+
+  app.get<{ Params: { address: string } }>('/api/logo/:address', async (request, reply) => {
+    const address = request.params.address.toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(address)) {
+      return reply.code(400).send({ statusCode: 400, error: 'bad-address', message: 'Not an address.' });
+    }
+
+    const now = Date.now();
+    const held = logoCache.get(address);
+    if (held && now - held.at < ('miss' in held ? LOGO_MISS_TTL_MS : LOGO_TTL_MS)) {
+      if ('miss' in held) return reply.code(404).send();
+      return reply
+        .type(held.type)
+        .header('cache-control', 'public, max-age=86400')
+        .send(held.body);
+    }
+
+    const remember = (entry: CachedLogo) => {
+      if (logoCache.size >= LOGO_CACHE_MAX) {
+        const oldest = logoCache.keys().next().value;
+        if (oldest !== undefined) logoCache.delete(oldest);
+      }
+      logoCache.set(address, entry);
+    };
+
+    const token = await prisma.token.findUnique({ where: { address }, select: { logoUrl: true } });
+    if (!token?.logoUrl) {
+      remember({ at: now, miss: true });
+      return reply.code(404).send();
+    }
+
+    try {
+      const upstream = await logoFetch(token.logoUrl, {
+        headers: { accept: 'image/*,*/*;q=0.5', 'user-agent': USER_AGENT },
+        signal: AbortSignal.timeout(10_000),
+      });
+      const type = upstream.headers.get('content-type')?.split(';')[0].trim() ?? '';
+      const isImage = /^image\//i.test(type) || /octet-stream/i.test(type);
+      if (!upstream.ok || !isImage) {
+        app.log.warn(`logo for ${address} does not serve an image (${upstream.status} ${type || 'no type'}): ${token.logoUrl}`);
+        remember({ at: now, miss: true });
+        return reply.code(404).send();
+      }
+      const body = Buffer.from(await upstream.arrayBuffer());
+      if (body.length === 0 || body.length > LOGO_MAX_BYTES) {
+        remember({ at: now, miss: true });
+        return reply.code(404).send();
+      }
+      remember({ at: now, type, body });
+      return reply.type(type).header('cache-control', 'public, max-age=86400').send(body);
+    } catch (error) {
+      app.log.warn({ err: error }, `logo for ${address} could not be fetched: ${token.logoUrl}`);
+      remember({ at: now, miss: true });
+      return reply.code(404).send();
+    }
   });
 
   app.get('/api/snapshot', async (_request, reply) => {

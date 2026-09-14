@@ -82,7 +82,9 @@ async function main(): Promise<void> {
       token.symbol ||
       (await prisma.token.findUnique({ where: { address: token.address } }))?.symbol ||
       '?';
+    const recorded = (await prisma.token.findUnique({ where: { address: token.address } }))?.logoUrl;
     process.stdout.write(`\n${symbol}  ${token.address}\n`);
+    process.stdout.write(`  ${'recorded'.padEnd(14)} ${recorded ?? 'none'}\n`);
 
     for (const source of sources) {
       // A fetch that keeps a transcript: URL, status, content type and the

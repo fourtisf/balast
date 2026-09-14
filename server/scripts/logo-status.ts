@@ -16,6 +16,7 @@ import '../load-env';
 import type { MarketSnapshot } from '../../lib/data/types';
 import { prisma } from '../db';
 import { env } from '../env';
+import { imageLoads, type Fetch } from '../indexer/logo-sources';
 
 interface Counts {
   with_logo: number;
@@ -81,6 +82,15 @@ async function main(): Promise<void> {
     process.stdout.write(
       `  revision ${snapshot.revision}: ${withLogo} of ${listed.length} listed tokens carry a logo\n`,
     );
+    // The board's first rows, with the URL on record and whether it loads
+    // from here — the two facts a "still no logo" needs.
+    process.stdout.write('  the board, top to bottom:\n');
+    for (const t of listed.slice(0, 24)) {
+      const loads = t.logoUrl ? await imageLoads(globalThis.fetch as unknown as Fetch, t.logoUrl) : null;
+      process.stdout.write(
+        `    ${t.symbol.padEnd(12)} ${t.logoUrl ? `${loads ? 'loads ' : 'FAILS '} ${t.logoUrl}` : '(no logo on record)'}\n`,
+      );
+    }
     const missing = listed.filter((t) => !t.logoUrl);
     if (missing.length > 0) {
       const rows = await prisma.token.findMany({

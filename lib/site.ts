@@ -38,3 +38,25 @@ export const SOCIAL = {
 
 /** The token's contract address, once it exists. Empty until then. */
 export const TOKEN_CA = process.env.NEXT_PUBLIC_TOKEN_CA ?? '';
+
+/**
+ * Where the API lives, from the browser's point of view. Empty means the
+ * same origin, which is the deployed shape: nginx proxies `/api/` to the
+ * Fastify process. Set only for local development against `next dev`.
+ */
+export const API_BASE =
+  (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_API_BASE : undefined) ?? '';
+
+/**
+ * A token's logo, served by our own API rather than fetched by the browser
+ * from wherever the source found it.
+ *
+ * The board once showed four empty discs: URLs that loaded from the box and
+ * not from a browser — a host that answers a server and refuses a page, or
+ * the other way round. Routing every logo through `/api/logo/{address}`
+ * makes "the box can load it" and "the page shows it" the same test, and
+ * lets the API cache the bytes so a hundred badges cost the source nothing.
+ */
+export function logoProxy(address: string): string {
+  return `${API_BASE}/api/logo/${address.toLowerCase()}`;
+}
