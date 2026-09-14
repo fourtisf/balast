@@ -1262,3 +1262,27 @@ null renders a quiet card with the reason.
 Smaller: the top bar read `5937929s behind`, which is honest and unreadable;
 it reads `68d 17h behind` now (§7 wants the lag shown, not encoded).
 
+### "Stalled" was measured on the wrong clock
+
+With the site finally rendering, the deploy summary's last line read
+`STALLED, 5876521s of chain time behind` — for an indexer that was writing
+a pass every second. Health judged a stall by **chain lag**: how old the
+newest indexed block is. During a first sync that is seventy days, by
+definition, while nothing is wrong; and the monitor would have alerted the
+whole forty hours, which is how a monitor gets muted.
+
+Liveness is a different clock: wall seconds since the poller last wrote the
+cursor (`idleSeconds`). `stalled` is that clock past the threshold — the
+process is dead or stuck — and nothing else. Chain lag stays what it was,
+the honest figure in the top bar (§7), and two states carry it without
+paging anyone: `syncing` (writing, far from head — the first sync, with its
+percentage) and `behind` (writing, near head in blocks, but the newest block
+is older than the threshold — catching up). Both answer **200** with
+`ok: false`; 503 is reserved for states a person has to act on. A pass that
+finds head has not moved still touches the cursor, so a quiet chain cannot
+read as a dead poller.
+
+`pm2-logrotate` in the process list is deliberate (§15, log rotation): a
+first sync logs every pass for forty hours, and without rotation the first
+symptom of that is a full disk.
+

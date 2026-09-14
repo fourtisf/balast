@@ -81,11 +81,19 @@ case "$status" in
     exit 1
     ;;
   stalled)
+    idle=$(printf '%s' "$body" | grep -o '"idleSeconds":[0-9.]*' | head -1 | cut -d: -f2)
     alert "stalled" \
-      "the indexer is ${lag%.*}s behind head; the site is showing numbers that old"
+      "the indexer has written nothing for ${idle%.*}s; the site is showing numbers ${lag%.*}s old"
     exit 1
     ;;
-  ok) ;;
+  no-anchor)
+    alert "no-anchor" \
+      "indexing, but no ETH/USDG pool has been found; every page is on the waiting panel"
+    exit 1
+    ;;
+  # A first sync or a catch-up is the indexer working, with the lag on the
+  # site. Alerting on it for forty hours would teach everyone to mute this.
+  ok | syncing | behind) ;;
   *)
     alert "unknown" "/api/health returned no status field: ${body:0:200}"
     exit 1

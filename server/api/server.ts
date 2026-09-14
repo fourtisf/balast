@@ -198,8 +198,22 @@ export async function buildServer(): Promise<FastifyInstance> {
     const cursor = await prisma.indexerCursor.findUnique({
       where: { contract: POOL_MANAGER_CURSOR },
     });
+    // Two different clocks, and they answer two different questions.
+    //
+    // `lagSeconds` is CHAIN time: how old the newest indexed block is. It is
+    // what the top bar shows (§7) and during a first sync it is enormous by
+    // definition — seventy days, on this chain — while nothing is wrong.
+    //
+    // `idleSeconds` is WALL time since the poller last wrote the cursor. That
+    // is liveness: a poller that has not written in five minutes is dead or
+    // stuck, whatever the chain lag says. "Stalled" used to be judged on the
+    // first clock, so a healthy backfill read as a stall for two days and the
+    // monitor would have alerted the whole way.
     const lagSeconds = cursor
       ? Math.max(0, (Date.now() - cursor.lastIndexedAt.getTime()) / 1000)
+      : null;
+    const idleSeconds = cursor
+      ? Math.max(0, (Date.now() - cursor.updatedAt.getTime()) / 1000)
       : null;
     const [counts] = await prisma.$queryRaw<{ pools: number; swaps: number }[]>`
       SELECT (SELECT COUNT(*) FROM pools)::int AS pools,
@@ -229,15 +243,28 @@ export async function buildServer(): Promise<FastifyInstance> {
     // SYMPTOM when the indexer cannot start, and reporting the symptom sends
     // whoever is looking to the wrong place.
     const problem = configurationProblem();
+    const stalled = idleSeconds !== null && idleSeconds > env.stallSeconds;
     const status = problem
       ? 'misconfigured'
       : cursor === null
         ? 'never-indexed'
-        : !anchor.address
-          ? 'no-anchor'
-          : lagSeconds !== null && lagSeconds > env.stallSeconds
-            ? 'stalled'
-            : 'ok';
+        : stalled
+          ? 'stalled'
+          : !anchor.address
+            ? 'no-anchor'
+            : syncing
+              ? 'syncing'
+              : lagSeconds !== null && lagSeconds > env.stallSeconds
+                ? 'behind'
+                : 'ok';
+    // 503 is for states a person has to act on. A first sync and a catch-up
+    // are the indexer doing its job with the lag on screen; a monitor that
+    // pages for forty hours of expected work is a monitor that gets muted.
+    const needsSomeone =
+      status === 'misconfigured' ||
+      status === 'never-indexed' ||
+      status === 'stalled' ||
+      status === 'no-anchor';
 
     const body = {
       // Kept for anything already reading it, but `status` is the field to
@@ -250,6 +277,8 @@ export async function buildServer(): Promise<FastifyInstance> {
             lastBlock: cursor.lastIndexedBlock.toString(),
             at: cursor.lastIndexedAt,
             lagSeconds,
+            /** Wall seconds since the poller last wrote. Liveness, not lag. */
+            idleSeconds,
             headBlock: head === null ? null : head.toString(),
             blocksBehind: behind === null ? null : behind.toString(),
             progressPct: progress,
@@ -274,12 +303,20 @@ export async function buildServer(): Promise<FastifyInstance> {
                 // not the same problem as one that has and found none.
                 `${anchor.note} ${syncingNote({ syncing, progress, behind, pools: counts?.pools ?? 0 })}`
               : status === 'stalled'
-              ? `The indexer is ${Math.round(lagSeconds ?? 0)}s behind, past the ${env.stallSeconds}s ` +
-                'stall threshold. The site is showing numbers that old.'
-              : undefined,
+              ? `The indexer has not written a block for ${Math.round(idleSeconds ?? 0)}s, past the ` +
+                `${env.stallSeconds}s threshold. It is dead or stuck; the site is showing numbers ` +
+                `${Math.round(lagSeconds ?? 0)}s old.`
+              : status === 'syncing'
+                ? `First sync: block ${cursor!.lastIndexedBlock} of ${head}` +
+                  (progress === null ? '' : ` (${progress.toFixed(2)}%)`) +
+                  `, ${counts?.pools ?? 0} pool(s) so far. Numbers on the site are ` +
+                  `${Math.round(lagSeconds ?? 0)}s of chain time behind and say so.`
+                : status === 'behind'
+                  ? `Indexing, but the newest block is ${Math.round(lagSeconds ?? 0)}s old — catching up.`
+                  : undefined,
     };
 
-    return reply.code(status === 'ok' ? 200 : 503).send(body);
+    return reply.code(needsSomeone ? 503 : 200).send(body);
   });
 
   app.get('/api/snapshot', async (_request, reply) => {

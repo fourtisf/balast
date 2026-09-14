@@ -254,8 +254,18 @@ else
   LAG=$(printf '%s' "$BODY" | grep -o '"lagSeconds":[0-9.]*' | head -1 | cut -d: -f2)
   case "$STATUS" in
     ok) ok "indexer following head (lag ${LAG%.*}s)" ;;
+    syncing)
+      # A first sync: the lag is days by definition and the site says so in
+      # the top bar. Not a fault; it is the one state where waiting is right.
+      PCT=$(printf '%s' "$BODY" | grep -o '"progressPct":[0-9.]*' | head -1 | cut -d: -f2)
+      ok "first sync running — ${PCT:-?}% of the chain, numbers ${LAG%.*}s of chain time behind"
+      ;;
+    behind)
+      warn "indexer catching up — newest block is ${LAG%.*}s old"
+      ;;
     stalled)
-      bad "indexer stalled — ${LAG%.*}s behind; the site is showing numbers that old"
+      IDLE=$(printf '%s' "$BODY" | grep -o '"idleSeconds":[0-9.]*' | head -1 | cut -d: -f2)
+      bad "indexer stalled — nothing written for ${IDLE%.*}s; the site is showing numbers ${LAG%.*}s old"
       first "runuser -u $APP_USER -- pm2 logs balast-indexer --lines 30 --nostream"
       ;;
     never-indexed)

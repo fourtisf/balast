@@ -115,6 +115,17 @@ export async function readCursor(contract: string): Promise<bigint | null> {
   return row?.lastIndexedBlock ?? null;
 }
 
+/**
+ * Mark the cursor as touched without moving it.
+ *
+ * `updated_at` is the liveness signal /api/health reads: "has the poller
+ * written in the last N seconds". A pass that finds head has not moved past
+ * what it has still happened, and must still count as alive.
+ */
+export async function touchCursor(contract: string): Promise<void> {
+  await prisma.indexerCursor.updateMany({ where: { contract }, data: { updatedAt: new Date() } });
+}
+
 export async function writeCursor(
   contract: string,
   block: bigint,

@@ -72,10 +72,12 @@ describe('/api/health', () => {
     expect(body.message).toMatch(/USDG_ADDRESS|never written/i);
   });
 
-  it('answers 503 with "stalled" once the lag passes the threshold', async () => {
+  it('reads a live poller that is far behind in chain time as "behind", not stalled', async () => {
     // The fixture's chain time is months in the past, so a full sync leaves
-    // the indexer legitimately, enormously behind — which is exactly the
-    // state that must not read as healthy.
+    // the indexer enormously behind IN CHAIN TIME while the poller has just
+    // written. That is a working indexer with old numbers — the lag is on
+    // screen (§7) — and not a stall. Judged on chain lag, it read as one,
+    // and a real first sync would have paged the monitor for forty hours.
     const { Poller } = await import('../indexer/poller');
     const { FixtureLogSource, USDG, fixtureTokenReader } = await import('../test/fixture');
     await new Poller({
@@ -86,23 +88,79 @@ describe('/api/health', () => {
       tokenReader: fixtureTokenReader,
     }).syncToHead();
 
-    const response = await app.inject({ method: 'GET', url: '/api/health' });
-    expect(response.statusCode).toBe(503);
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { 'x-forwarded-for': '203.0.113.21' },
+    });
+    expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.status).toBe('stalled');
+    expect(body.status).toBe('behind');
+    expect(body.ok).toBe(false);
     expect(body.indexed.lagSeconds).toBeGreaterThan(body.stallThresholdSeconds);
+    expect(body.indexed.idleSeconds).toBeLessThan(body.stallThresholdSeconds);
     expect(body.pools).toBe(4);
   });
 
-  it('answers 200 when the last indexed block is recent', async () => {
-    // Move the cursor's timestamp to now: the same data, freshly indexed.
+  it('answers 503 with "stalled" once the poller has stopped writing', async () => {
+    // Liveness is the cursor's write time. Push it past the threshold: the
+    // same data, but nobody has touched it in ten minutes.
     const cursor = await prisma.indexerCursor.findFirstOrThrow();
     await prisma.indexerCursor.update({
       where: { contract: cursor.contract },
-      data: { lastIndexedAt: new Date() },
+      data: { updatedAt: new Date(Date.now() - 600_000) },
     });
 
-    const response = await app.inject({ method: 'GET', url: '/api/health' });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { 'x-forwarded-for': '203.0.113.22' },
+    });
+    expect(response.statusCode).toBe(503);
+    const body = response.json();
+    expect(body.status).toBe('stalled');
+    expect(body.message).toMatch(/not written/i);
+  });
+
+  it('reads a first sync as "syncing" with a 200, not as a stall', async () => {
+    const cursor = await prisma.indexerCursor.findFirstOrThrow();
+    await prisma.indexerCursor.update({
+      where: { contract: cursor.contract },
+      // Writing now, far from head: the shape of a backfill.
+      data: { updatedAt: new Date(), headBlock: cursor.lastIndexedBlock + 60_000_000n },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { 'x-forwarded-for': '203.0.113.23' },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.status).toBe('syncing');
+    expect(body.indexed.syncing).toBe(true);
+    expect(body.message).toMatch(/first sync/i);
+
+    // Put head back for the tests after this one.
+    await prisma.indexerCursor.update({
+      where: { contract: cursor.contract },
+      data: { headBlock: cursor.headBlock },
+    });
+  });
+
+  it('answers 200 "ok" when the last indexed block is recent and the poller is writing', async () => {
+    // Move the cursor's chain time to now: the same data, freshly indexed.
+    const cursor = await prisma.indexerCursor.findFirstOrThrow();
+    await prisma.indexerCursor.update({
+      where: { contract: cursor.contract },
+      data: { lastIndexedAt: new Date(), updatedAt: new Date() },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { 'x-forwarded-for': '203.0.113.24' },
+    });
     expect(response.statusCode).toBe(200);
     expect(response.json().status).toBe('ok');
   });

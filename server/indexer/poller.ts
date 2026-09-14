@@ -40,6 +40,7 @@ import {
   loadPriceState,
   loadV3PoolAddresses,
   readCursor,
+  touchCursor,
   writeCursor,
   writeLiquidity,
   writePools,
@@ -240,7 +241,9 @@ export class Poller {
     const to = min(head.number, from + this.blockRange - 1n);
 
     if (to < from) {
-      // Head has not moved past what we already have.
+      // Head has not moved past what we already have. Still alive, though,
+      // and the health check judges liveness by the cursor's write time.
+      await touchCursor(POOL_MANAGER_CURSOR);
       return {
         fromBlock: from,
         toBlock: cursor ?? from,

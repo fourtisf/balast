@@ -134,8 +134,12 @@ else
           else console.log(`  caught up, and no ETH/USDG pool among ${h.pools} pool(s) — run: npm run tokens:indexed`);
           console.log("  no USD anchor yet, so the site shows the waiting panel with this progress. Not an error.");
           break;
+        case "syncing":
+          console.log(`  first sync running${pct}: block ${i.lastBlock} of ${i.headBlock}, ${h.pools} pool(s). The site is up and shows the lag. Not an error.`); break;
+        case "behind":
+          console.log(`  indexing, catching up${lag}.`); break;
         case "stalled":
-          console.log(`  STALLED${lag} — runuser -u balast -- pm2 logs balast-indexer --lines 30 --nostream`); break;
+          console.log(`  STALLED — nothing written for ${Math.round(i.idleSeconds || 0)}s. runuser -u balast -- pm2 logs balast-indexer --lines 30 --nostream`); break;
         case "never-indexed":
           console.log("  the indexer has never written a block — runuser -u balast -- pm2 logs balast-indexer --lines 30 --nostream"); break;
         case "misconfigured":
