@@ -50,16 +50,16 @@ describe('refreshLogos', () => {
     expect(await refreshLogos({ url: null, chainId: 4663 })).toBe(0);
   });
 
-  it('ignores a configured URL that is not http(s)', async () => {
+  it('refuses a scheme that is neither http(s) nor a file', async () => {
     const messages: string[] = [];
-    // eslint-disable-next-line no-script-url
     const count = await refreshLogos({
+      // eslint-disable-next-line no-script-url
       url: 'javascript:alert(1)',
       chainId: 4663,
       log: (m) => messages.push(m),
     });
     expect(count).toBe(0);
-    expect(messages.join(' ')).toMatch(/not an http/i);
+    expect(messages.join(' ')).toMatch(/must be an http\(s\) URL or a path/i);
   });
 
   it('fails silently when the list is unreachable', async () => {
@@ -68,12 +68,33 @@ describe('refreshLogos', () => {
     // that would take the indexer pass down with it.
     const messages: string[] = [];
     const count = await refreshLogos({
-      // Reserved for documentation examples, so it cannot resolve to anything.
+      // Reserved by RFC 5737 for documentation, so it resolves to nothing.
       url: 'https://255.255.255.255/token-list.json',
       chainId: 4663,
       log: (m) => messages.push(m),
     });
     expect(count).toBe(0);
-    expect(messages.join(' ')).toMatch(/unreachable|responded/i);
+    expect(messages.join(' ')).toMatch(/unavailable/i);
+  });
+
+  it('fails silently when a local list is missing', async () => {
+    // The same contract for a path as for a URL. A token list nobody has
+    // written yet must not stop the indexer from indexing.
+    const messages: string[] = [];
+    const count = await refreshLogos({
+      url: 'config/does-not-exist.json',
+      chainId: 4663,
+      log: (m) => messages.push(m),
+    });
+    expect(count).toBe(0);
+    expect(messages.join(' ')).toMatch(/unavailable/i);
+  });
+
+  it('reads the committed list without a network call', async () => {
+    // config/tokens.json is where real logos go until this chain has a public
+    // list. It ships empty, so this asserts it parses and yields nothing
+    // rather than throwing — the state every fresh deployment starts in.
+    const count = await refreshLogos({ url: 'config/tokens.json', chainId: 4663 });
+    expect(count).toBe(0);
   });
 });

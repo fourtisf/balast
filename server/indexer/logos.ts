@@ -17,8 +17,17 @@
  *
  * The list is opt-in via TOKEN_LIST_URL, because there is no canonical list
  * for this chain yet and guessing at one would be worse than no logos.
+ *
+ * It accepts a LOCAL PATH as well as a URL, which matters more than it looks.
+ * Robinhood Chain has no public token list, so waiting for one means no token
+ * ever gets a real logo. A file in the repository — `config/tokens.json` —
+ * lets whoever knows the tokens supply logos for the ones that matter today,
+ * in the same Uniswap token-list shape a public list would use, so switching
+ * to one later is a one-line change.
  */
 
+import { readFile } from 'node:fs/promises';
+import { isAbsolute, resolve } from 'node:path';
 import { prisma } from '../db';
 
 /** Uniswap's token-list schema, reduced to the one field we are allowed. */
@@ -51,6 +60,26 @@ export function isSafeLogoUrl(url: unknown): url is string {
   }
 }
 
+function isHttp(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+async function fetchList(url: string): Promise<TokenList> {
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    headers: { accept: 'application/json' },
+  });
+  if (!response.ok) throw new Error(`responded ${response.status}`);
+  return (await response.json()) as TokenList;
+}
+
+/** A list on disk, relative to the app root unless given absolutely. */
+async function readList(path: string): Promise<TokenList> {
+  const clean = path.replace(/^file:\/\//, '');
+  const full = isAbsolute(clean) ? clean : resolve(process.cwd(), clean);
+  return JSON.parse(await readFile(full, 'utf8')) as TokenList;
+}
+
 /**
  * Pull the list and record a logo for each token we already know about.
  *
@@ -65,25 +94,19 @@ export async function refreshLogos(
   const url = options.url ?? process.env.TOKEN_LIST_URL ?? null;
   const log = options.log ?? (() => {});
   if (!url) return 0;
-  if (!isSafeLogoUrl(url)) {
-    log(`TOKEN_LIST_URL is not an http(s) URL, ignoring it: ${url}`);
+  // A URL has to be http(s); a path is taken as a path. Anything else — a
+  // `javascript:` or `data:` URI — is neither, and is refused.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url) && !isHttp(url) && !url.startsWith('file://')) {
+    log(`TOKEN_LIST_URL must be an http(s) URL or a path, ignoring it: ${url}`);
     return 0;
   }
 
   let list: TokenList;
   try {
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      headers: { accept: 'application/json' },
-    });
-    if (!response.ok) {
-      log(`token list responded ${response.status}; keeping derived colours`);
-      return 0;
-    }
-    list = (await response.json()) as TokenList;
+    list = isHttp(url) ? await fetchList(url) : await readList(url);
   } catch (error) {
     // Silent and total: a logo is decoration and the site works without it.
-    log(`token list unreachable (${(error as Error).message}); keeping derived colours`);
+    log(`token list unavailable (${(error as Error).message}); keeping derived marks`);
     return 0;
   }
 
@@ -99,16 +122,21 @@ export async function refreshLogos(
   }
   if (wanted.size === 0) return 0;
 
+  // Tokens we know, whose recorded logo differs from the list's. Not just
+  // the ones with none: a list is edited, and a corrected logo has to reach
+  // the site without someone truncating a table to make it happen.
   const known = await prisma.token.findMany({
-    where: { address: { in: [...wanted.keys()] }, logoUrl: null },
-    select: { address: true },
+    where: { address: { in: [...wanted.keys()] } },
+    select: { address: true, logoUrl: true },
   });
 
   let updated = 0;
   for (const token of known) {
+    const next = wanted.get(token.address.toLowerCase());
+    if (!next || token.logoUrl === next) continue;
     await prisma.token.update({
       where: { address: token.address },
-      data: { logoUrl: wanted.get(token.address.toLowerCase()) },
+      data: { logoUrl: next },
     });
     updated++;
   }

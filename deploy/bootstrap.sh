@@ -113,11 +113,16 @@ echo "==> env"
 # database password or wipe the USDG address someone looked up by hand.
 if [[ ! -f "$APP_DIR/.env" ]]; then
   if [[ -z "$DB_PASS" ]]; then
-    echo "!! $APP_DIR/.env is missing but the $DB_USER role already exists, so"
-    echo "   its password is not known here. Reset it with:"
-    echo "     sudo -u postgres psql -c \"ALTER ROLE $DB_USER PASSWORD '...'\""
-    echo "   then write $APP_DIR/.env yourself from .env.example."
-    exit 1
+    # The role exists from an earlier run but .env does not, so nothing knows
+    # the password any more. Rotate it and write a fresh file.
+    #
+    # This used to exit with "reset it yourself", which is a dead end: the one
+    # command meant to repair the box refused to repair the most likely way it
+    # breaks. Rotating is safe precisely BECAUSE the old password is lost —
+    # nothing can still be using it.
+    echo "   .env is missing and the $DB_USER role already exists — rotating its password"
+    DB_PASS="$(openssl rand -hex 24)"
+    runuser -u postgres -- psql -qc "ALTER ROLE $DB_USER PASSWORD '$DB_PASS'"
   fi
   cat > "$APP_DIR/.env" <<ENVEOF
 DATA_SOURCE=live

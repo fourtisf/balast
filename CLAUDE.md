@@ -840,3 +840,66 @@ loader has run. The suites truncate every table, and a developer with a real
 `DATABASE_URL` in their `.env` must never have it win. The loader's
 non-overwriting rule is what makes that safe today; the assertion is what
 keeps it safe if the rule ever changes.
+
+---
+
+## 17. Deploy faults, and every token having a mark
+
+Two deploy faults worth recording because of their shape, and the answer to
+"every token must have a logo".
+
+### A diagnostic that invented a failure
+
+`doctor.sh` parsed `pm2 jlist` with grep, matching `"name":"x","pm2_env":{`.
+PM2 puts `namespace`, `version`, `mode`, `pm_id` and `monit` between those two
+keys, so the pattern never matched and the doctor reported **every process as
+not running while the site was up and serving**. A tool that invents a failure
+is worse than one that misses a real one: it sends you looking in the wrong
+place. It parses the JSON with a JSON parser now.
+
+### A repair tool that refused to repair
+
+The doctor's `next` line pointed at `bootstrap.sh` when `.env` was missing.
+`bootstrap.sh` then exited with "reset the password yourself", because the
+database role already existed from an earlier run and the password was no
+longer known anywhere. The one command meant to fix the box refused to fix the
+most likely way it breaks.
+
+It rotates the role's password and writes a fresh `.env` now. Rotating is safe
+precisely BECAUSE the old password is lost — nothing can still be using it.
+
+### Every token has a mark; some have logos
+
+`lib/token-mark.ts` derives a badge from the token's own address: a
+fixed-weight disc whose hue is unique to that address, carrying the ticker's
+first two characters. Deterministic, so the server and the browser render the
+same thing and a token never looks like a different token after a reload.
+
+Saturation and lightness are fixed rather than derived. Deriving them
+eventually produces a near-black token invisible on a near-black page, or one
+close enough to the accent green that §5's colour rule stops meaning anything.
+
+The ink is chosen per hue, and that is not fussiness: **yellow at this
+lightness is far brighter than blue at the same lightness**, so no single ink
+stays legible across the wheel. Measured, a fixed dark ink bottoms out at
+1.72:1. Per-hue selection holds 4.26:1 across all 360 hues, and there is a
+test that re-derives that number rather than trusting this paragraph.
+
+That test caught a real bug in the first version: the ink luminances were
+hardcoded, and wrong — 0.0106 against a true 0.0044 — which flipped the ink
+choice on part of the wheel and quietly cost 0.3 of contrast. They are
+computed from the hex now. A constant that has to agree with another constant
+is a constant that will eventually disagree with it.
+
+**Real logos** still come only from a token list, per §4. The change that
+makes that usable: `TOKEN_LIST_URL` now accepts a local path, and
+`config/tokens.json` ships with the repository. Robinhood Chain has no public
+token list, so waiting for one meant no token would ever have a real logo;
+now whoever knows the tokens can add them today, in the same Uniswap
+token-list shape, and switching to a public list later is one line. Only
+`logoURI` is read — not price, not supply, and not decimals, which are an
+input to every price.
+
+A listed logo that changes now replaces the recorded one, rather than only
+filling a blank. A corrected logo should reach the site without anyone
+truncating a table to make it happen.

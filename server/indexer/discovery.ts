@@ -10,6 +10,7 @@
 import { Prisma } from '@prisma/client';
 import { getAddress } from 'viem';
 import { CONTRACTS } from '../../lib/chain';
+import { tokenMark } from '../../lib/token-mark';
 import { ERC20_ABI } from '../chain/abi';
 import { rpc } from '../chain/client';
 import { prisma } from '../db';
@@ -61,21 +62,17 @@ export function isStakeable(hooks: string | null): boolean {
 }
 
 /**
- * Deterministic brand colour for a token, so a row's badge is stable across
+ * Deterministic badge colour for a token, so a row's badge is stable across
  * reloads without needing a logo service in the critical path.
  *
- * §5 allows exactly one accent, and the badge is the one place a token's own
- * colour appears. The hue is derived from the address so it does not change
- * when the indexer restarts; saturation and lightness are fixed so nothing
- * can come out near the accent green or the negative red.
+ * Shares `lib/token-mark.ts` with the client rather than hashing separately:
+ * the saturation and lightness there were measured to keep the monogram
+ * legible on every hue, and a second implementation would drift off that
+ * guarantee without anything failing. It also means a token looks the same
+ * whether the colour came from the indexer or was derived in the browser.
  */
 export function brandColor(address: string): string {
-  let hash = 0;
-  for (let i = 2; i < address.length; i++) {
-    hash = (hash * 31 + address.charCodeAt(i)) | 0;
-  }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue} 42% 52%)`;
+  return tokenMark(address).bg;
 }
 
 export interface TokenFacts {

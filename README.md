@@ -191,6 +191,27 @@ These are product rules, not preferences (§1, §7). They live in
 - Token logos may come from an external list; numbers never may (§4). The
   logo fetcher reads `logoURI` and nothing else — not price, not supply, and
   not decimals, which are an input to every price and stay an on-chain read.
+- Every token has a **mark** whether or not it has a logo: a disc whose hue is
+  derived from its own address, carrying the ticker's first two characters.
+  Deterministic, so a token never looks like a different token after a reload,
+  and the ink is picked per hue because yellow at this lightness is far
+  brighter than blue at the same lightness. Measured at 4.26:1 across the
+  whole wheel, with a test that re-derives it.
+
+### Giving tokens real logos
+
+Robinhood Chain has no public token list, so `TOKEN_LIST_URL` accepts a local
+path and `config/tokens.json` ships with the repository:
+
+```json
+{ "tokens": [
+  { "chainId": 4663, "address": "0x...", "logoURI": "https://.../weth.png" }
+] }
+```
+
+Add entries, and the indexer picks them up on its next pass. A token that is
+not listed keeps its derived mark. Switching to a public list when one exists
+is one line in `.env`.
 
 ## Deploy
 

@@ -149,24 +149,51 @@ fi
 # ------------------------------------------------------------- processes ----
 head_ "processes"
 if command -v pm2 >/dev/null; then
-  JSON=$(as_app pm2 jlist)
-  for app in balast-web balast-api balast-indexer; do
-    LINE=$(printf '%s' "$JSON" | tr '}' '}\n' | grep -o "\"name\":\"$app\".*" | head -1)
-    STATUS=$(printf '%s' "$JSON" \
-      | grep -o "\"name\":\"$app\",\"pm2_env\":{[^}]*" | grep -o '"status":"[a-z]*"' \
-      | cut -d'"' -f4 | head -1)
-    RESTARTS=$(printf '%s' "$JSON" \
-      | grep -o "\"name\":\"$app\",\"pm2_env\":{[^}]*" | grep -o '"restart_time":[0-9]*' \
-      | cut -d: -f2 | head -1)
-    case "${STATUS:-missing}" in
-      online) ok "$app online (${RESTARTS:-0} restarts)" ;;
-      errored|stopped)
-        bad "$app is ${STATUS} after ${RESTARTS:-?} restart(s)"
-        first "runuser -u $APP_USER -- pm2 logs $app --lines 30 --nostream"
-        ;;
-      *) bad "$app is ${STATUS:-not running}"; first "bash $APP_DIR/deploy/deploy.sh" ;;
-    esac
-  done
+  # Parse pm2's JSON with a JSON parser.
+  #
+  # This was grep and cut over `pm2 jlist`, which is a nested document — the
+  # pattern stopped at the first closing brace of a nested object and found no
+  # status at all, so it reported every process as "not running" while the
+  # site was up and serving. A diagnostic that invents a failure is worse than
+  # one that misses a real one, because it sends you looking in the wrong place.
+  PM2_JSON=$(as_app pm2 jlist)
+  PM2_REPORT=$(printf '%s' "$PM2_JSON" | node -e '
+    let raw = "";
+    process.stdin.on("data", (d) => (raw += d));
+    process.stdin.on("end", () => {
+      let list = [];
+      try { list = JSON.parse(raw); } catch { process.stdout.write("PARSE_FAIL\n"); return; }
+      const by = new Map(list.map((p) => [p.name, p]));
+      for (const name of ["balast-web", "balast-api", "balast-indexer"]) {
+        const p = by.get(name);
+        if (!p) { console.log(`${name}\tmissing\t0`); continue; }
+        const env = p.pm2_env || {};
+        console.log(`${name}\t${env.status || "unknown"}\t${env.restart_time ?? 0}`);
+      }
+    });
+  ' 2>/dev/null)
+
+  if [[ -z "$PM2_REPORT" || "$PM2_REPORT" == "PARSE_FAIL" ]]; then
+    bad "could not read pm2's process list as $APP_USER"
+    first "runuser -u $APP_USER -- pm2 list"
+  else
+    while IFS=$'\t' read -r name status restarts; do
+      [[ -z "$name" ]] && continue
+      case "$status" in
+        online) ok "$name online (${restarts} restarts)" ;;
+        errored|stopped)
+          bad "$name is ${status} after ${restarts} restart(s)"
+          first "runuser -u $APP_USER -- pm2 logs $name --lines 30 --nostream"
+          ;;
+        missing)
+          bad "$name is not in pm2 at all"
+          first "bash $APP_DIR/deploy/deploy.sh"
+          ;;
+        *) bad "$name is ${status}"; first "runuser -u $APP_USER -- pm2 list" ;;
+      esac
+    done <<< "$PM2_REPORT"
+  fi
+
   systemctl is-enabled "pm2-$APP_USER" >/dev/null 2>&1 \
     && ok "pm2-$APP_USER enabled — survives a reboot" \
     || bad "pm2-$APP_USER NOT enabled — a reboot leaves nginx serving 502s"
