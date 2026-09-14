@@ -30,12 +30,17 @@ describe('tokenMark', () => {
     expect(hues.size).toBeGreaterThan(200);
   });
 
-  it('keeps saturation and lightness fixed on every mark', () => {
-    // Deriving them would eventually produce a token invisible on the page,
-    // or one close enough to the accent green that §5 stops meaning anything.
+  it('varies only the hue, and gives the ink the same hue as the disc', () => {
+    // Deriving saturation or lightness would eventually produce a mark that
+    // vanishes into the paper, or one close enough to the accent green that
+    // §5 stops meaning anything.
     for (let i = 0; i < 200; i++) {
       const mark = tokenMark(`0x${(i * 7919).toString(16).padStart(40, '0')}`);
-      expect(mark.bg).toMatch(/^hsl\(\d{1,3} 55% 55%\)$/);
+      const disc = /^hsl\((\d{1,3}) 60% 86%\)$/.exec(mark.bg);
+      const ink = /^hsl\((\d{1,3}) 45% 28%\)$/.exec(mark.ink);
+      expect(disc, mark.bg).not.toBeNull();
+      expect(ink, mark.ink).not.toBeNull();
+      expect(ink![1]).toBe(disc![1]);
     }
   });
 
@@ -44,45 +49,32 @@ describe('tokenMark', () => {
    *
    * The badge is aria-hidden and the ticker sits beside it as real text, so
    * the monogram is decorative — but an illegible badge is still a bad badge.
-   * This walks all 360 hues the hash can produce and checks the ink actually
-   * chosen clears the bar on each one. A fixed ink fails here: yellow at this
-   * lightness is far brighter than blue at the same lightness.
+   * This walks all 360 hues the hash can produce and checks the ink clears
+   * the bar on each one. Yellow is the hard case on a light disc: at the same
+   * lightness it is far brighter than blue, so it is where the pair is tuned.
    */
   it('keeps the monogram legible on every hue it can produce', () => {
-    const { SAT, LIGHT, INK_DARK, INK_LIGHT, luminance, hexLuminance, contrast } =
-      MARK_INTERNALS;
-    // From the hex, not from a written-down number: hardcoding these is what
-    // flipped the ink choice on part of the wheel the first time round.
-    const inkLum: Record<string, number> = {
-      [INK_DARK]: hexLuminance(INK_DARK),
-      [INK_LIGHT]: hexLuminance(INK_LIGHT),
-    };
+    const { DISC_SAT, DISC_LIGHT, INK_SAT, INK_LIGHT, luminance, contrast } = MARK_INTERNALS;
 
     let worst = Infinity;
     let worstHue = -1;
     for (let hue = 0; hue < 360; hue++) {
-      // Find an address that hashes to this hue, or skip it.
-      const mark = tokenMark(`0x${hue.toString(16).padStart(40, '0')}`);
-      const actualHue = Number(/^hsl\((\d+)/.exec(mark.bg)![1]);
-      const ratio = contrast(inkLum[mark.ink], luminance(actualHue, SAT, LIGHT));
+      const ratio = contrast(
+        luminance(hue, DISC_SAT, DISC_LIGHT),
+        luminance(hue, INK_SAT, INK_LIGHT),
+      );
       if (ratio < worst) {
         worst = ratio;
-        worstHue = actualHue;
+        worstHue = hue;
       }
     }
-    expect(worst).toBeGreaterThan(3);
-    // Measured at 4.26:1 across the whole wheel. Anything materially below
-    // that means the palette moved and the measurement needs redoing.
-    expect(worst).toBeGreaterThan(4.2);
-    expect(worstHue).toBeGreaterThanOrEqual(0);
-  });
-
-  it('uses both inks — a single one cannot cover the wheel', () => {
-    const inks = new Set<string>();
-    for (let i = 0; i < 500; i++) {
-      inks.add(tokenMark(`0x${(i * 31).toString(16).padStart(40, '0')}`).ink);
-    }
-    expect(inks.size).toBe(2);
+    // WCAG AA for body text, on every hue, not on average.
+    expect(worst).toBeGreaterThan(4.5);
+    // Measured at 5.06:1 across the whole wheel, worst at hue 60. Anything
+    // materially below that means the palette moved and the measurement
+    // needs redoing.
+    expect(worst).toBeGreaterThan(5);
+    expect(worstHue).toBe(60);
   });
 });
 

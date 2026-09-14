@@ -50,14 +50,14 @@ test.describe('shell', () => {
     });
   }
 
-  test('the rail collapses to icons below 1180px', async ({ page }) => {
-    await page.goto('/pools');
-    await page.setViewportSize({ width: 1400, height: 900 });
-    await expect(page.locator('.rail a', { hasText: 'Pools' }).first()).toBeVisible();
-    await page.setViewportSize({ width: 900, height: 900 });
-    const railWidth = await page.evaluate(
-      () => document.querySelector('.rail')!.getBoundingClientRect().width,
-    );
-    expect(railWidth).toBeLessThanOrEqual(64);
+  test('the navigation marks the current page and stays reachable on a phone', async ({ page }) => {
+    await page.goto('/stakes');
+    await expect(page.locator('.nav-links a[aria-current="page"]')).toHaveText('Stakes');
+    // Below 900px the links take their own row and scroll inside it; every
+    // page is still one tap away and the page itself never scrolls sideways.
+    await page.setViewportSize({ width: 360, height: 800 });
+    await page.locator('.nav-links a', { hasText: 'Portfolio' }).click();
+    await expect(page).toHaveURL(/\/portfolio$/);
+    await expect(page.locator('.nav-links a[aria-current="page"]')).toHaveText('Portfolio');
   });
 });

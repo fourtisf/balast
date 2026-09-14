@@ -5,7 +5,7 @@ test.describe('live boards', () => {
   test('values update in place and flash green or red', async ({ page }) => {
     await page.goto('/pools', { waitUntil: 'networkidle' });
 
-    const before = await page.locator('#main table tbody td.num').allTextContents();
+    const before = await page.locator('#main .lb-row .num').allTextContents();
     const seen = await page.evaluate(
       () =>
         new Promise<string[]>((resolve) => {
@@ -28,7 +28,7 @@ test.describe('live boards', () => {
           }, 12_000);
         }),
     );
-    const after = await page.locator('#main table tbody td.num').allTextContents();
+    const after = await page.locator('#main .lb-row .num').allTextContents();
 
     expect(after).not.toEqual(before);
     expect(seen.length, 'no value flashed in 12s').toBeGreaterThan(0);
@@ -37,7 +37,7 @@ test.describe('live boards', () => {
   test('rows animate to a new rank instead of jumping', async ({ page }) => {
     await page.goto('/pools', { waitUntil: 'networkidle' });
 
-    // Changing the quote filter reorders the rows deterministically; a tick
+    // Switching the ranking facet reorders the rows deterministically; a tick
     // does it too, but only when ranks happen to cross.
     const transforms = await page.evaluate(
       () =>
@@ -46,7 +46,7 @@ test.describe('live boards', () => {
           const observer = new MutationObserver((mutations) => {
             for (const m of mutations) {
               const el = m.target as HTMLElement;
-              if (el.tagName === 'TR' && el.style.transform.includes('translateY')) count++;
+              if (el.classList?.contains('lb-row') && el.style.transform.includes('translateY')) count++;
             }
           });
           observer.observe(document.querySelector('#main')!, {
@@ -67,16 +67,17 @@ test.describe('live boards', () => {
     expect(transforms, 'rows jumped instead of animating').toBeGreaterThan(0);
   });
 
-  test('row one carries the leader highlight on both boards', async ({ page }) => {
+  test('row one carries the leader highlight', async ({ page }) => {
     await page.goto('/pools', { waitUntil: 'networkidle' });
-    await expect(page.locator('#main tbody tr.lead')).toHaveCount(2);
+    await expect(page.locator('#main .lb-row.lead')).toHaveCount(1);
+    await expect(page.locator('#main .lb-row').first()).toHaveClass(/lead/);
   });
 
   test('Stake appears on row hover and opens the drawer without navigating', async ({ page }) => {
     await page.goto('/pools', { waitUntil: 'networkidle' });
-    const button = page.locator('#main tbody tr .stake-btn').first();
+    const button = page.locator('#main .lb-row .stake-btn').first();
     await expect(button).toHaveCSS('opacity', '0');
-    await page.locator('#main tbody tr').first().hover();
+    await page.locator('#main .lb-row').first().hover();
     await expect(button).toHaveCSS('opacity', '1');
     await button.click();
     await expect(page.locator('.drawer')).toHaveClass(/on/);

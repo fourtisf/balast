@@ -73,9 +73,9 @@ test.describe('search', () => {
   test('filters the boards and shows an empty state', async ({ page }) => {
     await page.goto('/pools', { waitUntil: 'networkidle' });
     await page.fill('#q', 'pons');
-    await expect(page.locator('#main tbody tr')).toHaveCount(2);
+    await expect(page.locator('#main .lb-row')).toHaveCount(1);
     await page.fill('#q', 'zzzz');
-    await expect(page.locator('.empty')).toHaveCount(2);
+    await expect(page.locator('.empty')).toHaveCount(1);
   });
 
   test('filters the stakes page too, as its placeholder promises', async ({ page }) => {
@@ -90,6 +90,6 @@ test.describe('search', () => {
     await page.goto('/router', { waitUntil: 'networkidle' });
     await page.fill('#q', 'mooncat');
     await expect(page).toHaveURL(/\/pools/);
-    await expect(page.locator('#main tbody tr .tok-btn').first()).toContainText('MOONCAT');
+    await expect(page.locator('#main .lb-row .tok-btn').first()).toContainText('MOONCAT');
   });
 });

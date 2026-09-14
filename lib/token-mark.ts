@@ -33,33 +33,33 @@ function hash(input: string): number {
 }
 
 /**
- * Saturation and lightness are fixed, not derived.
+ * Only the hue varies. Saturation and lightness are fixed, not derived.
  *
- * Deriving them would eventually produce a near-black token invisible on a
- * near-black page, or one close enough to the accent green that §5's colour
- * rule stops meaning anything. Fixing them means only the hue varies, every
- * mark carries the same weight in a listing, and the ink's contrast is
- * knowable in advance rather than hoped for.
+ * Deriving them would eventually produce a mark that vanishes into the paper,
+ * or one close enough to the accent green that §5's colour rule stops
+ * meaning anything. Fixing them means every mark carries the same weight in
+ * a listing and the ink's contrast is knowable in advance.
  *
- * 55/55 was measured, not chosen by eye: across all 360 hues it is the
- * saturation and lightness that keeps the monogram at 4.26:1 or better while
- * still matching the weight of the prototype's own badges.
+ * The disc is a pastel tint — light enough to sit on paper without shouting —
+ * and the ink is the same hue, dark, so the monogram reads as one object
+ * rather than black text stamped on a coloured circle. The numbers were
+ * measured, not chosen by eye: across all 360 hues this pair keeps the
+ * monogram at 5.06:1 or better, with yellow (hue 60) the hardest case, as it
+ * is for any light disc.
  */
-const SAT = 55;
-const LIGHT = 55;
-
-/** The two inks. Whichever contrasts better with a given hue is used. */
-const INK_DARK = '#0A0F0D';
-const INK_LIGHT = '#F4F9F6';
+const DISC_SAT = 60;
+const DISC_LIGHT = 86;
+const INK_SAT = 45;
+const INK_LIGHT = 28;
 
 export interface TokenMark {
   /** Disc fill. */
   bg: string;
-  /** Monogram colour, picked per hue so it is legible on that fill. */
+  /** Monogram colour: the disc's own hue, dark enough to read on it. */
   ink: string;
 }
 
-/** sRGB relative luminance of an HSL colour, for the contrast decision. */
+/** sRGB relative luminance of an HSL colour, for the contrast test. */
 function luminance(h: number, s: number, l: number): number {
   const sat = s / 100;
   const light = l / 100;
@@ -74,39 +74,16 @@ function luminance(h: number, s: number, l: number): number {
   return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
 }
 
-/** sRGB relative luminance of a #rrggbb colour. */
-function hexLuminance(hex: string): number {
-  const linear = [1, 3, 5]
-    .map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
-    .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
-  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
-}
-
-/**
- * Computed, not written down.
- *
- * These were hardcoded once, and the numbers were wrong — 0.0106 against a
- * true 0.0044 — which flipped the ink choice on part of the wheel and quietly
- * cost about 0.3 of contrast. A constant that has to agree with another
- * constant is a constant that will eventually disagree with it.
- */
-const INK_DARK_LUM = hexLuminance(INK_DARK);
-const INK_LIGHT_LUM = hexLuminance(INK_LIGHT);
-
 function contrast(a: number, b: number): number {
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
 export function tokenMark(address: string): TokenMark {
   const hue = hash(address.toLowerCase()) % 360;
-  const bgLum = luminance(hue, SAT, LIGHT);
-  // Yellow at this lightness is far brighter than blue at the same lightness,
-  // so no single ink is readable across the wheel. Pick per hue.
-  const ink =
-    contrast(INK_DARK_LUM, bgLum) >= contrast(INK_LIGHT_LUM, bgLum)
-      ? INK_DARK
-      : INK_LIGHT;
-  return { bg: `hsl(${hue} ${SAT}% ${LIGHT}%)`, ink };
+  return {
+    bg: `hsl(${hue} ${DISC_SAT}% ${DISC_LIGHT}%)`,
+    ink: `hsl(${hue} ${INK_SAT}% ${INK_LIGHT}%)`,
+  };
 }
 
 /**
@@ -122,11 +99,10 @@ export function monogram(symbol: string): string {
 
 /** Exported for the contrast test, which re-derives the guarantee. */
 export const MARK_INTERNALS = {
-  SAT,
-  LIGHT,
-  INK_DARK,
+  DISC_SAT,
+  DISC_LIGHT,
+  INK_SAT,
   INK_LIGHT,
   luminance,
-  hexLuminance,
   contrast,
 };

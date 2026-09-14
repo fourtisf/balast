@@ -1420,3 +1420,92 @@ flat sparklines are what a first sync looks like, and real logos are what
 change the feel most. See the logo-sources note above for where those come
 from and what is still unverified.
 
+
+---
+
+## 19. The Journal: a light design system, chosen over §5
+
+Added when ALFA looked at the first real board and asked for something that
+reads as premium. §5's dark terminal was the approved prototype; ALFA chose
+a different direction from a set of sketches (`design/directions/`, artboard
+**B3 · Journal**), and this section records what that changed and what it
+deliberately did not.
+
+### What moved
+
+**Paper, not a terminal.** Warm off-white page, white cards, ink-dark text,
+one green. The tokens in `app/globals.css` are the whole palette; the names
+§5 introduced (`--bg`, `--panel`, `--fg`, `--ac`, `--red`, and so on) are
+kept so that no component changed a variable name, only its value. Every
+foreground colour was measured against the paper rather than picked by eye:
+`--fg-3`, the quietest text that carries a label, is 4.4:1; the accent is
+4.3:1 on paper and 4.8:1 on white; `--fg-4` is decorative only.
+
+**Three typefaces, each with one job.** Instrument Serif for headlines and
+the rank numerals, DM Sans for everything read, IBM Plex Mono for everything
+counted. The `.num` class now sets the mono face as well as tabular figures,
+so a number is a number wherever it appears. §5's "JetBrains Mono
+throughout" is the one rule of §5 this replaces outright.
+
+**Navigation across the top.** The fixed sidebar and the 64px icon rail are
+gone; `components/shell/TopNav.tsx` holds the brand, the five pages, search,
+the freshness chip and the wallet. Below 900px it takes two rows, stops
+being sticky, and the links row scrolls inside itself — the page never
+scrolls sideways, which the shell test still asserts at 360px.
+
+**A masthead on every page.** `components/shell/Masthead.tsx`: eyebrow,
+serif headline, a line of copy, and the four global figures as a labelled
+facts column on the right — Positions, Value locked, Paid to LPs all time,
+ETH — over one heavy rule. §5 put those four figures in the top bar as
+unlabelled pills; here they have room for their names. On `/pools` the
+headline *is* the day's numbers: how many markets are listed and what they
+paid in fees over the last 24 hours, both summed from the rows beneath it
+(§12), and the dateline is chain time — now less the indexer's lag — because
+a dateline is a claim about when (§7).
+
+**One leaderboard, two rankings.** The prototype's Trending and Established
+boards are one list with a facet: *By volume* ranks everything, *By fee
+yield* ranks only pools with seven days of history (§10's assumption, kept).
+The rows are an ordered list rather than a table — a leaderboard is exactly
+what `<ol>` means — with a large serif rank, a 40px mark, the symbol over a
+line of FDV, depth and name, the day's fees, a 24h pill and a wide fee
+sparkline. The FLIP reorder, the value flash, the leader highlight and the
+Stake button on hover are unchanged in behaviour and re-asserted by the
+same e2e tests against the new elements. The featured card and the two
+mini cards are gone; their figures are in the masthead.
+
+**The column priorities changed with the columns.** §5's drop order (Vol
+24h and Depth at 1780px, Age at 1560px) described a nine-column table.
+The row now loses the sparkline below 900px, tightens below 640px, and
+loses the rank numeral below 420px — the order says the rank. Depth moved
+into the row's second line rather than out of the row.
+
+**Token marks on paper.** `lib/token-mark.ts` draws a pastel disc with a
+dark ink of the same hue, and the test walks all 360 hues: 5.06:1 at worst.
+The badge no longer uses the provider's `logoColor` for a monogram — that
+colour is a stored value derived by the previous palette, so a live row can
+carry a disc the current ink was never measured against. It stays as the
+backdrop under a real logo, where it does no harm.
+
+### What did not move
+
+The colour rule. Green still means brand, a positive number or an active
+control, and red still means a negative number and nothing else; the pills,
+segmented controls and the bin chart were rebuilt inside that rule. Every
+honest-numbers rule in §7, with their tests. The `DataProvider` boundary —
+no component reads data any differently. The waiting page, the drawer and
+its focus trap, `prefers-reduced-motion`, and no horizontal overflow at
+360px.
+
+### Open, for ALFA
+
+- **The default ranking is by volume**, as the chosen artboard shows. §1
+  says every ranking defaults to fee yield. On the live chain the fee-yield
+  facet is empty until a listed pool has seven days of fees, so a fee-yield
+  default would open on an empty board for the first week; after that it
+  is one click away. If §1's default is what is wanted, it is one line.
+- **The favicon and the OG card** still carry the dark mark on black. They
+  are brand assets, not the page, and were left alone until the mark itself
+  is settled (§13).
+- The §12 questions — the simulator's six-hours-per-tick clock and
+  `/positions`'s *Est. fee yield* — and the §14 inputs remain open.

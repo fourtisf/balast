@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 test.describe('keyboard and motion', () => {
   test('the drawer traps focus, closes on Escape and restores focus', async ({ page }) => {
     await page.goto('/pools', { waitUntil: 'networkidle' });
-    const opener = page.locator('#main tbody tr .stake-btn').first();
+    const opener = page.locator('#main .lb-row .stake-btn').first();
     await opener.click();
 
     const drawer = page.locator('.drawer');
@@ -56,11 +56,11 @@ test.describe('keyboard and motion', () => {
   });
 
   test('every pool row is reachable by keyboard, including on a phone', async ({ page }) => {
-    // The Stake button sits in a column that is hidden below 640px, so the
+    // The Stake button sits in a column that is hidden below 900px, so the
     // token cell has to be the keyboard path.
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto('/pools', { waitUntil: 'networkidle' });
-    const tokenButton = page.locator('#main tbody tr .tok-btn').first();
+    const tokenButton = page.locator('#main .lb-row .tok-btn').first();
     await tokenButton.focus();
     await page.keyboard.press('Enter');
     await expect(page.locator('.drawer')).toHaveClass(/on/);
@@ -78,7 +78,7 @@ test.describe('keyboard and motion', () => {
     test('disables the flash and the FLIP, not the data updates', async ({ page }) => {
       await page.emulateMedia({ reducedMotion: 'reduce' });
       await page.goto('/pools', { waitUntil: 'networkidle' });
-      const board = page.locator('#main table tbody').first();
+      const board = page.locator('#main .lb-rows').first();
       const before = await board.innerText();
 
       const observed = await page.evaluate(
@@ -89,7 +89,7 @@ test.describe('keyboard and motion', () => {
               for (const m of mutations) {
                 const el = m.target as HTMLElement;
                 if (m.attributeName === 'class' && (el.classList?.contains('fu') || el.classList?.contains('fd'))) out.flash++;
-                if (m.attributeName === 'style' && el.tagName === 'TR' && el.style.transform.includes('translateY')) out.transforms++;
+                if (m.attributeName === 'style' && el.classList?.contains('lb-row') && el.style.transform.includes('translateY')) out.transforms++;
               }
             });
             observer.observe(document.querySelector('#main')!, {

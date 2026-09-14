@@ -1,35 +1,25 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Featured, MiniCards } from '@/components/pools/Featured';
+import { Leaderboard } from '@/components/pools/Leaderboard';
+import { LedgerDate, LedgerHeadline } from '@/components/pools/Ledger';
 import { LivePayouts } from '@/components/pools/LivePayouts';
-import { PoolBoard } from '@/components/pools/PoolBoard';
+import { Masthead } from '@/components/shell/Masthead';
 
 export const metadata: Metadata = { title: 'Pools — Balast' };
 
 export default function PoolsPage() {
   return (
     <section>
-      <h1 className="sr-only">Pools</h1>
+      <Masthead eyebrow={<LedgerDate />} title={<LedgerHeadline />} />
 
-      <div className="hero">
-        <Featured />
-        <MiniCards />
-      </div>
+      <Leaderboard />
 
-      <div className="boards">
-        <PoolBoard variant="trending" title="Trending" boardId="A" />
-        <PoolBoard variant="established" title="Established" boardId="B" />
-      </div>
-
-      <div className="grid g2" style={{ marginTop: 12 }}>
+      <div className="grid g2">
         <LivePayouts />
-        <div
-          className="card panel"
-          style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 14 }}
-        >
+        <div className="card panel cta">
           <div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-.01em', margin: '0 0 8px' }}>
-              Own a share of the <em style={{ fontStyle: 'normal', color: 'var(--ac)' }}>depth</em>.
+            <h2>
+              Own a share of the <em>depth</em>.
             </h2>
             <p className="lede">
               Deposit into any token on Robinhood Chain and collect swap fees in WETH, streamed to

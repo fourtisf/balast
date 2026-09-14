@@ -1,27 +1,35 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter, JetBrains_Mono } from 'next/font/google';
+import { DM_Sans, IBM_Plex_Mono, Instrument_Serif } from 'next/font/google';
 import { MarketProvider } from '@/components/providers/MarketProvider';
 import { UiProvider } from '@/components/providers/UiProvider';
 import { Footer } from '@/components/shell/Footer';
-import { Sidebar } from '@/components/shell/Sidebar';
 import { StakeDrawer } from '@/components/shell/StakeDrawer';
-import { TopBar } from '@/components/shell/TopBar';
+import { TopNav } from '@/components/shell/TopNav';
 import { Toast } from '@/components/ui/Toast';
 import { SITE_URL } from '@/lib/site';
 import './globals.css';
 
-const mono = JetBrains_Mono({
+// Three faces, each with one job (§19): the serif for headlines, the sans
+// for everything read, the mono for everything counted.
+const serif = Instrument_Serif({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-jetbrains-mono',
+  weight: '400',
+  style: ['normal', 'italic'],
+  variable: '--font-instrument-serif',
   display: 'swap',
 });
 
-// Inter is the fallback stack only (§5).
-const sans = Inter({
+const sans = DM_Sans({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
-  variable: '--font-inter',
+  variable: '--font-dm-sans',
+  display: 'swap',
+});
+
+const mono = IBM_Plex_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500', '600'],
+  variable: '--font-plex-mono',
   display: 'swap',
 });
 
@@ -44,22 +52,21 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#050807',
+  themeColor: '#F5F3EE',
   width: 'device-width',
   initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${mono.variable} ${sans.variable}`}>
+    <html lang="en" className={`${serif.variable} ${sans.variable} ${mono.variable}`}>
       <body>
         <UiProvider>
           <MarketProvider>
             <a className="skip" href="#main">
               Skip to content
             </a>
-            <Sidebar />
-            <TopBar />
+            <TopNav />
             <main className="wrap" id="main">
               {children}
               <Footer />

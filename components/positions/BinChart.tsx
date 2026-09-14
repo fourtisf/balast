@@ -55,7 +55,7 @@ export function BinChart({
               width={bw - 2}
               height={h}
               rx={2}
-              fill={tokenSide ? 'var(--ac)' : 'var(--ac-3)'}
+              fill={tokenSide ? 'var(--ac)' : 'var(--ac-soft)'}
             />
           );
         })}

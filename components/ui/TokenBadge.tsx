@@ -4,20 +4,23 @@ import type { TokenMeta } from '@/lib/data/types';
 /**
  * The circular token badge.
  *
- * A real logo when a token list gave us one — §4 allows logos and token
- * metadata from external sources, and numbers from none — and otherwise a
- * mark derived from the token's own address: a fixed-weight disc whose hue is
- * unique to that address, with the ticker's first two characters on it.
+ * A real logo when a token list or a logo source gave us one — §4 allows
+ * logos and token metadata from external sources, and numbers from none —
+ * and otherwise a mark derived from the token's own address: a pastel disc
+ * whose hue is unique to that address, with the ticker's first two
+ * characters on it in the same hue, dark.
  *
  * The derived mark is not a fallback in the apologetic sense. Most tokens on
  * a new chain are in no list and may never be, so this is what the badge will
  * usually be, and it is built to look deliberate: the hue comes from the
- * address so it never changes, and the ink is chosen per hue because yellow
- * at this lightness is far brighter than blue at the same lightness and no
- * single ink stays legible across the wheel.
+ * address so it never changes, and disc and ink are tuned as a pair so the
+ * monogram is legible on every hue.
  *
- * The colour is always painted underneath the image too, so a logo that fails
- * to load leaves something considered rather than a blank hole.
+ * That pairing is why the monogram never takes `logoColor`. The provider's
+ * colour was itself derived by an earlier palette and is stored, so a live
+ * row can carry a disc that the current ink was not measured against. It
+ * stays painted underneath a real logo — so an image that fails to load
+ * leaves something considered rather than a blank hole — and nowhere else.
  */
 export function TokenBadge({
   token,
@@ -26,11 +29,8 @@ export function TokenBadge({
   token: TokenMeta;
   className?: string;
 }) {
-  // `logoColor` is what the provider supplies — the simulator's seed palette,
-  // or a colour the indexer derived. The address-derived mark is the default
-  // when there is none, so a badge is never unstyled.
   const mark = tokenMark(token.address);
-  const background = token.logoColor || mark.bg;
+  const background = token.logoUrl ? token.logoColor || mark.bg : mark.bg;
 
   return (
     <span
@@ -44,8 +44,8 @@ export function TokenBadge({
       {token.logoUrl ? (
         /* next/image would proxy these through our own server and needs every
            remote host whitelisted in `images.remotePatterns` up front. The
-           host comes from a third-party token list, so it is not knowable in
-           advance — and there is nothing to optimise about a 22px badge. */
+           host comes from a third-party source, so it is not knowable in
+           advance — and there is nothing to optimise about a 40px badge. */
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={token.logoUrl}

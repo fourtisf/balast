@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { Masthead } from '@/components/shell/Masthead';
 import { DATA_SOURCE } from '@/lib/data';
 
 /**
@@ -22,21 +23,20 @@ export default function Error({
 
   return (
     <section>
-      <div className="head">
-        <div>
-          <div className="eyebrow" style={{ display: 'block', marginBottom: 12 }}>
-            No data
-          </div>
-          <h1>
+      <Masthead
+        eyebrow="No data"
+        title={
+          <>
             Nothing to show, so we&rsquo;re showing <em>nothing</em>.
-          </h1>
-          <p className="lede">
-            {notImplemented
-              ? `DATA_SOURCE is "${DATA_SOURCE}", which is not implemented yet. Set DATA_SOURCE=sim to run against the P0 simulator.`
-              : 'The data source failed. Rather than render stale or partial numbers as if they were live, this page shows you the failure.'}
-          </p>
-        </div>
-      </div>
+          </>
+        }
+        lede={
+          notImplemented
+            ? `DATA_SOURCE is "${DATA_SOURCE}", which is not implemented yet. Set DATA_SOURCE=sim to run against the P0 simulator.`
+            : 'The data source failed. Rather than render stale or partial numbers as if they were live, this page shows you the failure.'
+        }
+        facts={false}
+      />
       <div className="card panel">
         <div className="sect-h" style={{ display: 'block', marginBottom: 10 }}>
           What happened

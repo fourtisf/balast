@@ -245,7 +245,7 @@ export function ShapeBuilder() {
             Token side (above price)
           </span>
           <span>
-            <i style={{ background: 'var(--ac-3)' }} />
+            <i style={{ background: 'var(--ac-soft)' }} />
             WETH side
           </span>
           <span>

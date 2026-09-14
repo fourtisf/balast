@@ -24,7 +24,7 @@ test.describe('honest numbers', () => {
   test('a pool under 24h old shows an em dash, not a number', async ({ page }) => {
     await page.goto('/pools', { waitUntil: 'networkidle' });
     await page.fill('#q', 'TWINE');
-    await page.locator('#main tbody tr .stake-btn').first().click();
+    await page.locator('#main .lb-row .stake-btn').first().click();
     const drawer = page.locator('.drawer');
     await expect(drawer).toHaveClass(/on/);
     await expect(drawer.locator('.kv .v').first()).toHaveText('—');
@@ -36,7 +36,7 @@ test.describe('honest numbers', () => {
   test('a pool under 7d old is labelled est. and carries its age', async ({ page }) => {
     await page.goto('/pools', { waitUntil: 'networkidle' });
     await page.fill('#q', 'LAURA');
-    await page.locator('#main tbody tr .stake-btn').first().click();
+    await page.locator('#main .lb-row .stake-btn').first().click();
     const drawer = page.locator('.drawer');
     await expect(drawer.locator('.kv .est').first()).toHaveText('est. · 1d');
   });
@@ -44,7 +44,7 @@ test.describe('honest numbers', () => {
   test('discloses the protocol fee in the drawer before signing', async ({ page }) => {
     await page.goto('/pools', { waitUntil: 'networkidle' });
     await page.fill('#q', 'PONS');
-    await page.locator('#main tbody tr .stake-btn').first().click();
+    await page.locator('#main .lb-row .stake-btn').first().click();
     const drawer = page.locator('.drawer');
     await expect(drawer).toContainText('10% of fees earned');
     await expect(drawer).toContainText('Lockup');
@@ -55,7 +55,7 @@ test.describe('honest numbers', () => {
     await page.goto('/portfolio', { waitUntil: 'networkidle' });
     const status = page.locator('.pnl-row .down').first();
     await expect(status).toContainText('out of range — earning nothing');
-    await expect(status).toHaveCSS('color', 'rgb(229, 72, 77)');
+    await expect(status).toHaveCSS('color', 'rgb(200, 56, 61)');
   });
 
   test('shows price impact on holdings as a negative figure', async ({ page }) => {
@@ -71,16 +71,23 @@ test.describe('honest numbers', () => {
     await expect(page.locator('main')).toContainText('cannot be withdrawn');
   });
 
-  test('the top bar total agrees with the pools underneath it', async ({ page }) => {
+  test('the masthead total agrees with the rows underneath it', async ({ page }) => {
     await page.goto('/pools', { waitUntil: 'networkidle' });
-    const topBarTvl = await page.locator('.ts', { hasText: 'TVL' }).locator('.v').innerText();
-    const featuredLiquidity = await page
-      .locator('.feat .fg > div', { hasText: 'Liquidity' })
-      .locator('.v')
-      .innerText();
-    const top = Number(topBarTvl.replace(/[^0-9.]/g, ''));
-    const featured = Number(featuredLiquidity.replace(/[^0-9.]/g, ''));
-    // $15,112,440 in the bar, $15.11M on the card — the same number.
-    expect(Math.abs(top / 1e6 - featured)).toBeLessThan(0.02);
+    // Both figures are read in one pass, so a tick cannot land between them.
+    const { locked, depths } = await page.evaluate(() => ({
+      locked: document.querySelector('.facts [data-fact="tvl"]')!.textContent ?? '',
+      depths: Array.from(document.querySelectorAll('#main .lb-row .tok-id .s')).map(
+        (el) => el.textContent ?? '',
+      ),
+    }));
+    const scale: Record<string, number> = { '': 1, K: 1e3, M: 1e6, B: 1e9 };
+    const money = (m: RegExpExecArray | null) =>
+      m ? Number(m[1].replace(/,/g, '')) * scale[m[2] ?? ''] : NaN;
+    const top = money(/\$([\d.,]+)([KMB])?/.exec(locked));
+    const rows = depths.reduce((sum, t) => sum + money(/depth \$([\d.]+)([KMB])?/.exec(t)), 0);
+    expect(depths.length).toBeGreaterThan(1);
+    // $15.11M in the masthead, eleven rounded depths beneath it — the same
+    // number, to within the rounding of the row figures.
+    expect(Math.abs(rows - top) / top).toBeLessThan(0.01);
   });
 });
