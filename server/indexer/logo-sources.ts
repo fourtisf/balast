@@ -66,6 +66,23 @@ export type Fetch = (
  * disc. So a logo is recorded only once it has been seen to load: one GET,
  * status 2xx, and a content type that is an image when the server says one.
  */
+/**
+ * A mark this site serves itself, rather than an answer from a source.
+ *
+ * The load check (§19) exists to refuse somebody else's URL that does not
+ * work from a browser. Applying it to our own files asks the box to reach its
+ * own public hostname — out through DNS, the internet and nginx, and back —
+ * and when that fails it fails SILENTLY: `reconcileStockLogos` skipped the
+ * update and SPCX wore the issuer's feather for a fourth time, with nothing
+ * in any log. These files ship in `public/`; a test asserts they exist, which
+ * is the check that actually belongs to them.
+ */
+export function isOwnSiteUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  if (url.startsWith('/')) return true;
+  return url.startsWith(`${SITE_URL.replace(/\/+$/, '')}/`);
+}
+
 export async function imageLoads(fetch: Fetch, url: string): Promise<boolean> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -977,7 +994,13 @@ export async function reconcileStockLogos(options: {
     const own = OWN_STOCK_MARKS[stock.symbol.trim().toUpperCase()];
     if (own) {
       const url = `${site}${own}`;
-      if (url !== stock.logo_url && (await imageLoads(fetch, url))) {
+      if (url !== stock.logo_url) {
+        // Not gated on a fetch: see isOwnSiteUrl. A box that cannot reach its
+        // own hostname must not leave the issuer's feather on the row, and a
+        // file that is genuinely missing is a deploy fault worth a line.
+        if (!(await imageLoads(fetch, url))) {
+          log(`  ${stock.symbol}: this site's own mark does not load from here (${url}) — using it anyway`);
+        }
         await prisma.token.update({
           where: { address: stock.address },
           data: { logoUrl: url, logoCheckedAt: new Date() },
@@ -1084,8 +1107,9 @@ export async function lookupLogos(options: LookupOptions): Promise<number> {
     for (const source of sources) {
       const named = await source.lookup(token.address, { fetch, log });
       if (!named) continue;
-      // Seen to load, or not recorded: the next source gets its turn.
-      if (!(await imageLoads(fetch, named))) {
+      // Seen to load, or not recorded: the next source gets its turn. Our
+      // own files are exempt — see isOwnSiteUrl.
+      if (!isOwnSiteUrl(named) && !(await imageLoads(fetch, named))) {
         log(`  ${source.name} named an image for ${token.symbol} that does not load: ${named}`);
         continue;
       }

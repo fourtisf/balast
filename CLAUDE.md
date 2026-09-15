@@ -2956,3 +2956,46 @@ disabled, or it has not been given the board, or it has the board and has not
 refreshed yet, or every source answered and placed nothing (with the probe
 command to run). Three zeroes and a null error sent me looking at DexScreener,
 which was not involved.
+
+### SPCX's feather again, and a `$0` that was thirty-four cents
+
+The first board with every row quoted showed three things.
+
+**SPCX still wore the issuer's feather**, for a fourth time, and the reason
+was the fix from §20 checking the wrong thing. `reconcileStockLogos` adopts a
+mark from `OWN_STOCK_MARKS` only `if (url !== stock.logo_url && await
+imageLoads(fetch, url))` — and that URL is `https://balast.xyz/tokens/spcx.svg`,
+so the box had to fetch its own public hostname, out through DNS and nginx and
+back, to be allowed to use a file sitting on its own disk. When that failed
+the update was skipped with **no log line at all**.
+
+The load check (§19) exists to refuse somebody else's URL that does not work
+from a browser. It was never the right question for our own files.
+`isOwnSiteUrl` now marks them, and they are exempt from it in both places
+that applied it; a mark that will not fetch is logged and used anyway, because
+a box that cannot reach itself must not leave the issuer's mark on the row.
+
+The same assumption was in the browser path. The badge loads every recorded
+logo through `/api/logo/{address}`, which fetches the recorded URL from the
+box — so for an own mark the API fetched our own public hostname and handed
+the bytes back, and a box that cannot reach itself showed a monogram for a
+file in its own `public/`. An own mark is now served same-origin, as a path,
+with no proxy; ether's already was, as a special case, and this generalises it.
+
+`lib/own-marks.test.ts` is the check that does belong to these files: every
+path in `OWN_STOCK_MARKS`, and every own-site `logoURI` in
+`config/tokens.json`, names a file that exists. It runs before a deploy rather
+than after one.
+
+**`liquidity $0` next to `FDV $17.79M`.** `usd()` rounds to whole dollars, so
+an aggregator reporting thirty-four cents printed a hard zero — which reads as
+a measurement of an empty pool rather than as a source with effectively
+nothing for the pair, over a chain figure that was unknown anyway. A live
+liquidity under a dollar is not a figure: it is a dash, which is what §14 says
+unknown looks like. The chain's own figure is untouched by this.
+
+**A token no source has a logo for keeps its monogram**, which is BRODIE on
+that board and is working as designed (§19). Which sources were asked and what
+they answered is `npm run logos:probe -- <address>`; that is the only thing
+that can tell the difference between "nobody lists it" and "a source is
+refusing us".

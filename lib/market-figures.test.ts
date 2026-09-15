@@ -146,6 +146,16 @@ describe('liquidity', () => {
     expect(shownLiquidity(pool()).value).toBeNull();
     expect(shownLiquidity(pool({ market: quote({ poolLiquidityUsd: null, liquidityUsd: null }) })).value).toBeNull();
   });
+
+  it('will not print a sub-dollar figure as $0, which reads as a measurement', () => {
+    // The live board: `FDV $17.79M · liquidity $0`. usd() rounds to whole
+    // dollars, so thirty-four cents became a hard zero beside an FDV in the
+    // millions — a claim the source had not made (§14: unknown is a dash).
+    expect(shownLiquidity(pool({ market: quote({ poolLiquidityUsd: 0.34, liquidityUsd: 0.4 }) })).value).toBeNull();
+    expect(shownLiquidity(pool({ market: quote({ poolLiquidityUsd: 0, liquidityUsd: 0 }) })).value).toBeNull();
+    // A dollar is a figure.
+    expect(shownLiquidity(pool({ market: quote({ poolLiquidityUsd: 1 }) })).value).toBe(1);
+  });
 });
 
 describe('the buy/sell split', () => {

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { isEther } from '@/lib/chain';
-import { logoProxy } from '@/lib/site';
+import { SITE_URL, logoProxy } from '@/lib/site';
 import { monogram, tokenMark } from '@/lib/token-mark';
 import type { TokenMeta } from '@/lib/data/types';
 
@@ -39,6 +39,18 @@ const ETHER_LOGO = '/tokens/eth.svg';
  * mount as well as on its error event, because an image that failed before
  * React attached never fires the event.
  */
+/**
+ * The same-origin path for a logo this site serves, or null for anything
+ * else. A stored absolute URL on our own domain becomes a path so the browser
+ * never leaves the origin it is already on.
+ */
+function ownMarkPath(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (url.startsWith('/')) return url;
+  const site = SITE_URL.replace(/\/+$/, '');
+  return url.startsWith(`${site}/`) ? url.slice(site.length) : null;
+}
+
 export function TokenBadge({
   token,
   className = 'logo',
@@ -48,13 +60,20 @@ export function TokenBadge({
 }) {
   const mark = tokenMark(token.address);
   // A recorded logo is loaded through our own API (lib/site.ts, logoProxy),
-  // so what the page shows is exactly what the box could fetch. Ether's is
-  // this site's own file and needs no proxy.
-  const candidate = token.logoUrl
-    ? logoProxy(token.address)
-    : isEther(token.address)
-      ? ETHER_LOGO
-      : undefined;
+  // so what the page shows is exactly what the box could fetch.
+  //
+  // A mark this site serves itself is the exception, and not a cosmetic one:
+  // proxying it makes the API fetch our own public hostname from inside the
+  // box and hand the bytes back, so a box that cannot reach itself shows a
+  // monogram for a file sitting on its own disk. Same origin, served directly.
+  const own = ownMarkPath(token.logoUrl);
+  const candidate = own
+    ? own
+    : token.logoUrl
+      ? logoProxy(token.address)
+      : isEther(token.address)
+        ? ETHER_LOGO
+        : undefined;
   const [failed, setFailed] = useState<string | null>(null);
   const image = useRef<HTMLImageElement | null>(null);
 

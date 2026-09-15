@@ -108,14 +108,28 @@ export interface ShownLiquidity {
  * pool when it lists the pair, else the token's liquidity across its pools —
  * a different question, which `scope` names so the row can say so.
  */
+/**
+ * The floor under a live liquidity figure.
+ *
+ * `usd()` rounds to whole dollars, so an aggregator reporting thirty-four
+ * cents rendered as `liquidity $0` — which reads as a measurement ("this pool
+ * is empty") next to an FDV of $17.79M, when what it means is that the source
+ * has effectively nothing for the pair and the chain could not reconstruct it
+ * either. Under a dollar there is no figure worth printing, and §14's rule
+ * applies: unknown is a dash, never a zero.
+ */
+const LIVE_LIQUIDITY_FLOOR_USD = 1;
+
 export function shownLiquidity(pool: Pool): ShownLiquidity {
   if (pool.tvlUsd > 0) return { value: pool.tvlUsd, basis: 'chain', scope: 'pool' };
   const live = pool.market;
-  if (live?.poolLiquidityUsd !== null && live?.poolLiquidityUsd !== undefined && live.poolLiquidityUsd > 0) {
-    return { value: live.poolLiquidityUsd, basis: 'live', scope: 'pool' };
+  const usable = (n: number | null | undefined): n is number =>
+    n !== null && n !== undefined && n >= LIVE_LIQUIDITY_FLOOR_USD;
+  if (usable(live?.poolLiquidityUsd)) {
+    return { value: live!.poolLiquidityUsd as number, basis: 'live', scope: 'pool' };
   }
-  if (live?.liquidityUsd !== null && live?.liquidityUsd !== undefined && live.liquidityUsd > 0) {
-    return { value: live.liquidityUsd, basis: 'live', scope: 'token' };
+  if (usable(live?.liquidityUsd)) {
+    return { value: live!.liquidityUsd as number, basis: 'live', scope: 'token' };
   }
   return { value: null, basis: 'chain', scope: 'pool' };
 }
