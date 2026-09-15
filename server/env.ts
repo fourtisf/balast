@@ -65,6 +65,16 @@ export const env = {
    * refuses a range, so the number only has to be optimistic, not correct.
    */
   maxBlockRange: int('INDEXER_MAX_BLOCK_RANGE', 50_000),
+  /**
+   * Windows fetched at once per pass.
+   *
+   * Most of a pass's time does not scale with the window — the anchor
+   * query, the aggregate rebuild, the cursor write — so several windows a
+   * pass divide that cost by as many. The poller halves this itself on a
+   * rate limit or a timeout and climbs back after a stretch of clean
+   * passes, so it only has to be generous, not correct.
+   */
+  fetchConcurrency: Math.max(1, int('INDEXER_CONCURRENCY', 6)),
   /** Seconds between passes when already caught up to head. */
   pollIntervalMs: int('INDEXER_POLL_MS', 1_000),
 

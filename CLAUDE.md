@@ -2111,3 +2111,54 @@ GUH remains a monogram: no source answers for it. The Pons source is
 asked from this deploy on; failing that, the token's address and an
 image URL in `config/tokens.json` is the one honest way to give it one.
 
+
+### Several windows a pass
+
+With the floor fixed the box moved, and the first log said how fast:
+`window 250`, five to nine seconds a pass, 27–45 blocks a second. Of a
+seven-second pass the fetch was under two; the rest was the anchor query,
+the aggregate rebuild, the cursor write — cost that does not scale with
+the window at all. A 250-block window paid the whole of it for 250 blocks.
+
+So a pass fetches **several windows at once** now (`INDEXER_CONCURRENCY`,
+default 6): contiguous windows of the current width, one `eth_getLogs`
+each, sent together, and the fixed cost paid once for all of them. The
+log line says so — `window 1,500 = 6×250` — and blocks per second is the
+figure to read. The windows are settled independently: the ones that
+arrived ahead of the first refusal are ingested and the cursor moves to
+the end of them, so a refused burst costs the refused windows and not
+the pass. A later window that also arrived is fetched again next pass
+rather than ingested out of order; the cursor is one number and it never
+skips.
+
+A refusal now says which of two things it is. A 429 or a timeout with
+several windows in flight is the burst being too much: the concurrency
+halves and the window stays, because narrowing the window for a rate
+limit is learning the wrong lesson and keeping it. A rate limit with one
+window in flight changes nothing, and the main loop waits a beat before
+asking again. Anything else — "more than N results", "range too large" —
+is the width, and narrows it as before. The busy threshold that halves a
+dense window is judged per window, since the endpoint's cap is on one
+request rather than on the pass.
+
+And the ceiling is no longer only ever lowered. The 250 the box sat at
+was learned in a dense stretch of the chain — "more than N results" — and
+is far too low for the empty stretch after it, and a ceiling that can
+only come down would have held the sync at 250 blocks a window for the
+remaining fifty-eight million. After forty clean passes the poller asks
+for more: first the concurrency back toward its configured value, then
+the window's ceiling toward `INDEXER_MAX_BLOCK_RANGE`, only while the
+window is pinned at it. A probe that is accepted is followed by another
+next pass, so climbing back is a run of doublings rather than one every
+forty passes; a probe that is refused costs one pass in forty and resets
+the count. The tests cover both directions, and the §9 comparison is run
+again in its hardest form yet: six windows a pass against one, with a
+rate limit partway that truncates a pass to the windows that arrived,
+byte for byte.
+
+Two smaller things from the same log. The anchor line was printed every
+pass, because the note it was compared against carries the anchor pool's
+swap count, which changes every pass while syncing; it is compared on the
+address now. And the v3 backfill — a newly discovered pool's own logs
+from its creation block — was time the pass line did not account for; it
+is a stage of its own in the line when it happened.

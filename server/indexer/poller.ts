@@ -56,6 +56,22 @@ import {
  */
 const BUSY_LOGS = 2_000;
 
+/**
+ * Clean passes between attempts to grow again after a refusal.
+ *
+ * A refused width or a rate limit teaches a ceiling, and a ceiling learned
+ * in a dense stretch of chain — "more than N results" — is too low for the
+ * empty stretch after it. So every so often the poller asks for more, and a
+ * refusal there costs one pass in forty. A probe that succeeds is followed
+ * by another on the next pass, so climbing back is quick once it starts.
+ */
+const PROBE_EVERY = 40;
+
+/** An endpoint saying "not this many at once": halve the concurrency, keep the window. */
+const RATE_LIMITED = /\b429\b|rate.?limit|too many requests/i;
+/** Transient trouble that a burst makes likelier: a timeout, a reset, a gateway error. */
+const TRANSIENT = /timeout|timed out|took too long|ETIMEDOUT|ECONNRESET|ECONNREFUSED|socket hang up|\b50[234]\b/i;
+
 /** The cursor key for the one v4 contract every pool lives in. */
 export const POOL_MANAGER_CURSOR = `v4:${CONTRACTS.poolManager.toLowerCase()}`;
 /** `indexer_state` key: the anchor the priced tables were last fully rebuilt for. */
@@ -90,12 +106,22 @@ export interface PassTimings {
   logsMs: number;
   timesMs: number;
   tokensMs: number;
+  /** Re-reading a newly discovered v3 pool's own logs from its creation block. */
+  backfillMs: number;
   ingestMs: number;
   rebuildMs: number;
   totalMs: number;
 }
 
-const NO_TIMINGS: PassTimings = { logsMs: 0, timesMs: 0, tokensMs: 0, ingestMs: 0, rebuildMs: 0, totalMs: 0 };
+const NO_TIMINGS: PassTimings = {
+  logsMs: 0,
+  timesMs: 0,
+  tokensMs: 0,
+  backfillMs: 0,
+  ingestMs: 0,
+  rebuildMs: 0,
+  totalMs: 0,
+};
 
 /** While backfilling: every Nth pass re-reads a few token supplies, and rebuilds every pool's state. */
 const SUPPLY_EVERY = 20;
@@ -120,9 +146,16 @@ export interface PassResult {
   tokensFound: number;
   /** Token supplies re-read this pass, for the fully diluted figure. */
   suppliesRefreshed: number;
-  /** Token logos picked up from the token list, if one is configured. */
-  /** Blocks this pass covered. Visible so the adaptation is observable. */
+  /** Blocks this pass covered, across every window it fetched. Visible so the adaptation is observable. */
   blockRange: number;
+  /** Blocks per window this pass. */
+  windowBlocks: number;
+  /** Windows fetched and ingested this pass — fewer than asked for when a later one was refused. */
+  windows: number;
+  /** Windows the pass asked for at once. */
+  concurrency: number;
+  /** Every window was refused: nothing was ingested and the cursor did not move. */
+  refused: boolean;
   /** Seconds between the last indexed block's time and head's. Shown in the top bar (§7). */
   lagSeconds: number;
   caughtUp: boolean;
@@ -156,6 +189,8 @@ export interface PollerOptions {
   reorgDepth?: number;
   /** Ceiling for the adaptive range. Lowered on the first refusal. */
   maxBlockRange?: number;
+  /** Windows fetched at once per pass. Lowered on a rate limit. */
+  fetchConcurrency?: number;
   /** Where token symbol/name/decimals come from. Defaults to the token contract. */
   tokenReader?: TokenReader;
   log?: (message: string) => void;
@@ -165,8 +200,8 @@ export interface PollerOptions {
 export class Poller {
   private readonly source: LogSource;
   private readonly usdgAddress: string | null;
-  /** Last resolution, so a change of anchor can be logged once rather than every pass. */
-  private lastAnchorNote = '';
+  /** Last resolution, so a change of anchor is logged once rather than every pass. */
+  private lastAnchorLogged: string | null | undefined = undefined;
   /**
    * The anchor the aggregates were last built against. When it changes —
    * including from "none" to "found", which on a real chain happens some
@@ -202,8 +237,31 @@ export class Poller {
   private blockRange: bigint;
   /** Never go below this: a busy range still has to make progress. */
   private readonly minRange: bigint;
-  /** Learned from refusals. Starts optimistic and only ever comes down. */
+  /**
+   * Learned from refusals. Starts optimistic, comes down on a refusal, and
+   * is probed upward again after a stretch of clean passes — a ceiling
+   * learned in a dense stretch is too low for the empty one after it.
+   */
   private maxRange: bigint;
+  /** What the ceiling may be probed back up to. */
+  private readonly configuredMaxRange: bigint;
+  /**
+   * Windows fetched at once per pass.
+   *
+   * The cost of a pass that does not scale with the window — the anchor
+   * query, the aggregate rebuild, the cursor write — turned out to dominate
+   * on the live box: at 250-block windows a pass took seven seconds, of
+   * which the fetch was two. Several windows at once divide that fixed cost
+   * by as many. An endpoint that objects to the burst says so with a 429
+   * or a timeout, and that halves the concurrency rather than the window;
+   * a refused width still narrows the window rather than the concurrency.
+   */
+  private concurrency: number;
+  private readonly maxConcurrency: number;
+  /** Passes since the last refusal of any kind. Drives the upward probe. */
+  private cleanPasses = 0;
+  /** Set by a probe that was accepted: the next clean pass probes again. */
+  private probing = false;
   private readonly reorgDepth: bigint;
   private readonly log: (message: string) => void;
   private readonly tokenReader?: TokenReader;
@@ -225,6 +283,9 @@ export class Poller {
     // 50k is above what most public endpoints allow, deliberately: the first
     // refusal teaches the real ceiling, and one wasted call is worth hours.
     this.maxRange = BigInt(options.maxBlockRange ?? env.maxBlockRange);
+    this.configuredMaxRange = this.maxRange;
+    this.maxConcurrency = Math.max(1, options.fetchConcurrency ?? env.fetchConcurrency);
+    this.concurrency = this.maxConcurrency;
     this.reorgDepth = BigInt(options.reorgDepth ?? CHAIN.reorgDepth);
     this.v3Pools = (options.v3Pools ?? []).map((a) => a.toLowerCase());
     this.v3Factory = options.v3Factory?.toLowerCase() ?? null;
@@ -242,9 +303,12 @@ export class Poller {
    */
   private async anchors(): Promise<PriceAnchors | null> {
     const resolved = await resolveUsdg(this.usdgAddress);
-    if (resolved.note !== this.lastAnchorNote) {
+    // On the address, not the note: the note carries the anchor pool's swap
+    // count, which changes every pass while syncing, and the line was being
+    // logged every pass for it.
+    if (resolved.address !== this.lastAnchorLogged) {
       this.log(`  anchor: ${resolved.note}`);
-      this.lastAnchorNote = resolved.note;
+      this.lastAnchorLogged = resolved.address;
     }
     if (!resolved.address) return null;
     return {
@@ -281,7 +345,11 @@ export class Poller {
       cursor === null
         ? this.startBlock
         : max(this.startBlock, cursor - this.reorgDepth + 1n);
-    const to = min(head.number, from + this.blockRange - 1n);
+    // Several windows a pass. The span is what the pass covers; each window
+    // is one eth_getLogs call, and they go out together.
+    const windowBlocks = this.blockRange;
+    const concurrency = this.concurrency;
+    let to = min(head.number, from + windowBlocks * BigInt(concurrency) - 1n);
 
     if (to < from) {
       // Head has not moved past what we already have. Still alive, though,
@@ -301,7 +369,11 @@ export class Poller {
         suppliesRefreshed: await refreshSupplies(head.timestamp, { read: this.tokenReader }),
         lagSeconds: 0,
         caughtUp: true,
-        blockRange: Number(this.blockRange),
+        blockRange: Number(windowBlocks),
+        windowBlocks: Number(windowBlocks),
+        windows: 0,
+        concurrency,
+        refused: false,
         timings: { ...NO_TIMINGS, totalMs: Date.now() - startedAt },
       };
     }
@@ -312,41 +384,58 @@ export class Poller {
       ...(this.v3Factory ? [this.v3Factory] : []),
       ...this.v3Pools,
     ];
-    let logs;
+    const windows = splitWindows(from, to, windowBlocks);
     const logsStarted = Date.now();
-    try {
-      logs = await this.source.getLogs({ address: addresses, fromBlock: from, toBlock: to });
-    } catch (error) {
-      // Almost always the endpoint refusing the width — "query returned more
-      // than N results", "block range too large". Endpoints differ and none
-      // announce their cap, so it is found by hitting it once: halve, record
-      // the ceiling, and let the next pass retry the same range narrower. The
-      // cursor does not move, so nothing is skipped.
-      const width = to - from + 1n;
-      // Below the configured floor if it must: the floor is for following
-      // head, and a refused width is a fact about the endpoint.
-      this.maxRange = max(HARD_MIN_RANGE, width / 2n);
-      this.blockRange = this.maxRange;
-      // The failover's message carries every endpoint's reason under the
-      // first line; the first reason is the one worth reading.
-      const reason = (error as Error).message.split('\n').slice(0, 2).map((l) => l.trim()).join(' ');
-      this.log(`  endpoint refused ${width} blocks (${reason}) — range now ${this.blockRange}`);
-      return {
-        fromBlock: from,
-        toBlock: cursor ?? from,
-        headBlock: head.number,
-        events: 0,
-        swapsWritten: 0,
-        liquidityWritten: 0,
-        poolsFound: 0,
-        tokensFound: 0,
-        suppliesRefreshed: 0,
-        lagSeconds: 0,
-        caughtUp: false,
-        blockRange: Number(this.blockRange),
-        timings: { ...NO_TIMINGS, logsMs: Date.now() - logsStarted, totalMs: Date.now() - startedAt },
-      };
+    const fetched = await Promise.allSettled(
+      windows.map((w) => this.source.getLogs({ address: addresses, fromBlock: w.from, toBlock: w.to })),
+    );
+    // The windows are contiguous, so the ones that succeeded up to the first
+    // that did not are a range this pass can still ingest. A later window
+    // that also succeeded is fetched again next pass rather than ingested
+    // out of order: the cursor is one number and it never skips.
+    const logs: Awaited<ReturnType<LogSource['getLogs']>> = [];
+    let busiest = 0;
+    let failedAt = -1;
+    let failure: unknown = null;
+    for (let i = 0; i < fetched.length; i++) {
+      const outcome = fetched[i];
+      if (outcome.status === 'rejected') {
+        failedAt = i;
+        failure = outcome.reason;
+        break;
+      }
+      logs.push(...outcome.value);
+      busiest = Math.max(busiest, outcome.value.length);
     }
+    if (failedAt >= 0) {
+      const failed = fetched.filter((o) => o.status === 'rejected').length;
+      this.adaptToRefusal(failure, windows[failedAt], failed, windows.length);
+      if (failedAt === 0) {
+        // Nothing usable. The cursor does not move, so nothing is skipped;
+        // the next pass asks again, narrower or fewer at a time.
+        return {
+          fromBlock: from,
+          toBlock: cursor ?? from,
+          headBlock: head.number,
+          events: 0,
+          swapsWritten: 0,
+          liquidityWritten: 0,
+          poolsFound: 0,
+          tokensFound: 0,
+          suppliesRefreshed: 0,
+          lagSeconds: 0,
+          caughtUp: false,
+          blockRange: Number(this.blockRange),
+          windowBlocks: Number(windowBlocks),
+          windows: 0,
+          concurrency,
+          refused: true,
+          timings: { ...NO_TIMINGS, logsMs: Date.now() - logsStarted, totalMs: Date.now() - startedAt },
+        };
+      }
+      to = windows[failedAt - 1].to;
+    }
+    const ingestedWindows = failedAt >= 0 ? failedAt : windows.length;
     const logsMs = Date.now() - logsStarted;
     const timesStarted = Date.now();
     const blockTimes = await this.source.getBlockTimes(from, to);
@@ -400,6 +489,7 @@ export class Poller {
     // block, in this same pass.
     const newV3 = initializePlan.pools.filter((p) => p.protocol === 'v3');
     let backfilled: ChainEvent[] = [];
+    const backfillStarted = Date.now();
     if (newV3.length > 0) {
       this.followV3Pools(newV3.map((p) => p.address));
       const earliest = newV3.reduce(
@@ -417,6 +507,7 @@ export class Poller {
           `event(s) from block ${earliest}`,
       );
     }
+    const backfillMs = Date.now() - backfillStarted;
 
     // Then the rest, with the carried price state loaded from the database so
     // a restart mid-chain resumes exactly where a full replay would be.
@@ -548,11 +639,13 @@ export class Poller {
         // chain is empty, and doubling turns tens of thousands of passes into
         // hundreds.
         this.blockRange = min(this.maxRange, this.blockRange * 2n);
-      } else if (logs.length > BUSY_LOGS) {
+      } else if (busiest > BUSY_LOGS) {
         // Dense enough that the next window risks a refusal, and each pass is
-        // doing real work anyway.
+        // doing real work anyway. Judged per window: the endpoint's cap is
+        // on one request, not on the pass.
         this.blockRange = max(HARD_MIN_RANGE, this.blockRange / 2n);
       }
+      if (failedAt < 0) this.probe();
     } else {
       this.blockRange = this.minRange;
     }
@@ -577,8 +670,87 @@ export class Poller {
       lagSeconds,
       caughtUp: to >= head.number,
       blockRange: Number(to - from + 1n),
-      timings: { logsMs, timesMs, tokensMs, ingestMs, rebuildMs, totalMs: Date.now() - startedAt },
+      windowBlocks: Number(windowBlocks),
+      windows: ingestedWindows,
+      concurrency,
+      refused: false,
+      timings: {
+        logsMs,
+        timesMs,
+        tokensMs,
+        backfillMs,
+        ingestMs,
+        rebuildMs,
+        totalMs: Date.now() - startedAt,
+      },
     };
+  }
+
+  /**
+   * What a refused window teaches.
+   *
+   * A rate limit or a timeout with several windows in flight is the burst
+   * being too much: halve the concurrency and keep the window. A rate limit
+   * with one window in flight is the endpoint asking for a moment: change
+   * nothing, and the main loop waits a beat. Anything else — "more than N
+   * results", "range too large", or a timeout on a single window — is the
+   * width: halve it, record the ceiling, and let the next pass retry the
+   * same range narrower. Endpoints differ and none announce their cap, so it
+   * is found by hitting it once.
+   */
+  private adaptToRefusal(
+    error: unknown,
+    window: { from: bigint; to: bigint },
+    failed: number,
+    asked: number,
+  ): void {
+    this.cleanPasses = 0;
+    this.probing = false;
+    const width = window.to - window.from + 1n;
+    const reasons = failoverReasons(error);
+    const reason = reasons[0] ?? String(error);
+    const rateLimited = reasons.length > 0 && reasons.every((r) => RATE_LIMITED.test(r));
+    const transient = reasons.length > 0 && reasons.every((r) => RATE_LIMITED.test(r) || TRANSIENT.test(r));
+    if (transient && this.concurrency > 1) {
+      this.concurrency = Math.max(1, Math.floor(this.concurrency / 2));
+      this.log(
+        `  endpoint refused ${failed} of ${asked} windows in flight (${reason}) — ` +
+          `${this.concurrency} at a time from here`,
+      );
+    } else if (rateLimited) {
+      this.log(`  endpoint rate-limited a single window (${reason}) — waiting a moment`);
+    } else {
+      // Below the configured floor if it must: the floor is for following
+      // head, and a refused width is a fact about the endpoint.
+      this.maxRange = max(HARD_MIN_RANGE, width / 2n);
+      this.blockRange = this.maxRange;
+      this.log(`  endpoint refused ${width} blocks (${reason}) — range now ${this.blockRange}`);
+    }
+  }
+
+  /**
+   * After a stretch of clean passes, ask for more again: first the
+   * concurrency back toward its configured value, then the window's ceiling
+   * toward its configured maximum — only when the window is pinned at the
+   * ceiling, since a window kept narrow by dense logs would not use a higher
+   * one. A probe that is accepted is followed by another next pass; one that
+   * is refused resets the count.
+   */
+  private probe(): void {
+    this.cleanPasses++;
+    if (!this.probing && this.cleanPasses % PROBE_EVERY !== 0) return;
+    if (this.concurrency < this.maxConcurrency) {
+      this.concurrency = Math.min(this.maxConcurrency, this.concurrency * 2);
+      this.probing = true;
+      this.log(`  clean for ${this.cleanPasses} passes — trying ${this.concurrency} windows at a time`);
+    } else if (this.maxRange < this.configuredMaxRange && this.blockRange === this.maxRange) {
+      this.maxRange = min(this.configuredMaxRange, this.maxRange * 2n);
+      this.blockRange = this.maxRange;
+      this.probing = true;
+      this.log(`  clean for ${this.cleanPasses} passes — trying ${this.blockRange}-block windows`);
+    } else {
+      this.probing = false;
+    }
   }
 
   /**
@@ -648,6 +820,29 @@ export class Poller {
 
 function max(a: bigint, b: bigint): bigint {
   return a > b ? a : b;
+}
+
+/** Contiguous windows of `width` covering `from..to`; the last may be shorter. */
+export function splitWindows(from: bigint, to: bigint, width: bigint): { from: bigint; to: bigint }[] {
+  const windows: { from: bigint; to: bigint }[] = [];
+  for (let start = from; start <= to; start += width) {
+    windows.push({ from: start, to: min(to, start + width - 1n) });
+  }
+  return windows;
+}
+
+/**
+ * Each endpoint's reason from a failover error, which lists them one per
+ * line under a first line saying the call failed everywhere. A plain error
+ * is its own one reason.
+ */
+function failoverReasons(error: unknown): string[] {
+  const message = error instanceof Error ? error.message : String(error);
+  const lines = message
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  return lines.length > 1 ? lines.slice(1) : lines;
 }
 
 function min(a: bigint, b: bigint): bigint {

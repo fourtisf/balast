@@ -106,7 +106,7 @@ async function main(): Promise<void> {
         const pct = ((Number(result.toBlock) / Number(result.headBlock)) * 100).toFixed(2);
         log(
           `blocks ${result.fromBlock}-${result.toBlock} of ${result.headBlock} (${pct}%, ` +
-            `${behind.toLocaleString()} behind, window ${result.blockRange.toLocaleString()}): ` +
+            `${behind.toLocaleString()} behind, window ${windowLine(result)}): ` +
             `${result.events} events, +${result.swapsWritten} swaps, ` +
             `+${result.liquidityWritten} liquidity, +${result.poolsFound} pools, ` +
             `+${result.tokensFound} tokens · ${timingLine(result)}`,
@@ -115,7 +115,9 @@ async function main(): Promise<void> {
         // Tell the API something changed; it debounces before pushing (§4.4).
         await publishTick({ toBlock: result.toBlock.toString(), lagSeconds: result.lagSeconds });
       }
-      if (result.caughtUp) {
+      if (result.caughtUp || result.refused) {
+        // Refused too: the endpoint said no to every window, and asking again
+        // in the same breath is how a rate limit becomes a ban.
         await sleep(env.pollIntervalMs);
       }
     } catch (error) {
@@ -131,14 +133,22 @@ async function main(): Promise<void> {
   log('stopped');
 }
 
+/** `1,500 = 6×250` when a pass fetched several windows; the plain width when it fetched one. */
+function windowLine(result: PassResult): string {
+  const span = result.blockRange.toLocaleString();
+  if (result.windows <= 1) return span;
+  return `${span} = ${result.windows}×${result.windowBlocks.toLocaleString()}`;
+}
+
 /** Seconds per stage, so a slow pass says which stage it is. */
 function timingLine(result: PassResult): string {
   const t = result.timings;
   const s = (ms: number) => (ms / 1000).toFixed(1);
   const blocks = Number(result.toBlock - result.fromBlock + 1n);
   const rate = t.totalMs > 0 ? Math.round((blocks * 1000) / t.totalMs) : 0;
+  const backfill = t.backfillMs > 0 ? `, backfill ${s(t.backfillMs)}` : '';
   return (
-    `${s(t.totalMs)}s (logs ${s(t.logsMs)}, times ${s(t.timesMs)}, tokens ${s(t.tokensMs)}, ` +
+    `${s(t.totalMs)}s (logs ${s(t.logsMs)}, times ${s(t.timesMs)}, tokens ${s(t.tokensMs)}${backfill}, ` +
     `ingest ${s(t.ingestMs)}, rebuild ${s(t.rebuildMs)}) · ${rate.toLocaleString()} blocks/s`
   );
 }
@@ -150,6 +160,8 @@ async function rememberPass(result: PassResult): Promise<void> {
     fromBlock: result.fromBlock.toString(),
     toBlock: result.toBlock.toString(),
     blocks: Number(result.toBlock - result.fromBlock + 1n),
+    windows: result.windows,
+    windowBlocks: result.windowBlocks,
     events: result.events,
     poolsFound: result.poolsFound,
     tokensFound: result.tokensFound,
