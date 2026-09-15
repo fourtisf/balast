@@ -99,6 +99,30 @@ describe('backfilling an empty chain', () => {
     expect(await prisma.swapEvent.count()).toBeGreaterThan(500);
   });
 
+  it('narrows past the configured floor when every endpoint refuses it, instead of asking forever', async () => {
+    // The live box sat at one block for a day: all four endpoints refused
+    // 2000 blocks and the floor was 2000, so the same range was asked for
+    // on every pass. A refused width is a fact about the endpoint; the
+    // floor is a preference for following head.
+    await resetDatabase();
+    const source = new SparseSource(chain, 60_000, 500n);
+    const passes = await new Poller({
+      source,
+      usdgAddress: USDG,
+      startBlock: 0n,
+      blockRange: 2_000,
+      maxBlockRange: 50_000,
+      tokenReader: fixtureTokenReader,
+    }).syncToHead();
+    const firstRefusal = source.widths.findIndex((w) => w > 500n);
+    expect(firstRefusal).toBeGreaterThanOrEqual(0);
+    const after = source.widths.slice(firstRefusal + 1).filter((w) => w > 500n);
+    // Narrowing takes a refusal per halving (2000 → 1000 → 500), then none.
+    expect(after.length).toBeLessThanOrEqual(2);
+    expect(passes[passes.length - 1].caughtUp).toBe(true);
+    expect(await prisma.swapEvent.count()).toBeGreaterThan(500);
+  });
+
   it('narrows again once it is following head', async () => {
     // A wide window costs latency when there is nothing to catch up on.
     await resetDatabase();

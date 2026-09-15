@@ -22,7 +22,7 @@ import { CHAIN } from '../../lib/chain';
 import { publishTick } from '../api/bus';
 import { prisma } from '../db';
 import { env } from '../env';
-import { createSources, forgetSharedLogos, imageLoads, lookupLogos, reconcileStockLogos, type Fetch } from '../indexer/logo-sources';
+import { createSources, forgetSharedLogos, imageDigest, lookupLogos, reconcileStockLogos, type Fetch } from '../indexer/logo-sources';
 import { refreshLogos } from '../indexer/logos';
 
 /** How often the token list is re-read. It is a file or a URL; an hour is plenty. */
@@ -64,11 +64,6 @@ async function main(): Promise<void> {
     );
   }
 
-  // A picture shared by several tokens is nobody's logo. Forget it, remember
-  // the URL as generic, and let the tokens be asked about again below.
-  const shared = await forgetSharedLogos({ log });
-  if (shared > 0) log(`${shared} token(s) forgot a shared icon`);
-
   // A start is when the sources change — a deploy — so every token still
   // without a logo is asked about again, board first. A miss then goes quiet
   // for a week, as before.
@@ -95,9 +90,16 @@ async function main(): Promise<void> {
     select: { address: true, symbol: true, logoUrl: true },
   });
   let dropped = 0;
+  // The check fetches each picture, so its hash comes for free — and the
+  // hashes are what tell one picture under many URLs from many pictures.
+  const digests = new Map<string, string>();
   for (const token of recorded) {
     if (shuttingDown) break;
-    if (await imageLoads(globalThis.fetch as unknown as Fetch, token.logoUrl!)) continue;
+    const hash = await imageDigest(globalThis.fetch as unknown as Fetch, token.logoUrl!);
+    if (hash) {
+      digests.set(token.logoUrl!, hash);
+      continue;
+    }
     await prisma.token.update({
       where: { address: token.address },
       data: { logoUrl: null, logoCheckedAt: null },
@@ -109,6 +111,17 @@ async function main(): Promise<void> {
   if (recorded.length > 0) {
     log(`${recorded.length} recorded logo(s) checked, ${dropped} forgotten`);
     if (dropped > 0) await nudge();
+  }
+
+  // A picture several tokens wear is nobody's logo — the issuer's feather
+  // under a URL per token. Forget it, remember its bytes as generic, and let
+  // the tokens be asked about again with the explorer refusing it.
+  if (!shuttingDown) {
+    const shared = await forgetSharedLogos({ log, digests });
+    if (shared > 0) {
+      log(`${shared} token(s) forgot a shared icon`);
+      await nudge();
+    }
   }
 
   // Tokenised stocks: the issuer's own per-stock icon when the explorer has

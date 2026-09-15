@@ -100,6 +100,14 @@ const NO_TIMINGS: PassTimings = { logsMs: 0, timesMs: 0, tokensMs: 0, ingestMs: 
 /** While backfilling: every Nth pass re-reads a few token supplies, and rebuilds every pool's state. */
 const SUPPLY_EVERY = 20;
 const FULL_STATE_EVERY = 60;
+/**
+ * The narrowest window a refusal can force. The configured floor is a
+ * preference for following head; a refused range has to narrow past it or
+ * the same range is asked for forever — which is exactly what the live box
+ * did at block 4,408,287, all four endpoints refusing 2000 blocks and the
+ * floor at 2000. Twice the reorg depth, so a pass still advances.
+ */
+const HARD_MIN_RANGE = 64n;
 
 export interface PassResult {
   fromBlock: bigint;
@@ -315,12 +323,14 @@ export class Poller {
       // the ceiling, and let the next pass retry the same range narrower. The
       // cursor does not move, so nothing is skipped.
       const width = to - from + 1n;
-      this.maxRange = max(this.minRange, width / 2n);
+      // Below the configured floor if it must: the floor is for following
+      // head, and a refused width is a fact about the endpoint.
+      this.maxRange = max(HARD_MIN_RANGE, width / 2n);
       this.blockRange = this.maxRange;
-      this.log(
-        `  endpoint refused ${width} blocks (${(error as Error).message.split('\n')[0]}) — ` +
-          `range now ${this.blockRange}`,
-      );
+      // The failover's message carries every endpoint's reason under the
+      // first line; the first reason is the one worth reading.
+      const reason = (error as Error).message.split('\n').slice(0, 2).map((l) => l.trim()).join(' ');
+      this.log(`  endpoint refused ${width} blocks (${reason}) — range now ${this.blockRange}`);
       return {
         fromBlock: from,
         toBlock: cursor ?? from,
@@ -334,7 +344,7 @@ export class Poller {
         lagSeconds: 0,
         caughtUp: false,
         blockRange: Number(this.blockRange),
-        timings: { ...NO_TIMINGS, totalMs: Date.now() - startedAt },
+        timings: { ...NO_TIMINGS, logsMs: Date.now() - logsStarted, totalMs: Date.now() - startedAt },
       };
     }
     const logsMs = Date.now() - logsStarted;
@@ -541,11 +551,13 @@ export class Poller {
       } else if (logs.length > BUSY_LOGS) {
         // Dense enough that the next window risks a refusal, and each pass is
         // doing real work anyway.
-        this.blockRange = max(this.minRange, this.blockRange / 2n);
+        this.blockRange = max(HARD_MIN_RANGE, this.blockRange / 2n);
       }
     } else {
       this.blockRange = this.minRange;
     }
+    // Never above what the endpoints have shown they accept.
+    this.blockRange = min(this.blockRange, this.maxRange);
 
     const lagSeconds = Math.max(
       0,

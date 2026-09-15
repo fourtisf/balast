@@ -2069,3 +2069,45 @@ Unverified from here, as every source was: the sandbox reaches no
 launchpad, the parser accepts the common shapes, and `npm run logos:probe`
 prints what the real page answers.
 
+### The stall, read off the log: a floor the refusal could not pass
+
+The first log after the throughput deploy said it in one line, repeated:
+`endpoint refused 2000 blocks (getLogs(4408256-4410255) failed on all 4
+endpoints) — range now 2000`. Every endpoint refused a 2000-block window
+at that stretch of the chain, the refusal path narrowed to
+`max(floor, width / 2)`, and the floor was 2000. So the same range was
+asked for on every pass, refused on every pass, and the cursor sat at
+block 4,408,287 — at two blocks a second, which is the re-scan of the
+last 32 moving nowhere. The throughput work was right and beside the
+point: no pass ever got past the fetch.
+
+The floor (`INDEXER_BLOCK_RANGE`) is a preference for following head. A
+refused width is a fact about the endpoint, and the window now narrows
+past the floor on a refusal, to a hard minimum of 64 blocks — twice the
+reorg depth, so a pass still advances — and never widens above what the
+endpoints have shown they accept. The log line carries the endpoint's own
+reason now rather than only the label, and a refused pass reports the
+time the refused fetch took. There is a test that a cap below the floor
+still lets a sync finish.
+
+### The feather under a URL per token
+
+The reconciliation above made the explorer's icon win for the stocks —
+and every stock came back wearing the feather, SPCX included. What had
+looked like a SpaceX icon in Robinhood's style was Robinhood's mark; and
+the explorer serves it under a **different URL for every token**, so the
+generic check, which compared URLs, saw nothing shared.
+
+The bytes are what is compared now. `imageDigest` hashes the picture a
+URL serves; the start-up audit that already fetches every recorded logo
+keeps the hashes; `forgetSharedLogos` groups tokens by hash, forgets any
+picture three or more wear, and remembers the hash as generic; and the
+explorer source digests a candidate icon and refuses one whose bytes are
+on that list. With that in place the reconciliation lands where it was
+meant to: a stock the explorer has a real picture for wears it, AMD and
+TSLA fall to their ticker icons, and SPCX to this site's own SpaceX mark.
+
+GUH remains a monogram: no source answers for it. The Pons source is
+asked from this deploy on; failing that, the token's address and an
+image URL in `config/tokens.json` is the one honest way to give it one.
+

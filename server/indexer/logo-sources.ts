@@ -33,6 +33,7 @@
  * found".
  */
 
+import { createHash } from 'node:crypto';
 import { ContractFunctionExecutionError, getAddress } from 'viem';
 import { CHAIN, CONTRACTS, EXPLORER_URL, NATIVE_ETH } from '../../lib/chain';
 import { SITE_URL } from '../../lib/site';
@@ -52,6 +53,8 @@ export type Fetch = (
   json(): Promise<unknown>;
   /** The body as text, for a source that reads a page rather than an API. */
   text?(): Promise<string>;
+  /** The body as bytes, for telling one picture served under many URLs from many pictures. */
+  arrayBuffer?(): Promise<ArrayBuffer>;
   /** Present on a real Response; a fake may omit it. */
   headers?: { get(name: string): string | null };
 }>;
@@ -133,6 +136,35 @@ async function getJson(fetch: Fetch, url: string, headers: Record<string, string
   return (await get(fetch, url, headers)).body;
 }
 
+/**
+ * The image's content hash, or null when it does not load as an image.
+ *
+ * The explorer serves the issuer's one feather under a different URL for
+ * every stock token, so the URL says nothing about whether two tokens wear
+ * the same picture; the bytes do. A fake fetch without `arrayBuffer`
+ * answers null, which reads as "unknown", never as generic.
+ */
+export async function imageDigest(fetch: Fetch, url: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      headers: { accept: 'image/*,*/*;q=0.5', 'user-agent': USER_AGENT },
+      signal: controller.signal,
+    });
+    if (!response.ok || !response.arrayBuffer) return null;
+    const type = response.headers?.get('content-type');
+    if (type && !/^image\//i.test(type) && !/octet-stream/i.test(type)) return null;
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length === 0) return null;
+    return createHash('sha256').update(bytes).digest('hex');
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** A page's text, or null for anything but a 2xx. */
 async function getText(fetch: Fetch, url: string): Promise<string | null> {
   const controller = new AbortController();
@@ -173,47 +205,69 @@ function image(value: unknown): string | null {
  * `EXPLORER_API_URL` overrides it for another explorer of the same shape.
  */
 /**
- * `indexer_state` key holding the image URLs known to be an issuer's mark
- * rather than a token's — the same picture served for many tokens.
+ * `indexer_state` key holding what is known to be an issuer's mark rather
+ * than a token's: the URLs and the content hashes of pictures served for
+ * many tokens.
  */
-export const GENERIC_LOGOS_KEY = 'generic_logo_urls';
-let genericCache: { at: number; urls: Set<string> } | null = null;
+export const GENERIC_LOGOS_KEY = 'generic_logos';
+let genericCache: { at: number; urls: Set<string>; hashes: Set<string> } | null = null;
 
-/** The URLs on record as generic, cached a minute: the explorer source asks on every lookup. */
-export async function loadGenericLogos(): Promise<Set<string>> {
-  if (genericCache && Date.now() - genericCache.at < 60_000) return genericCache.urls;
+/** What is on record as generic, cached a minute: the explorer source asks on every lookup. */
+export async function loadGenericLogos(): Promise<{ urls: Set<string>; hashes: Set<string> }> {
+  if (genericCache && Date.now() - genericCache.at < 60_000) return genericCache;
   let urls = new Set<string>();
+  let hashes = new Set<string>();
   try {
     const row = await prisma.indexerState.findUnique({ where: { key: GENERIC_LOGOS_KEY } });
-    const parsed = row ? (JSON.parse(row.value) as unknown) : [];
-    if (Array.isArray(parsed)) urls = new Set(parsed.filter((u): u is string => typeof u === 'string'));
+    const parsed = row ? (JSON.parse(row.value) as { urls?: unknown; hashes?: unknown }) : {};
+    if (Array.isArray(parsed.urls)) urls = new Set(parsed.urls.filter((u): u is string => typeof u === 'string'));
+    if (Array.isArray(parsed.hashes)) hashes = new Set(parsed.hashes.filter((u): u is string => typeof u === 'string'));
   } catch {
     /* no record yet, or an unreadable one: nothing is generic until proven */
   }
-  genericCache = { at: Date.now(), urls };
-  return urls;
+  genericCache = { at: Date.now(), urls, hashes };
+  return genericCache;
 }
 
-async function rememberGenericLogos(add: Iterable<string>): Promise<void> {
-  const urls = new Set([...(await loadGenericLogos()), ...add]);
-  const value = JSON.stringify([...urls]);
+async function rememberGenericLogos(add: { urls?: Iterable<string>; hashes?: Iterable<string> }): Promise<void> {
+  const known = await loadGenericLogos();
+  const urls = new Set([...known.urls, ...(add.urls ?? [])]);
+  const hashes = new Set([...known.hashes, ...(add.hashes ?? [])]);
+  const value = JSON.stringify({ urls: [...urls], hashes: [...hashes] });
   await prisma.indexerState.upsert({
     where: { key: GENERIC_LOGOS_KEY },
     create: { key: GENERIC_LOGOS_KEY, value, updatedAt: new Date() },
     update: { value, updatedAt: new Date() },
   });
-  genericCache = { at: Date.now(), urls };
+  genericCache = { at: Date.now(), urls, hashes };
+}
+
+/** Content hashes seen this process, by URL, so a picture is fetched for its hash once. */
+const digestByUrl = new Map<string, string>();
+
+export async function knownDigest(fetch: Fetch, url: string): Promise<string | null> {
+  const cached = digestByUrl.get(url);
+  if (cached) return cached;
+  const hash = await imageDigest(fetch, url);
+  if (hash) digestByUrl.set(url, hash);
+  return hash;
 }
 
 /**
  * Whether an explorer icon is the issuer's generic mark rather than this
- * token's own: on the generic list, or already on record for two other
- * tokens. Robinhood's explorer answered one feather for every stock token
- * it had no picture for, and a picture shared by many tokens describes
- * none of them.
+ * token's own: its URL or its bytes are on the generic list, or the same
+ * URL is already on record for two other tokens. Robinhood's explorer
+ * answers one feather for every stock token it has no picture for — under
+ * a URL of the token's own, which is why the bytes are what is compared —
+ * and a picture shared by many tokens describes none of them.
  */
-export async function isGenericLogo(url: string, address: string): Promise<boolean> {
-  if ((await loadGenericLogos()).has(url)) return true;
+export async function isGenericLogo(url: string, address: string, fetch?: Fetch): Promise<boolean> {
+  const generic = await loadGenericLogos();
+  if (generic.urls.has(url)) return true;
+  if (generic.hashes.size > 0) {
+    const hash = await knownDigest(fetch ?? (globalThis.fetch as unknown as Fetch), url);
+    if (hash && generic.hashes.has(hash)) return true;
+  }
   const others = await prisma.token.count({
     where: { logoUrl: url, address: { not: address.toLowerCase() } },
   });
@@ -221,7 +275,7 @@ export async function isGenericLogo(url: string, address: string): Promise<boole
 }
 
 export function blockscout(
-  options: { base?: string; isGeneric?: (url: string, address: string) => Promise<boolean> } = {},
+  options: { base?: string; isGeneric?: (url: string, address: string, fetch?: Fetch) => Promise<boolean> } = {},
 ): LogoSource {
   const base = (options.base ?? EXPLORER_URL).replace(/\/+$/, '');
   const generic = options.isGeneric ?? isGenericLogo;
@@ -233,7 +287,7 @@ export function blockscout(
       try {
         const token = asRecord(await getJson(fetch, `${base}/api/v2/tokens/${address.toLowerCase()}`, {}));
         const url = image(token?.icon_url);
-        if (url && (await generic(url, address))) {
+        if (url && (await generic(url, address, fetch))) {
           log(`  explorer: ${address} carries the issuer's generic icon, not its own — skipped`);
           return null;
         }
@@ -254,24 +308,40 @@ export function blockscout(
  * its ticker icon or this site's own mark. Own-site marks are exempt: ether
  * and its wrapper legitimately share one file.
  */
-export async function forgetSharedLogos(options: { minShared?: number; log?: Log } = {}): Promise<number> {
+export async function forgetSharedLogos(
+  options: { minShared?: number; log?: Log; fetch?: Fetch; /** Content hashes already computed, by URL. */ digests?: Map<string, string> } = {},
+): Promise<number> {
   const minShared = options.minShared ?? 3;
   const log = options.log ?? (() => {});
-  const shared = await prisma.$queryRaw<{ logo_url: string; n: number }[]>`
-    SELECT logo_url, COUNT(*)::int AS n FROM tokens
-    WHERE logo_url IS NOT NULL AND logo_url NOT LIKE ${`${SITE_URL}/%`}
-    GROUP BY logo_url HAVING COUNT(*) >= ${minShared}
-  `;
+  const fetch = options.fetch ?? (globalThis.fetch as unknown as Fetch);
+  const recorded = await prisma.token.findMany({
+    where: { logoUrl: { not: null }, NOT: { logoUrl: { startsWith: `${SITE_URL}/` } } },
+    select: { address: true, logoUrl: true },
+  });
+  // Group by the picture, not the URL: the same bytes under many URLs.
+  const byHash = new Map<string, { addresses: string[]; urls: Set<string> }>();
+  for (const token of recorded) {
+    const url = token.logoUrl!;
+    const hash = options.digests?.get(url) ?? (await knownDigest(fetch, url)) ?? `url:${url}`;
+    const group = byHash.get(hash) ?? { addresses: [], urls: new Set<string>() };
+    group.addresses.push(token.address);
+    group.urls.add(url);
+    byHash.set(hash, group);
+  }
+  const shared = [...byHash.entries()].filter(([, g]) => g.addresses.length >= minShared);
   if (shared.length === 0) return 0;
-  await rememberGenericLogos(shared.map((s) => s.logo_url));
+  await rememberGenericLogos({
+    urls: shared.flatMap(([, g]) => [...g.urls]),
+    hashes: shared.map(([hash]) => hash).filter((h) => !h.startsWith('url:')),
+  });
   let forgotten = 0;
-  for (const { logo_url, n } of shared) {
+  for (const [, group] of shared) {
     const result = await prisma.token.updateMany({
-      where: { logoUrl: logo_url },
+      where: { address: { in: group.addresses } },
       data: { logoUrl: null, logoCheckedAt: null },
     });
     forgotten += result.count;
-    log(`  ${n} tokens shared one icon, which is nobody's logo: ${logo_url}`);
+    log(`  ${group.addresses.length} tokens wore one picture, which is nobody's logo: ${[...group.urls][0]}`);
   }
   return forgotten;
 }

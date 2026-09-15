@@ -26,6 +26,7 @@ import {
   tickers,
   forgetSharedLogos,
   imageFromPage,
+  isGenericLogo,
   launchpadPage,
   reconcileStockLogos,
   GENERIC_LOGOS_KEY,
@@ -608,10 +609,46 @@ describe('lookupLogos', () => {
     const rows = await prisma.token.findMany({ orderBy: { address: 'asc' }, select: { logoUrl: true } });
     expect(rows.map((r) => r.logoUrl)).toEqual([null, null, null, pair, pair]);
     const state = await prisma.indexerState.findUniqueOrThrow({ where: { key: GENERIC_LOGOS_KEY } });
-    expect(JSON.parse(state.value)).toEqual([feather]);
+    expect(JSON.parse(state.value).urls).toEqual([feather]);
     // And the explorer, asked about a fourth token with the same picture, now refuses it.
     const api = service({ '/api/v2/tokens/': { icon_url: feather } });
     expect(await blockscout().lookup('0x00000000000000000000000000000000000000a6', { fetch: api.fetch, log: quiet })).toBeNull();
+  });
+
+  it('recognises one picture served under a URL per token by its bytes, and refuses it under a fourth URL', async () => {
+    await resetDatabase();
+    // The explorer's feather: the same PNG under three token-specific URLs.
+    const feather = Buffer.from('feather-png-bytes');
+    const own = Buffer.from('a-real-logo');
+    const bytes: Record<string, Buffer> = {
+      'https://explorer.example/images/a1.png': feather,
+      'https://explorer.example/images/a2.png': feather,
+      'https://explorer.example/images/a3.png': feather,
+      'https://explorer.example/images/a9.png': feather,
+      'https://cdn.example/virtual.png': own,
+    };
+    const fetch: Fetch = async (url) => ({
+      ok: url in bytes,
+      status: url in bytes ? 200 : 404,
+      json: async () => ({}),
+      arrayBuffer: async () => bytes[url].buffer.slice(bytes[url].byteOffset, bytes[url].byteOffset + bytes[url].byteLength),
+    });
+    await stock(TOKEN, 'AMD', 'AMD \u2022 Robinhood Token', 'https://explorer.example/images/a1.png');
+    await stock('0x00000000000000000000000000000000000000a2', 'TSLA', 'TSLA \u2022 Robinhood Token', 'https://explorer.example/images/a2.png');
+    await stock('0x00000000000000000000000000000000000000a3', 'SPCX', 'SPCX \u2022 Robinhood Token', 'https://explorer.example/images/a3.png');
+    await stock('0x00000000000000000000000000000000000000a4', 'VIRTUAL', 'Virtuals', 'https://cdn.example/virtual.png');
+    expect(await forgetSharedLogos({ fetch })).toBe(3);
+    const rows = await prisma.token.findMany({ orderBy: { address: 'asc' }, select: { logoUrl: true } });
+    expect(rows.map((r) => r.logoUrl)).toEqual([null, null, null, 'https://cdn.example/virtual.png']);
+    // A fourth token, a fourth URL, the same bytes: generic.
+    expect(await isGenericLogo('https://explorer.example/images/a9.png', '0x00000000000000000000000000000000000000a9', fetch)).toBe(true);
+    expect(await isGenericLogo('https://cdn.example/virtual.png', '0x00000000000000000000000000000000000000a9', fetch)).toBe(false);
+    // So the explorer refuses it, and a stock falls through to its ticker icon.
+    const api: Fetch = async (url, init) =>
+      url.includes('/api/v2/tokens/')
+        ? { ok: true, status: 200, json: async () => ({ icon_url: 'https://explorer.example/images/a9.png' }) }
+        : fetch(url, init);
+    expect(await blockscout().lookup('0x00000000000000000000000000000000000000a9', { fetch: api, log: quiet })).toBeNull();
   });
 
   it('records which launchpad a token came from when the launchpad\'s own page answered', async () => {
