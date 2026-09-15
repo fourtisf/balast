@@ -126,11 +126,13 @@ export const env = {
   /**
    * Live volume from DexScreener (api/market.ts), the owner's exception to
    * §4. On by default; `DEXSCREENER_MARKET=false` shows the chain's figures
-   * alone. `DEXSCREENER_CHAIN` is DexScreener's id for this chain — unset,
-   * every chain's pairs are accepted and /api/health lists the ids seen.
+   * alone. `DEXSCREENER_CHAIN` is DexScreener's id for this chain: `robinhood`,
+   * read off the first probe on the box; an empty value accepts every
+   * chain's pairs and /api/health lists the ids seen.
    */
   dexscreenerMarket: (process.env.DEXSCREENER_MARKET ?? 'true').toLowerCase() !== 'false',
-  dexscreenerChain: process.env.DEXSCREENER_CHAIN?.trim() || null,
+  dexscreenerChain:
+    process.env.DEXSCREENER_CHAIN === undefined ? 'robinhood' : process.env.DEXSCREENER_CHAIN.trim() || null,
   dexscreenerUrl: process.env.DEXSCREENER_URL?.trim() || 'https://api.dexscreener.com',
   dexscreenerRefreshMs: Math.max(5_000, int('DEXSCREENER_REFRESH_MS', 30_000)),
 

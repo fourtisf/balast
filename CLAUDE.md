@@ -2708,3 +2708,11 @@ known; unset, every chain's pairs are accepted and the ids seen are
 listed, and `DEXSCREENER_CHAIN` should then be set to the right one.
 `DEXSCREENER_MARKET=false` turns the feed off and the board back to the
 chain's figures alone.
+
+The first probe on the box answered: DexScreener's id for this chain is
+**`robinhood`**, now the default; the feed quoted 32 of the board's 76
+tokens on its first refresh with no error; and the answer listed pairs on
+`ramses` beside `uniswap` — a v3 fork trading here, whose pools emit the
+same `Swap` signature and are what the poller now counts as `foreign`.
+Whether Balast should index them is a product question, not a defect;
+§4 names Uniswap and the launchpads.
