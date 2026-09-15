@@ -78,9 +78,29 @@ function SyncProgress({ health }: { health: Health | null }) {
   );
 }
 
+/**
+ * How long the panel stays invisible before it says anything at all.
+ *
+ * Every page load starts with no snapshot — the live provider is a fetch and
+ * a socket — so this component renders for a moment on every refresh of a
+ * perfectly healthy site. It used to spend that moment asserting "no indexed
+ * blocks yet": a claim about the chain made before the API had been asked, on
+ * a page that had been showing eighty markets a second earlier.
+ *
+ * A normal load resolves well inside this, so a refresh now shows nothing
+ * rather than something false.
+ */
+const QUIET_MS = 900;
+
 export function AwaitingIndexer() {
   const [health, setHealth] = useState<Health | null>(null);
   const [unreachable, setUnreachable] = useState(false);
+  const [speak, setSpeak] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSpeak(true), QUIET_MS);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     if (DATA_SOURCE !== 'live') return;
@@ -109,8 +129,18 @@ export function AwaitingIndexer() {
     };
   }, []);
 
+  // Nothing is drawn until either the API has answered or the quiet period
+  // has passed. Both conditions matter: the first keeps a slow API from
+  // leaving a blank page, the second keeps a fast one from flashing a
+  // sentence nobody needed to read.
+  if (!speak && health === null && !unreachable) return null;
+
+  // Waiting on the API is its own state: it is not knowledge about the
+  // indexer, so it borrows no other state's words.
+  const asking = DATA_SOURCE === 'live' && health === null && !unreachable;
+
   // Four states, and only one of them is somebody's mistake.
-  const eyebrow =
+  const knownEyebrow =
     DATA_SOURCE !== 'live'
       ? 'Loading'
       : unreachable
@@ -134,6 +164,8 @@ export function AwaitingIndexer() {
                 ? 'The indexer is busy'
                 : 'Waiting for the indexer';
 
+  const eyebrow = asking ? 'Loading' : knownEyebrow;
+
   return (
     <div className="awaiting" role="status">
       <div className="aw-in">
@@ -150,9 +182,15 @@ export function AwaitingIndexer() {
                 ? 'The indexer is rebuilding its tables or reading history, and writes no ' +
                   'block until that finishes. The boards appear when it does — no placeholder ' +
                   'numbers in the meantime.'
-              : 'No indexed blocks yet, so there is nothing honest to show. The boards ' +
-                'appear as soon as the first swap is attributed — no placeholder ' +
-                'numbers in the meantime.'}
+                : asking
+                  ? // The API has not answered, so nothing is known about the
+                    // indexer — and an unanswered question is not evidence of
+                    // an empty chain (§7).
+                    'Asking the API what state the indexer is in. The boards appear as ' +
+                    'soon as the snapshot arrives — no placeholder numbers in the meantime.'
+                  : 'No indexed blocks yet, so there is nothing honest to show. The boards ' +
+                    'appear as soon as the first swap is attributed — no placeholder ' +
+                    'numbers in the meantime.'}
         </p>
         {health?.message ? <p className="aw-why">{health.message}</p> : null}
         <SyncProgress health={health} />

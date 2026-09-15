@@ -207,6 +207,33 @@ export async function buildServer(options: { logoFetch?: LogoFetch } = {}): Prom
    * while the indexer is in a long stage and publishes no tick.
    */
   const marketListeners = new Set<() => void>();
+  /**
+   * Coalesce the feed's updates onto the rebuild floor.
+   *
+   * The feed publishes as each batch of quotes lands rather than when the
+   * whole cycle ends, so the board fills in after a restart instead of
+   * reading `chain` for a minute. `rebuild()` only de-duplicates calls that
+   * overlap, so a dozen batches would have run the expensive query a dozen
+   * times back to back. This runs it at most once per SNAPSHOT_MIN_REBUILD_MS
+   * and always runs a last one, so nothing published is left unseen.
+   */
+  let marketPublish: ReturnType<typeof setTimeout> | null = null;
+  const publishMarket = (): void => {
+    if (marketPublish) return;
+    const since = cached ? Date.now() - cached.at : Infinity;
+    marketPublish = setTimeout(
+      () => {
+        marketPublish = null;
+        void rebuild()
+          .then(() => {
+            for (const wake of marketListeners) wake();
+          })
+          .catch((error) => app.log.warn({ err: error }, 'snapshot rebuild after a market refresh failed'));
+      },
+      Math.max(0, env.snapshotMinRebuildMs - since),
+    );
+    marketPublish.unref?.();
+  };
   const market = new MarketFeed({
     base: env.dexscreenerUrl,
     chain: env.dexscreenerChain,
@@ -215,16 +242,13 @@ export async function buildServer(options: { logoFetch?: LogoFetch } = {}): Prom
     refreshMs: env.dexscreenerRefreshMs,
     enabled: env.dexscreenerMarket,
     log: (line) => app.log.info(line.trim()),
-    onUpdate: () => {
-      void rebuild()
-        .then(() => {
-          for (const wake of marketListeners) wake();
-        })
-        .catch((error) => app.log.warn({ err: error }, 'snapshot rebuild after a market refresh failed'));
-    },
+    onUpdate: publishMarket,
   });
   market.start();
-  app.addHook('onClose', async () => market.stop());
+  app.addHook('onClose', async () => {
+    market.stop();
+    if (marketPublish) clearTimeout(marketPublish);
+  });
 
   /** One query at a time, whoever asks. */
   function rebuild(): Promise<MarketSnapshot | null> {

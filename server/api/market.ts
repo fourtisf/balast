@@ -119,9 +119,23 @@ export class MarketFeed {
   private lastRefreshAt: number | null = null;
   private lastError: string | null = null;
   private chains = new Set<string>();
-  /** Address → when no source answered for it, asked alone. */
+  /**
+   * `source|address` → when that source, asked about that token alone, came
+   * back with nothing.
+   *
+   * Per source, and that is the whole point. Keyed by address alone, a token
+   * GeckoTerminal answers for clears the mark DexScreener earned, so
+   * DexScreener is asked about it alone again on the very next refresh — and
+   * on every refresh after that, for ever. On the board that was forty extra
+   * single requests every thirty seconds, which earns a 429, which backs the
+   * source off for ten minutes, which leaves every row reading `chain`.
+   */
   private misses = new Map<string, number>();
+  /** Addresses no source answered for in the last completed refresh. */
+  private unknown = new Set<string>();
   private warnedChains = false;
+  /** Last logged quoted count, so the summary line is printed on a change. */
+  private lastQuoted = -1;
 
   constructor(options: MarketFeedOptions = {}) {
     this.fetch = options.fetch ?? (globalThis.fetch as unknown as Fetch);
@@ -172,7 +186,7 @@ export class MarketFeed {
       if (q) {
         quoted++;
         perSource.set(q.source, (perSource.get(q.source) ?? 0) + 1);
-      } else if (this.missedRecently(address)) unknown++;
+      } else if (this.unknown.has(address)) unknown++;
     }
     const backoffUntil = this.states
       .map((s) => s.backoffUntil)
@@ -233,8 +247,8 @@ export class MarketFeed {
     return this.refreshing;
   }
 
-  private missedRecently(address: string): boolean {
-    const at = this.misses.get(address);
+  private missedRecently(source: string, address: string): boolean {
+    const at = this.misses.get(`${source}|${address}`);
     return at !== undefined && this.now() - at < MISS_RETRY_MS;
   }
 
@@ -255,19 +269,28 @@ export class MarketFeed {
      */
     const quotedNow = new Set<string>();
 
-    const take = (quotes: Map<string, MarketQuote>): void => {
+    const take = (source: string, quotes: Map<string, MarketQuote>): void => {
+      let moved = 0;
       for (const [address, quote] of quotes) {
-        this.misses.delete(address);
+        this.misses.delete(`${source}|${address}`);
+        this.unknown.delete(address);
         quotedNow.add(address);
         const before = this.quotes.get(address);
         this.quotes.set(address, quote);
-        if (!before || differs(before, quote)) changed++;
+        if (!before || differs(before, quote)) moved++;
       }
+      changed += moved;
+      // Publish as the answers land, not when the whole cycle ends. A board
+      // of eighty tokens is dozens of sequential requests across two sources;
+      // holding every quote until the last one returned left every row
+      // reading `chain` for the length of it after each restart.
+      if (moved > 0) this.onUpdate?.();
     };
 
     for (const state of this.states) {
       if (pending.length === 0) break;
       if (this.now() < state.backoffUntil) continue;
+      const name = state.source.name;
       const size = Math.max(1, state.source.batch);
       let refusal: string | null = null;
       const unanswered: MarketAsk[] = [];
@@ -276,7 +299,7 @@ export class MarketFeed {
         const batch = pending.slice(i, i + size);
         const answer = await state.source.quotes(batch, ctx);
         for (const chain of answer.chains ?? []) if (chain) this.chains.add(chain);
-        take(answer.quotes);
+        take(name, answer.quotes);
         if (answer.refusal) {
           refusal = answer.refusal;
           break;
@@ -286,19 +309,22 @@ export class MarketFeed {
 
       // A token that got nothing in a batch is asked for alone: a long
       // batch's answer can be capped in pairs, and that says nothing about
-      // the token (§20). Only worth doing for a source that batches.
+      // the token (§20). Only worth doing for a source that batches, and only
+      // for a token THIS source has not recently drawn a blank on.
       if (!refusal && size > 1) {
         for (const ask of unanswered) {
           if (singles >= SINGLES_PER_REFRESH) break;
-          if (this.missedRecently(ask.address)) continue;
+          if (this.missedRecently(name, ask.address)) continue;
           singles++;
           const answer = await state.source.quotes([ask], ctx);
           for (const chain of answer.chains ?? []) if (chain) this.chains.add(chain);
-          take(answer.quotes);
+          take(name, answer.quotes);
           if (answer.refusal) {
             refusal = answer.refusal;
             break;
           }
+          // Asked on its own and still nothing: this source does not list it.
+          if (!answer.quotes.has(ask.address)) this.misses.set(`${name}|${ask.address}`, this.now());
         }
       }
 
@@ -321,13 +347,28 @@ export class MarketFeed {
       pending = pending.filter((ask) => !quotedNow.has(ask.address));
     }
 
-    // Nothing knew these. Remembered, so they are not asked alone again for
-    // MISS_RETRY_MS; a batch still carries them, which costs nothing.
-    if (answered) for (const ask of pending) this.misses.set(ask.address, this.now());
+    // Nothing placed these. `unknown` is what /api/health reports, and it is
+    // the last refresh's answer rather than a running total — a token that
+    // starts being listed stops being unknown on the pass that finds it.
+    if (answered) {
+      this.unknown = new Set(pending.map((ask) => ask.address));
+    }
 
     if (answered) {
       this.lastRefreshAt = this.now();
       this.lastError = lastRefusal;
+      // One line whenever the picture changes, so `pm2 logs balast-api`
+      // answers "why does every row read chain" without anyone guessing.
+      const summary = this.status();
+      const per = summary.sources.map((x) => `${x.name} ${x.quoted}`).join(', ');
+      if (summary.quoted !== this.lastQuoted || lastRefusal !== null) {
+        this.lastQuoted = summary.quoted;
+        this.log(
+          `  market: ${summary.quoted}/${summary.followed} tokens quoted (${per})` +
+            `, ${summary.unknown} unknown` +
+            (lastRefusal ? ` — ${lastRefusal}` : ''),
+        );
+      }
       if (this.chains.size > 1 && !this.warnedChains) {
         this.warnedChains = true;
         this.log(
@@ -338,7 +379,8 @@ export class MarketFeed {
     } else if (lastRefusal) {
       this.lastError = lastRefusal;
     }
-    if (changed > 0) this.onUpdate?.();
+    // No publish here: `take` does it as each batch lands, so a trailing one
+    // would wake every socket a second time for a snapshot already sent.
     return changed;
   }
 }

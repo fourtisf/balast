@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { MarketFeed, STALE_MS } from './market';
+import { MISS_RETRY_MS, MarketFeed, STALE_MS } from './market';
 import { aggregate, dexscreener, geckoterminal, parseGeckoTokens, parsePairs } from './market-sources';
 import type { Fetch } from '../indexer/logo-sources';
 
@@ -272,6 +272,8 @@ describe('the feed', () => {
     expect(q!.volume24hUsd).toBe(45812.33);
     expect(q!.buys24h).toBe(120);
     expect(feed.quote(OTHER)).toBeNull();
+    // Published as the batch landed, and once — not again at the end of the
+    // cycle, which woke every socket a second time for the same snapshot.
     expect(updates).toEqual([first]);
 
     const status = feed.status();
@@ -395,6 +397,54 @@ describe('the feed', () => {
     clock += 30_000;
     expect(await feed.refresh()).toBe(1);
     expect(feed.quote(TOKEN)!.volume24hUsd).toBe(1_030_000);
+    feed.stop();
+  });
+
+  it('stops asking a source alone about a token the OTHER source answers', async () => {
+    // The defect: `misses` was keyed by address, and any source answering
+    // cleared it. So a token GeckoTerminal knows but DexScreener does not was
+    // single-asked of DexScreener on every refresh, for ever — forty extra
+    // requests every thirty seconds, which earns a 429, which backs the
+    // source off, which leaves every row on the board reading `chain`.
+    let clock = 1_000_000;
+    const fetch = fakeFetch((url) => {
+      if (url.includes('/latest/dex/tokens/')) return { status: 200, body: { pairs: [] } };
+      if (url.includes('/networks?page=')) {
+        return { status: 200, body: { data: [{ id: 'robinhood', attributes: { name: 'Robinhood Chain' } }] } };
+      }
+      return {
+        status: 200,
+        body: {
+          data: [TOKEN, OTHER].map((address) => ({
+            attributes: { address, price_usd: '1', volume_usd: { h24: '99' } },
+          })),
+        },
+      };
+    });
+    const feed = new MarketFeed({ fetch, now: () => clock });
+    feed.follow([{ address: TOKEN, pool: POOL }, { address: OTHER, pool: '' }]);
+
+    // Two tokens, so a batch URL carries a comma and a single one does not.
+    const singles = () =>
+      fetch.calls.filter((c) => c.includes('/latest/dex/tokens/') && !c.includes(',')).length;
+
+    await feed.refresh();
+    expect(feed.quote(TOKEN)!.source).toBe('geckoterminal');
+    expect(feed.quote(OTHER)!.source).toBe('geckoterminal');
+    expect(singles()).toBe(2);
+
+    // Every refresh for the next ten minutes: batched, never asked alone.
+    for (let i = 0; i < 5; i++) {
+      clock += 30_000;
+      await feed.refresh();
+    }
+    expect(singles()).toBe(2);
+
+    // Past the retry window each is worth one more ask — DexScreener may have
+    // started listing it since.
+    clock += MISS_RETRY_MS;
+    await feed.refresh();
+    expect(singles()).toBe(4);
     feed.stop();
   });
 
