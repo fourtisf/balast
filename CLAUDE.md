@@ -2911,3 +2911,48 @@ because `pool_fee_hourly`'s four split columns arrived by migration and are
 filled by the next full rebuild, which has not run — every restart since has
 gone into the v3 factory's history walk first (§20). That is the dash working
 as designed, not a fault.
+
+### `followed: 0`: the feed was never told what to quote
+
+`/api/health` on the box, with no error anywhere:
+
+```
+"enabled": true, "followed": 0, "quoted": 0,
+"lastRefreshAt": null, "lastError": null, "chains": []
+```
+
+Not a refusal, not a parse — the feed had never run. `follow()`, the only way
+it learns which tokens the board shows, runs inside a **successful**
+`buildSnapshot`, and a snapshot was built only when a page asked for one or
+the indexer published a tick. The indexer was 26 minutes into the v3 factory's
+history walk, which writes no block and so publishes no tick; nobody had
+loaded the page since the restart. So nothing ever called `follow()`, the feed
+had nothing to do, and it did it perfectly.
+
+The whole board was demand-started, and that is the wrong shape for a process
+that is supposed to be quoting a market. `buildServer` now builds one snapshot
+on start and retries every fifteen seconds until one succeeds — then stops,
+because one success bootstraps the rest: the feed has its list and its own
+timer, and its updates keep the snapshot rebuilding. An idle box is not polled
+for ever (§19).
+
+`server/api/self-start.test.ts` syncs a chain, starts a server, and never
+requests `/api/snapshot`. Without the warm-up it fails with the box's own
+symptom, `expected 0 to be greater than 0`.
+
+**And the warm-up exposed a real fault in the cache.** `snapshot()` served
+whatever was cached if it was younger than the rebuild floor — including a
+cached *nothing*. The warm-up caches a null the instant the process starts, so
+every request for the next five seconds answered 503 over a database that by
+then had data. A suite caught it, which is the only reason it is not on the
+box: `rate limiting > counts each client separately` began expecting 200 and
+getting 503. Stale-while-revalidate trades freshness for latency and there is
+no freshness to trade when the last build was empty, so a cached null now
+rebuilds — cheaply, since `buildSnapshot` returns null at the cursor and
+anchor checks, before any expensive query.
+
+**A status of zeroes now says why.** `market.note` names the case: the feed is
+disabled, or it has not been given the board, or it has the board and has not
+refreshed yet, or every source answered and placed nothing (with the probe
+command to run). Three zeroes and a null error sent me looking at DexScreener,
+which was not involved.

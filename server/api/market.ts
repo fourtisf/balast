@@ -68,6 +68,16 @@ export interface MarketStatus {
   chains: string[];
   backoffUntil: string | null;
   sources: MarketSourceStatus[];
+  /**
+   * Why there are no live figures, when there are none.
+   *
+   * `followed: 0, quoted: 0, lastError: null` is three zeroes and no
+   * explanation, and it was what the box reported while the feed had simply
+   * never been told which tokens to quote. A status that cannot distinguish
+   * "nothing to do" from "nothing working" sends whoever reads it to the
+   * wrong place (§17).
+   */
+  note: string | null;
 }
 
 export interface MarketFeedOptions {
@@ -201,6 +211,17 @@ export class MarketFeed {
       lastError: this.lastError,
       chains: [...this.chains].sort(),
       backoffUntil: backoffUntil === undefined ? null : new Date(backoffUntil).toISOString(),
+      note: !this.enabled
+        ? 'DEXSCREENER_MARKET=false — the board shows the chain\'s own figures only.'
+        : this.followed.size === 0
+          ? 'No tokens followed yet: the board is learnt from the first snapshot the API ' +
+            'builds, and none has been built since this process started.'
+          : this.lastRefreshAt === null
+            ? 'Following the board, but no refresh has completed yet.'
+            : quoted === 0
+              ? 'Every source answered without placing a token. Run `npm run market:probe -- ' +
+                '0xTOKEN` to see what they return.'
+              : null,
       sources: this.states.map((s) => ({
         name: s.source.name,
         quoted: perSource.get(s.source.name) ?? 0,

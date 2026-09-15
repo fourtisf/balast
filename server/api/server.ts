@@ -126,6 +126,9 @@ function serialise(snapshot: MarketSnapshot): string {
 }
 
 /** The subset of `fetch` the logo route uses, so a test can hand in a fake. */
+/** The market sources' fetch, so a test can answer them without a network. */
+export type MarketFetch = import('../indexer/logo-sources').Fetch;
+
 export type LogoFetch = (
   url: string,
   init?: { headers?: Record<string, string>; signal?: AbortSignal },
@@ -143,7 +146,22 @@ const LOGO_MISS_TTL_MS = 10 * 60 * 1000;
 const LOGO_CACHE_MAX = 2_000;
 const LOGO_MAX_BYTES = 2 * 1024 * 1024;
 
-export async function buildServer(options: { logoFetch?: LogoFetch } = {}): Promise<FastifyInstance> {
+/**
+ * How long to wait before trying the first snapshot again.
+ *
+ * Only used before the first one succeeds — long enough not to hammer a
+ * database that is busy with the indexer's own rebuild, short enough that a
+ * box left alone starts quoting within a minute of becoming able to.
+ */
+const WARM_UP_RETRY_MS = 15_000;
+
+export async function buildServer(
+  options: {
+    logoFetch?: LogoFetch;
+    /** A fake for the market sources, so a test never reaches a real aggregator. */
+    marketFetch?: MarketFetch;
+  } = {},
+): Promise<FastifyInstance> {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
 
   await app.register(cors, {
@@ -234,7 +252,42 @@ export async function buildServer(options: { logoFetch?: LogoFetch } = {}): Prom
     );
     marketPublish.unref?.();
   };
+  /**
+   * Build one snapshot on start, and keep trying until one succeeds.
+   *
+   * Everything downstream of the board is demand-started. `follow()` — the
+   * only way the market feed learns which tokens the board shows — runs
+   * inside a SUCCESSFUL buildSnapshot, and a snapshot is built only when a
+   * page asks for one or the indexer publishes a tick. During a long indexer
+   * stage (a full rebuild, the v3 factory's history) there are no ticks, so
+   * on a box nobody happens to be looking at, the feed never starts at all:
+   * `followed: 0`, `lastRefreshAt: null`, no error anywhere, and every row
+   * reading `chain` for whoever loads the page next.
+   *
+   * One success bootstraps the rest — the feed then has its list and its own
+   * timer, and its updates keep the snapshot rebuilding — so this stops
+   * rather than polling an idle box for ever (§19: the expensive query must
+   * not run continuously).
+   */
+  let warmUp: ReturnType<typeof setTimeout> | null = null;
+  const warm = (): void => {
+    const again = (): void => {
+      warmUp = setTimeout(warm, WARM_UP_RETRY_MS);
+      warmUp.unref?.();
+    };
+    void rebuild()
+      .then((built) => {
+        if (built) app.log.info('  snapshot: first build done; the market feed has the board');
+        else again();
+      })
+      .catch((error) => {
+        app.log.warn({ err: error }, 'first snapshot build failed');
+        again();
+      });
+  };
+
   const market = new MarketFeed({
+    fetch: options.marketFetch,
     base: env.dexscreenerUrl,
     chain: env.dexscreenerChain,
     geckoBase: env.geckoterminalUrl,
@@ -245,9 +298,11 @@ export async function buildServer(options: { logoFetch?: LogoFetch } = {}): Prom
     onUpdate: publishMarket,
   });
   market.start();
+  warm();
   app.addHook('onClose', async () => {
     market.stop();
     if (marketPublish) clearTimeout(marketPublish);
+    if (warmUp) clearTimeout(warmUp);
   });
 
   /** One query at a time, whoever asks. */
@@ -281,7 +336,17 @@ export async function buildServer(options: { logoFetch?: LogoFetch } = {}): Prom
    * shows (§7), and the snapshot carries its own as-of time.
    */
   function snapshot(): Promise<MarketSnapshot | null> {
-    if (!cached) return rebuild();
+    // A cached NOTHING is not worth serving. Stale-while-revalidate is a
+    // trade of freshness for latency, and there is no freshness to trade when
+    // the last build came back empty — while the cheap thing to do is exactly
+    // the thing that would fix it, since buildSnapshot returns null at the
+    // cursor and anchor checks, before any of the expensive queries.
+    //
+    // It also decouples the start-up warm-up from this cache: the warm-up
+    // caches a null the moment the process starts, and without this every
+    // request for the next SNAPSHOT_MIN_REBUILD_MS answered 503 from it, over
+    // a database that by then had data.
+    if (!cached || !cached.snapshot) return rebuild();
     if (Date.now() - cached.at >= env.snapshotMinRebuildMs) {
       void rebuild().catch((error) => app.log.warn({ err: error }, 'snapshot rebuild failed'));
     }
