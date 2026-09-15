@@ -54,11 +54,42 @@ export function launchpadFor(hooks: string | null): string | null {
 }
 
 /**
- * Pre-graduation launchpad liquidity is listed but not stakeable (§4).
- * A pool with no hook, or a hook we do not recognise, is stakeable.
+ * Hooks verified safe to add liquidity through, by whoever verified them:
+ *
+ *   STAKEABLE_HOOKS=0xabc…,0xdef…
+ */
+function parseStakeableHooks(): Set<string> {
+  const raw = process.env.STAKEABLE_HOOKS;
+  const set = new Set<string>();
+  if (!raw) return set;
+  for (const entry of raw.split(',').map((s) => s.trim()).filter(Boolean)) {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(entry)) {
+      throw new Error(`STAKEABLE_HOOKS entry is not an address: ${JSON.stringify(entry)}`);
+    }
+    set.add(entry.toLowerCase());
+  }
+  return set;
+}
+
+export const STAKEABLE_HOOKS = parseStakeableHooks();
+
+/**
+ * A pool with no hook is stakeable. A pool with a hook is not, unless the
+ * hook is on the verified list.
+ *
+ * It used to be the other way round — a hook we did not recognise was
+ * stakeable — which was the safe direction for a listing and the wrong one
+ * for anything that adds liquidity (§14). Staking is real now (§20), and
+ * the first board showed what a hook can do: pools whose every trade paid
+ * about 98% of its size in "fee" to the hook. A hook can refuse liquidity,
+ * price it on its own curve, or take most of every trade; none of that is
+ * knowable from the log stream, so it is not offered until a person has
+ * looked. Pre-graduation launchpad hooks (LAUNCHPAD_HOOKS) name the
+ * launchpad on the row; they are not on the verified list either.
  */
 export function isStakeable(hooks: string | null): boolean {
-  return launchpadFor(hooks) === null;
+  if (!hooks || hooks.toLowerCase() === ZERO_HOOK) return true;
+  return STAKEABLE_HOOKS.has(hooks.toLowerCase());
 }
 
 /**
@@ -444,7 +475,7 @@ export async function classifyPools(poolIds?: string[]): Promise<number> {
   let changed = 0;
   for (const pool of pools) {
     const launchpad = launchpadFor(pool.hooks);
-    const stakeable = launchpad === null;
+    const stakeable = isStakeable(pool.hooks);
     const updated = await prisma.pool.updateMany({
       where: { id: pool.id, stakeable: { not: stakeable } },
       data: { stakeable },

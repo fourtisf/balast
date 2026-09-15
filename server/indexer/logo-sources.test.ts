@@ -591,9 +591,27 @@ describe('lookupLogos', () => {
     const facts = async () => ({ symbol: 'SPCX', name: 'Space Exploration \u2022 Robinhood Token' });
     const tickerSource = tickers({ facts, base: 'https://icons.example/ticker_icons/', site: 'https://site.example' });
     const fetch = service({ 'site.example': {} }).fetch;
-    expect(await reconcileStockLogos({ explorer: answering({}), tickers: tickerSource, fetch })).toBe(1);
+    const site = 'https://site.example';
+    expect(await reconcileStockLogos({ explorer: answering({}), tickers: tickerSource, fetch, site })).toBe(1);
     expect((await prisma.token.findUniqueOrThrow({ where: { address: TOKEN } })).logoUrl).toBe('https://site.example/tokens/spcx.svg');
-    expect(await reconcileStockLogos({ explorer: answering({}), tickers: tickerSource, fetch })).toBe(0);
+    expect(await reconcileStockLogos({ explorer: answering({}), tickers: tickerSource, fetch, site })).toBe(0);
+  });
+
+  it('keeps this site\'s own mark over an explorer icon unique to the token', async () => {
+    // The explorer serves the issuer's feather for SPCX in SpaceX's colour
+    // and under its own bytes, which no shared-icon rule can call generic.
+    // A mark curated here exists because no source has the real one, so it
+    // outranks whatever any source answers.
+    await resetDatabase();
+    const lime = 'https://explorer.example/images/spcx-feather-lime.png';
+    await stock(TOKEN, 'SPCX', 'Space Exploration \u2022 Robinhood Token', lime);
+    const facts = async () => ({ symbol: 'SPCX', name: 'Space Exploration \u2022 Robinhood Token' });
+    const site = 'https://site.example';
+    const tickerSource = tickers({ facts, base: 'https://icons.example/ticker_icons/', site });
+    const fetch = service({ 'site.example': {}, 'explorer.example': {} }).fetch;
+    expect(await reconcileStockLogos({ explorer: answering({ [TOKEN]: lime }), tickers: tickerSource, fetch, site })).toBe(1);
+    expect((await prisma.token.findUniqueOrThrow({ where: { address: TOKEN } })).logoUrl).toBe('https://site.example/tokens/spcx.svg');
+    expect(await reconcileStockLogos({ explorer: answering({ [TOKEN]: lime }), tickers: tickerSource, fetch, site })).toBe(0);
   });
 
   it('forgets an icon that three tokens share, remembers it as generic, and leaves a pair alone', async () => {

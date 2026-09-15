@@ -16,7 +16,7 @@ import type { ShapeId } from '../data/types';
 import { shapeWeights, weightsToBps } from '../shapes';
 import { Actions, encodeMint, encodeModifyLiquidities, encodeSettlePair, encodeSweep, encodeUnlockData } from './actions';
 import { amount0InCurrency1, liquidityForValue } from './liquidity';
-import { alignDown, alignUp, ticksForFactor, type PoolKey } from './pool';
+import { alignDown, alignUp, maxUsableTick, minUsableTick, ticksForFactor, type PoolKey } from './pool';
 import { amountsForLiquidity } from './tick-math';
 
 export interface MintPlanInput {
@@ -33,6 +33,13 @@ export interface MintPlanInput {
   maxPct: number;
   bins: number;
   shape: ShapeId;
+  /**
+   * The whole price line, min to max usable tick, as one position: a stake.
+   * Never out of position, earns on every trade at the pool's fee, and the
+   * least concentrated a position can be. `minPct`, `maxPct`, `bins` and
+   * `shape` are ignored.
+   */
+  fullRange?: boolean;
   owner: Address;
   /** How much more than the planned amounts the transaction may take; the price can move before it lands. */
   slippageBps?: number;
@@ -106,14 +113,18 @@ export function planMint(input: MintPlanInput): MintPlan {
   const slippageBps = BigInt(input.slippageBps ?? 100);
   if (depositQuote <= 0n) throw new RangeError('deposit must be positive');
 
-  const { tickLower, tickUpper } = rangeTicks({
-    tick,
-    tickSpacing: key.tickSpacing,
-    tokenIsCurrency0,
-    minPct: input.minPct,
-    maxPct: input.maxPct,
-  });
-  const ranges = splitRange(tickLower, tickUpper, key.tickSpacing, input.bins);
+  const { tickLower, tickUpper } = input.fullRange
+    ? { tickLower: minUsableTick(key.tickSpacing), tickUpper: maxUsableTick(key.tickSpacing) }
+    : rangeTicks({
+        tick,
+        tickSpacing: key.tickSpacing,
+        tokenIsCurrency0,
+        minPct: input.minPct,
+        maxPct: input.maxPct,
+      });
+  const ranges: [number, number][] = input.fullRange
+    ? [[tickLower, tickUpper]]
+    : splitRange(tickLower, tickUpper, key.tickSpacing, input.bins);
 
   // The deposit is in the quote; the value maths is in currency1. When the
   // quote is currency0 (native ether always is), convert at the live price.

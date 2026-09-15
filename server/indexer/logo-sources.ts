@@ -952,9 +952,12 @@ export async function reconcileStockLogos(options: {
   tickers?: LogoSource | null;
   fetch?: Fetch;
   log?: Log;
+  /** Where this site's own marks are served from; the canonical URL by default. */
+  site?: string;
 }): Promise<number> {
   const fetch = options.fetch ?? (globalThis.fetch as unknown as Fetch);
   const log = options.log ?? (() => {});
+  const site = (options.site ?? SITE_URL).replace(/\/+$/, '');
   const stocks = await prisma.$queryRaw<{ address: string; symbol: string; logo_url: string | null }[]>`
     SELECT address, symbol, logo_url FROM tokens
     WHERE name ~* 'robinhood\\s+token'
@@ -966,6 +969,24 @@ export async function reconcileStockLogos(options: {
   ];
   let changed = 0;
   for (const stock of stocks) {
+    // A mark of this site's own outranks every source. The explorer answers
+    // the issuer's feather for a private company — in that company's colour,
+    // under bytes unique to the token — so the generic check does not catch
+    // it, and SPCX wore the feather for a third time. What is curated here
+    // was curated because no source has the real mark.
+    const own = OWN_STOCK_MARKS[stock.symbol.trim().toUpperCase()];
+    if (own) {
+      const url = `${site}${own}`;
+      if (url !== stock.logo_url && (await imageLoads(fetch, url))) {
+        await prisma.token.update({
+          where: { address: stock.address },
+          data: { logoUrl: url, logoCheckedAt: new Date() },
+        });
+        changed++;
+        log(`  ${stock.symbol}: this site's own mark replaces ${stock.logo_url ?? 'nothing'}`);
+      }
+      continue;
+    }
     for (const [label, source] of ranked) {
       if (!source) continue;
       const url = await source.lookup(stock.address, { fetch, log });

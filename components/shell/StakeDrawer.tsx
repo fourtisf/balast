@@ -1,11 +1,12 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { TokenBadge } from '@/components/ui/TokenBadge';
-import { ageLabel, usd, weth } from '@/lib/format';
+import { EXPLORER_URL, NATIVE_ETH, isEther } from '@/lib/chain';
+import { ageLabel, usd } from '@/lib/format';
 import { FEE_YIELD_LABEL, feeYieldQualifier, feeYieldTitle, feeYieldValue } from '@/lib/yield';
 
 const FOCUSABLE =
@@ -17,7 +18,6 @@ export function StakeDrawer() {
   const router = useRouter();
   const drawerRef = useRef<HTMLElement | null>(null);
   const returnFocusTo = useRef<HTMLElement | null>(null);
-  const [amount, setAmount] = useState('1');
 
   const pool = pools.find((p) => p.id === stakePoolId) ?? null;
   const open = pool !== null;
@@ -59,17 +59,17 @@ export function StakeDrawer() {
     };
   }, [open, closeStake]);
 
-  const eth = Number.parseFloat(amount) || 0;
-  const depositUsd = eth * global.ethPriceUsd;
-  // A share of a pool whose liquidity is unknown (§14) is unknown too — not
-  // 100%, which is what dividing by zero liquidity said.
-  const liquidityKnown = !!pool && pool.tvlUsd > 0;
-  const share = pool && liquidityKnown ? depositUsd / (pool.tvlUsd + depositUsd) : 0;
-  const enoughData = pool?.feeYield.basis !== 'insufficient' && liquidityKnown;
-  // Weekly fees, after the protocol's 10% cut, from the trailing window only.
-  const weeklyWeth = pool
-    ? ((pool.feesWindowUsd * (168 / pool.feeWindowHours)) * share * 0.9) / global.ethPriceUsd
-    : 0;
+  const ether = pool ? isEther(pool.token.address) : false;
+  const hook = pool?.key?.hooks && pool.key.hooks.toLowerCase() !== NATIVE_ETH ? pool.key.hooks : null;
+  const copyAddress = async () => {
+    if (!pool) return;
+    try {
+      await navigator.clipboard.writeText(pool.token.address);
+      showToast('Contract address copied');
+    } catch {
+      showToast('Could not copy — select the address instead');
+    }
+  };
 
   return (
     <>
@@ -106,7 +106,7 @@ export function StakeDrawer() {
                 <div>
                   <div className="k">Fee yield</div>
                   <div
-                    className={`v num${enoughData ? ' up' : ' muted'}`}
+                    className={`v num${pool.feeYield.basis !== 'insufficient' ? ' up' : ' muted'}`}
                     title={feeYieldTitle(pool.feeYield)}
                   >
                     {feeYieldValue(pool.feeYield)}
@@ -134,61 +134,71 @@ export function StakeDrawer() {
                 </div>
               </div>
 
+              <div className="sect-h" style={{ display: 'block', marginBottom: 8 }}>
+                Contract address
+              </div>
+              {ether ? (
+                <p className="hint">Ether is the chain&rsquo;s native asset: no contract.</p>
+              ) : (
+                <div className="ca">
+                  <code className="num" title={pool.token.address}>
+                    {pool.token.address}
+                  </code>
+                  <div className="ca-actions">
+                    <button type="button" className="btn btn-ghost sm" onClick={copyAddress}>
+                      Copy
+                    </button>
+                    <a
+                      className="btn btn-ghost sm"
+                      href={`${EXPLORER_URL}/token/${pool.token.address}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Explorer
+                    </a>
+                  </div>
+                </div>
+              )}
+
               {pool.stakeable ? (
                 <>
-                  <div className="sect-h" style={{ display: 'block', marginBottom: 12 }}>
-                    Stake with one token
+                  <div className="sect-h" style={{ display: 'block', margin: '16px 0 8px' }}>
+                    What a stake is
                   </div>
-                  <div className="field">
-                    <label htmlFor="stake-amount" className="sr-only">
-                      Amount to stake in ETH
-                    </label>
-                    <div className="inp">
-                      <input
-                        id="stake-amount"
-                        type="number"
-                        min="0"
-                        step="0.1"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
-                      />
-                      <span className="unit">ETH</span>
-                    </div>
-                  </div>
-
+                  <p className="hint">
+                    One full-range position in this pool, minted through Uniswap&rsquo;s
+                    PositionManager straight to your wallet. It earns this pool&rsquo;s fee on every
+                    trade, it is never out of range, and only your wallet can withdraw it. You deposit
+                    both sides at today&rsquo;s ratio — the builder shows exactly how much of each.
+                  </p>
                   <div className="note">
-                    <div className="disclose">
-                      <span className="muted">Your share of pool</span>
-                      <b className="num">{liquidityKnown ? `${(share * 100).toFixed(2)}%` : '—'}</b>
-                    </div>
-                    <div className="disclose">
-                      <span className="muted">Est. weekly fees · from trailing 7d</span>
-                      <b className="num">{enoughData ? weth(weeklyWeth) : '—'}</b>
-                    </div>
-                    {/* §7: the protocol fee is disclosed here, before signing. */}
+                    {/* §7: the protocol fee is disclosed here, before signing. There is none:
+                        nothing of Balast's stands between the position and its fees (§20). */}
                     <div className="disclose">
                       <span className="muted">Balast fee</span>
-                      <b className="num">10% of fees earned</b>
+                      <b className="num">None · every fee is yours</b>
+                    </div>
+                    <div className="disclose">
+                      <span className="muted">Custody</span>
+                      <b>Your wallet, as an NFT</b>
                     </div>
                     <div className="disclose">
                       <span className="muted">Lockup</span>
                       <b>None</b>
                     </div>
                   </div>
-
                   <p className="hint" style={{ marginTop: 12 }}>
-                    Your position stays withdrawable by your wallet only. If the token drops, the
-                    value of your stake drops with it — fees soften that, they don&rsquo;t remove
-                    it.
+                    If the token drops, the value of your stake drops with it — fees soften that,
+                    they don&rsquo;t remove it.
                   </p>
                 </>
               ) : (
-                <div className="note">
-                  <b>Not stakeable yet</b>
+                <div className="note" style={{ marginTop: 16 }}>
+                  <b>Not offered for staking</b>
                   <p className="hint">
-                    {pool.token.symbol} is still on its {pool.token.launchpad ?? 'launchpad'} curve.
-                    Pre-graduation liquidity is indexed here but cannot be staked until the pool
-                    graduates.
+                    {pool.token.launchpad
+                      ? `${pool.token.symbol} is still on its ${pool.token.launchpad} curve, and pre-graduation liquidity cannot be staked until the pool graduates.`
+                      : `This pool runs a hook${hook ? ` (${hook.slice(0, 6)}…${hook.slice(-4)})` : ''} that Balast has not verified. A hook can refuse liquidity, price it on its own curve, or take most of every trade as its fee — one on this chain takes about 98%. It is not offered until someone has looked.`}
                   </p>
                 </div>
               )}
@@ -199,7 +209,7 @@ export function StakeDrawer() {
                 className="btn btn-ghost"
                 onClick={() => {
                   closeStake();
-                  router.push('/positions');
+                  router.push(`/positions?pool=${encodeURIComponent(pool.id)}`);
                 }}
               >
                 Build custom
@@ -208,11 +218,15 @@ export function StakeDrawer() {
                 className="btn btn-brand"
                 disabled={!pool.stakeable}
                 onClick={() => {
-                  showToast('Staked · fees start streaming next harvest');
+                  // The real thing, through the builder's mint flow: full
+                  // range, one position, dry-run by the node before the
+                  // wallet is asked to sign (§20). It used to toast "Staked"
+                  // and do nothing, which on mainnet is a lie.
                   closeStake();
+                  router.push(`/positions?pool=${encodeURIComponent(pool.id)}&range=full`);
                 }}
               >
-                Stake
+                Stake full range
               </button>
             </div>
           </>

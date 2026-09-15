@@ -29,8 +29,8 @@ test.describe('honest numbers', () => {
     await expect(drawer).toHaveClass(/on/);
     await expect(drawer.locator('.kv .v').first()).toHaveText('—');
     // And it cannot be staked while it is still on its launchpad curve (§4).
-    await expect(drawer).toContainText('Not stakeable yet');
-    await expect(drawer.getByRole('button', { name: 'Stake', exact: true })).toBeDisabled();
+    await expect(drawer).toContainText('Not offered for staking');
+    await expect(drawer.getByRole('button', { name: 'Stake full range', exact: true })).toBeDisabled();
   });
 
   test('a pool under 7d old is labelled est. and carries its age', async ({ page }) => {
@@ -41,14 +41,20 @@ test.describe('honest numbers', () => {
     await expect(drawer.locator('.kv .est').first()).toHaveText('est. · 1d');
   });
 
-  test('discloses the protocol fee in the drawer before signing', async ({ page }) => {
+  test('discloses the fee, the custody and the contract address in the drawer before signing', async ({ page }) => {
     await page.goto('/pools', { waitUntil: 'networkidle' });
     await page.fill('#q', 'PONS');
     await page.locator('#main .lb-row .stake-btn').first().click();
     const drawer = page.locator('.drawer');
-    await expect(drawer).toContainText('10% of fees earned');
+    // §7: the fee is disclosed here. Under §20 there is none, and that is said.
+    await expect(drawer).toContainText('Balast fee');
+    await expect(drawer).toContainText('every fee is yours');
     await expect(drawer).toContainText('Lockup');
-    await expect(drawer).toContainText('None');
+    await expect(drawer).toContainText('Your wallet, as an NFT');
+    await expect(drawer.locator('.ca code')).toContainText('0x');
+    // Stake is the builder's real flow, not a toast: it navigates.
+    await drawer.getByRole('button', { name: 'Stake full range' }).click();
+    await expect(page).toHaveURL(/\/positions\?pool=.*&range=full/);
   });
 
   test('says out-of-range positions earn nothing, in the row, in red', async ({ page }) => {

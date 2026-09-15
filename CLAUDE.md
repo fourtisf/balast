@@ -2396,3 +2396,60 @@ site; its pools stay indexed; the ether market is untouched.
 `LISTING_STABLECOINS=true` lists them again. The test builds a
 USDe/WETH pool with a $327M figure and asserts it is unlisted by
 default, listed on request, and that the ether market stays either way.
+
+### The stake that did nothing, a fee that did not exist, and the address
+
+ALFA's message had four parts: SPCX wearing the feather again, fees and
+volume that looked too small to be real, no contract address anywhere,
+and *make it mainnet*.
+
+**SPCX.** The explorer answers the issuer's feather for a private company
+in that company's colour, under bytes unique to the token, so the
+shared-icon rule could not call it generic and the explorer's answer
+stood for a third time. A mark curated in `OWN_STOCK_MARKS` exists
+because no source has the real one, so it now outranks every source in
+the reconciliation. Tested against an explorer that answers a unique
+icon.
+
+**Fees and volume.** Three things, one of them the section before this:
+the figures are chain time, sixty-eight days ago, while the sync catches
+up; the v4 sign fault shrank every v4 pool's volume to the trader's
+output side, and the deploy carrying the fix had not run; and a row like
+WIF, `$44` of volume against `$43` of fees, is a pool whose hook takes
+about 98% of every trade as its "fee" — a launchpad curve, not a market
+anyone should add liquidity to.
+
+**Which is why hooked pools are not offered any more.** `isStakeable`
+used to say a hook we did not recognise was stakeable, the safe
+direction for a listing (§14) and the wrong one the moment staking is
+real (§20). A pool with a hook is offered only when the hook is on
+`STAKEABLE_HOOKS`, an allowlist someone has to fill after looking; the
+drawer says so, and names the hook. `LAUNCHPAD_HOOKS` still names the
+launchpad on the row.
+
+**The drawer lied twice.** Its Stake button showed a toast — *Staked ·
+fees start streaming next harvest* — and did nothing, which on mainnet
+is a fabrication; and it disclosed a *10% of fees earned* that no
+contract takes, because under §20 there is no vault. Now: **Stake full
+range** hands the pool to the builder with `?pool=…&range=full`, where
+the real flow mints one full-range position through PositionManager to
+the wallet after the node has dry-run it; the disclosure §7 asks for is
+made and is honest — *Balast fee: none, every fee is yours; custody:
+your wallet, as an NFT; lockup: none*; and the amount field with its
+prototype `Max 4.18` is gone, since the builder reads the wallet.
+**Without a vault there is no protocol revenue**, which §20 recorded as
+ALFA's decision to make and which *make it mainnet* makes: this is what
+mainnet through Uniswap means, and the drawer now says it to the person
+about to sign.
+
+**Full range in the builder.** `planMint` takes `fullRange`: the lowest
+to the highest usable tick for the pool's spacing, one position, the
+shape and bin inputs ignored; the builder has the tick box, hides the
+shape, range and bin fields under it, estimates at the pool's own yield
+with no concentration, and reads `?pool=` and `?range=full` from the
+URL inside a Suspense boundary. Tested: one position from −887,220 to
+887,220 at spacing 60, both sides taken.
+
+**The contract address** is in the drawer under the header, in full,
+with Copy and an explorer link; ether says it has no contract. A site
+that asks people to trust a token should show them which token.

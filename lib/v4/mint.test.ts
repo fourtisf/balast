@@ -81,6 +81,33 @@ describe('planMint', () => {
     expect(plan.amount0 > 0n && plan.amount1 > 0n).toBe(true);
   });
 
+  it('plans a full-range stake as one position from the lowest usable tick to the highest', () => {
+    // A stake (§20): the whole price line, one NFT, never out of range. The
+    // inputs a shaped range needs are ignored, and both sides are taken at
+    // the current price.
+    const sqrtPriceX96 = getSqrtRatioAtTick(-201_000);
+    const plan = planMint({
+      key: ETH_POOL,
+      sqrtPriceX96,
+      tick: -201_000,
+      tokenIsCurrency0: false,
+      depositQuote: 10n ** 18n,
+      minPct: -15,
+      maxPct: 15,
+      bins: 24,
+      shape: 'curve',
+      fullRange: true,
+      owner: OWNER,
+      deadline: 1_800_000_000n,
+    });
+    expect(plan.positions).toHaveLength(1);
+    expect(plan.tickLower).toBe(-887_220);
+    expect(plan.tickUpper).toBe(887_220);
+    expect(plan.positions[0].tickLower).toBe(-887_220);
+    expect(plan.positions[0].tickUpper).toBe(887_220);
+    expect(plan.amount0 > 0n && plan.amount1 > 0n).toBe(true);
+  });
+
   it('sends ether as msg.value with a tolerance, and sweeps the rest back to the owner', () => {
     const plan = planMint({
       key: ETH_POOL,

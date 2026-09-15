@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { BinChart } from '@/components/positions/BinChart';
@@ -27,17 +28,29 @@ export function ShapeBuilder() {
   const { pools, global } = useMarket();
   const { wallet } = useUi();
 
+  // The drawer hands over here: ?pool= picks the pool, ?range=full is a stake.
+  const params = useSearchParams();
+  const wantedPool = params.get('pool');
+  const wantedFull = params.get('range') === 'full';
+
   const stakeablePools = pools.filter((p) => p.stakeable);
-  const [poolId, setPoolId] = useState(stakeablePools[0]?.id ?? pools[0].id);
+  const [poolId, setPoolId] = useState(
+    () => stakeablePools.find((p) => p.id === wantedPool)?.id ?? stakeablePools[0]?.id ?? pools[0].id,
+  );
   const [amount, setAmount] = useState('2.5');
   const [shape, setShape] = useState<ShapeId>('spot');
   const [minPct, setMinPct] = useState(-15);
   const [maxPct, setMaxPct] = useState(15);
   const [bins, setBins] = useState(24);
+  const [fullRange, setFullRange] = useState(wantedFull);
+  // The pools can arrive after the first render; honour the link once they do.
+  useEffect(() => {
+    if (wantedPool && pools.some((p) => p.id === wantedPool && p.stakeable)) setPoolId(wantedPool);
+  }, [wantedPool, pools.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pool = pools.find((p) => p.id === poolId) ?? pools[0];
   const shapeMeta = SHAPES.find((s) => s.id === shape)!;
-  const weights = useMemo(() => shapeWeights(shape, bins), [shape, bins]);
+  const weights = useMemo(() => (fullRange ? [1] : shapeWeights(shape, bins)), [shape, bins, fullRange]);
 
   const eth = Number.parseFloat(amount) || 0;
   const onChain = Boolean(pool.key);
@@ -46,12 +59,23 @@ export function ShapeBuilder() {
   const problems: string[] = [];
   if (!Number.isFinite(eth) || eth <= 0) problems.push('Enter a deposit amount.');
   else if (!onChain && eth > MAX_DEPOSIT_ETH) problems.push(`Deposit is above your balance of ${MAX_DEPOSIT_ETH} ETH.`);
-  if (maxPct <= minPct) problems.push('Max must be above Min.');
-  if (minPct > 0) problems.push('Min must be at or below the current price.');
-  if (maxPct < 0) problems.push('Max must be at or above the current price.');
+  if (!fullRange) {
+    if (maxPct <= minPct) problems.push('Max must be above Min.');
+    if (minPct > 0) problems.push('Min must be at or below the current price.');
+    if (maxPct < 0) problems.push('Max must be at or above the current price.');
+  }
   const inputsValid = problems.length === 0;
 
-  const flow = useMintFlow({ pool, deposit: amount, minPct, maxPct, bins, shape, valid: inputsValid });
+  const flow = useMintFlow({
+    pool,
+    deposit: amount,
+    minPct,
+    maxPct,
+    bins: fullRange ? 1 : bins,
+    shape: fullRange ? 'spot' : shape,
+    fullRange,
+    valid: inputsValid,
+  });
 
   const quoteSymbol = !flow.sides
     ? pool.quote
@@ -93,14 +117,19 @@ export function ShapeBuilder() {
   // token rather than in the quote — the simulated estimate of the split.
   const span = (safeMax - safeMin) / 100 || 1;
   const priceFraction = (0 - safeMin / 100) / span;
-  const tokenShare = weights.reduce((acc, w, i) => acc + ((i + 0.5) / bins > priceFraction ? w : 0), 0);
+  // A full-range position holds both sides about equally in value at the
+  // current price; a shaped one holds whatever its bins above the price weigh.
+  const tokenShare = fullRange
+    ? 0.5
+    : weights.reduce((acc, w, i) => acc + ((i + 0.5) / bins > priceFraction ? w : 0), 0);
 
   // Estimated, and labelled as such: this pool's trailing-7d yield scaled by
-  // how tightly the range concentrates it. Never a forecast (§1).
+  // how tightly the range concentrates it. Never a forecast (§1). Full range
+  // is the pool's own yield: no concentration at all.
   const known = pool.feeYield.basis !== 'insufficient';
   const trailing = yieldPct(pool.feeYield);
-  const concentration = Math.min(6, 0.6 / span);
-  const shapeFactor = shape === 'curve' ? 1.35 : shape === 'bidask' ? 0.8 : 1;
+  const concentration = fullRange ? 1 : Math.min(6, 0.6 / span);
+  const shapeFactor = fullRange ? 1 : shape === 'curve' ? 1.35 : shape === 'bidask' ? 0.8 : 1;
   const estYield = trailing * concentration * shapeFactor;
 
   // The range the plan actually covers, in the quote, from its aligned ticks.
@@ -193,6 +222,25 @@ export function ShapeBuilder() {
         </div>
 
         <div className="field">
+          <label className="lbl" htmlFor="b-full" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input
+              id="b-full"
+              type="checkbox"
+              checked={fullRange}
+              onChange={(e) => setFullRange(e.target.checked)}
+              style={{ width: 16, height: 16, accentColor: 'var(--ac)' }}
+            />
+            Full range · a stake
+          </label>
+          <p className="hint">
+            {fullRange
+              ? 'One position across the whole price line: never out of range, earns this pool\u2019s fee on every trade, the least concentrated a position can be. Untick to shape it.'
+              : 'Tick to stake instead: one full-range position, no shape and no bins to choose.'}
+          </p>
+        </div>
+
+        {!fullRange && (<>
+        <div className="field">
           <span className="lbl" id="shape-label">
             Shape
           </span>
@@ -264,6 +312,7 @@ export function ShapeBuilder() {
               : ''}
           </p>
         </div>
+        </>)}
 
         <button
           className="btn btn-brand"
@@ -323,10 +372,21 @@ export function ShapeBuilder() {
               )}
             </span>
           </div>
-          <span className="pill brand">{shapeMeta.label}</span>
+          <span className="pill brand">{fullRange ? 'Full range' : shapeMeta.label}</span>
         </div>
 
-        <BinChart weights={weights} minPct={safeMin / 100} maxPct={safeMax / 100} currentPrice={pool.priceUsd} shape={shape} symbol={tokenSymbol} />
+        {fullRange ? (
+          <div className="note" style={{ margin: '12px 0' }}>
+            <b>Full range</b>
+            <p className="hint">
+              The position covers every price the pool can reach, so it holds both {tokenSymbol} and{' '}
+              {quoteSymbol} at today&rsquo;s ratio and is never out of range. It earns the pool&rsquo;s
+              fee on every trade, spread over the whole line rather than concentrated around the price.
+            </p>
+          </div>
+        ) : (
+          <BinChart weights={weights} minPct={safeMin / 100} maxPct={safeMax / 100} currentPrice={pool.priceUsd} shape={shape} symbol={tokenSymbol} />
+        )}
 
         <div className="legend">
           <span>

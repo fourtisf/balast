@@ -71,9 +71,12 @@ export function useMintFlow(args: {
   maxPct: number;
   bins: number;
   shape: ShapeId;
+  /** One full-range position — a stake — instead of a shaped range. */
+  fullRange?: boolean;
   valid: boolean;
 }): MintFlow {
   const { pool, deposit, minPct, maxPct, bins, shape, valid } = args;
+  const fullRange = args.fullRange ?? false;
   const { wallet, openWallet, showToast } = useUi();
   const [live, setLive] = useState<(Slot0 & { tokenPriceInQuote: number }) | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
@@ -171,6 +174,7 @@ export function useMintFlow(args: {
           maxPct,
           bins,
           shape,
+          fullRange,
           owner: (owner ?? PLACEHOLDER_OWNER) as Address,
           slippageBps: SLIPPAGE_BPS,
           deadline: BigInt(Math.floor(Date.now() / 1000) + DEADLINE_SECONDS),
@@ -180,7 +184,7 @@ export function useMintFlow(args: {
     } catch (e) {
       return { plan: null, planError: (e as Error).message };
     }
-  }, [key, sides, live, valid, depositRaw, minPct, maxPct, bins, shape, owner]);
+  }, [key, sides, live, valid, depositRaw, minPct, maxPct, bins, shape, fullRange, owner]);
 
   const needs = useMemo(() => {
     if (!plan || !sides) return null;
@@ -267,6 +271,7 @@ export function useMintFlow(args: {
         maxPct,
         bins,
         shape,
+        fullRange,
         owner,
         slippageBps: SLIPPAGE_BPS,
         deadline: BigInt(Math.floor(Date.now() / 1000) + DEADLINE_SECONDS),
@@ -285,7 +290,7 @@ export function useMintFlow(args: {
     } finally {
       setBusyLabel(null);
     }
-  }, [step, plan, owner, provider, key, sides, approvals, live, depositRaw, minPct, maxPct, bins, shape, showToast, openWallet]);
+  }, [step, plan, owner, provider, key, sides, approvals, live, depositRaw, minPct, maxPct, bins, shape, fullRange, showToast, openWallet]);
 
   return { key, sides, live, liveError, plan, planError, needs, balances, step, busyLabel, approvals, gas, error, result, run };
 }
