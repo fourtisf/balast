@@ -2866,3 +2866,48 @@ Unchanged: the §12 questions (the simulator's six-hours-per-tick clock,
 `STAKEABLE_HOOKS` (§14, §20), the listing bar's two numbers
 (`LISTING_MIN_FDV_USD`, `LISTING_MIN_LIQUIDITY_USD` — still ALFA's guesses,
 not measurements), and the protocol fee's immutable cap before P2 deploys.
+
+### The first board after that deploy: every row read `chain`
+
+Three faults, all mine, all visible in one screenshot.
+
+**A miss was keyed by the token, not by the source that missed.** The singles
+pass exists because a long DexScreener batch comes back capped in pairs, so a
+token it does list can get nothing (§20); a token still unanswered when asked
+alone is remembered and not asked alone again for ten minutes. With a second
+source that remembering broke: `take()` cleared the mark whenever **any**
+source answered, so a token GeckoTerminal knows and DexScreener does not had
+its mark wiped on every refresh and was asked alone again on the next one, for
+ever. On that board it was forty-odd extra single requests every thirty
+seconds — which earns a 429, which backs DexScreener off for ten minutes,
+which is a board with no live figure anywhere on it. The key is
+`source|address` now. The test runs six refreshes over two tokens and asserts
+two single requests; against the previous commit it makes twelve.
+
+`/api/health`'s `unknown` changed with it: it was "missed recently", which
+after the fix would have counted a token one source missed and the other
+quoted. It is the set of tokens the last completed refresh could not place at
+all.
+
+**A restart left the board on `chain` for a minute.** Quotes were held until
+the whole cycle ended, and a cycle is dozens of sequential requests across two
+sources. `take()` publishes as each batch lands. The API coalesces those onto
+the rebuild floor (`SNAPSHOT_MIN_REBUILD_MS`) — `rebuild()` only de-duplicates
+calls that overlap, so a dozen batches would otherwise have run the expensive
+query a dozen times back to back. The old trailing publish went with it: it
+woke every socket a second time for a snapshot already sent.
+
+**The waiting panel asserted "no indexed blocks yet" on every refresh.** Every
+page load starts with no snapshot — the live provider is a fetch and a socket
+— so the panel renders for a moment on a perfectly healthy site, and it spent
+that moment making a claim about the chain before `/api/health` had been
+asked, over a board that had been showing eighty markets a second earlier.
+It draws nothing for the first 900ms now, and when it speaks with no answer
+yet it says it is asking. An unanswered question is not evidence of an empty
+chain, and §7 is exactly as much about the empty states as about the figures.
+
+One thing this does not change: the buy/sell columns read `— BUY / — SELL`
+because `pool_fee_hourly`'s four split columns arrived by migration and are
+filled by the next full rebuild, which has not run — every restart since has
+gone into the v3 factory's history walk first (§20). That is the dash working
+as designed, not a fault.
