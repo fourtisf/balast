@@ -20,6 +20,22 @@ import {
   yieldPct,
 } from '@/lib/yield';
 
+/** The day's volume as the row shows it: the aggregator's when it has a fresh quote, else the chain's. */
+function shownVolume(pool: Pool): number {
+  return pool.market ? pool.market.volume24hUsd : pool.volume24hUsd;
+}
+
+/** The 24h change as the row shows it, from the same source as the volume beside it. */
+function shownChange(pool: Pool): number | null {
+  return pool.market ? pool.market.priceChange24hPct : pool.change24hPct;
+}
+
+/** `12s ago`, `4m ago` — how old a live quote is. */
+function ago(iso: string): string {
+  const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
+  return s < 60 ? `${s}s ago` : `${Math.round(s / 60)}m ago`;
+}
+
 /** The buy side's share of the day's volume, for the split bar. Empty when there was none. */
 function buyShare(buy: number, sell: number): number {
   const total = buy + sell;
@@ -94,7 +110,7 @@ export function Leaderboard() {
         .sort((a, b) => capKey(b) - capKey(a) || b.tvlUsd - a.tvlUsd);
     }
     if (facet === 'volume') {
-      return matching.slice().sort((a, b) => b.volume24hUsd - a.volume24hUsd);
+      return matching.slice().sort((a, b) => shownVolume(b) - shownVolume(a));
     }
     return matching
       .filter((p) => p.ageHours >= YIELD_WINDOW_HOURS)
@@ -253,17 +269,46 @@ function Row({
           and sells it is made of — the same swaps, split by which side paid.
           The fee figure left the row at the owner's request; fees remain the
           yield's basis, the masthead's headline and the drawer's line. */}
-      <div className="lb-fig lb-vol">
-        <Flash as="div" className="big num" text={usd(pool.volume24hUsd)} />
-        <span className="cap">vol · 24h</span>
+      <div
+        className="lb-fig lb-vol"
+        title={
+          pool.market
+            ? `Volume over the last 24 hours, from DexScreener (${pool.market.dexId || 'pair'} ${pool.market.pairAddress.slice(0, 10)}…), updated ${ago(pool.market.at)}`
+            : pool.market === null
+              ? 'Volume over the last 24 hours of chain time, from indexed swaps. DexScreener has no fresh quote for this token.'
+              : 'Volume over the last 24 hours of chain time, from indexed swaps.'
+        }
+      >
+        <Flash as="div" className="big num" text={usd(shownVolume(pool))} />
+        <span className="cap">vol · 24h{pool.market ? ' · live' : pool.market === null ? ' · chain' : ''}</span>
       </div>
 
       {facet !== 'yield' ? (
+        pool.market ? (
+          // Trades, not dollars: DexScreener's feed splits the day's trades
+          // by side and its volume as one figure. Labelled as counts.
+          <div
+            className="lb-fig lb-split"
+            title={`${pool.market.buys24h.toLocaleString()} buys and ${pool.market.sells24h.toLocaleString()} sells over 24h, from DexScreener, updated ${ago(pool.market.at)}`}
+          >
+            <span className="lb-side">
+              <Flash as="span" className="num" text={pool.market.buys24h.toLocaleString()} />
+              <span className="cap">buys</span>
+            </span>
+            <span className="lb-side">
+              <Flash as="span" className="num" text={pool.market.sells24h.toLocaleString()} />
+              <span className="cap">sells</span>
+            </span>
+            <span className="lb-bar" role="presentation">
+              <i style={{ width: `${buyShare(pool.market.buys24h, pool.market.sells24h)}%` }} />
+            </span>
+          </div>
+        ) : (
         <div
           className="lb-fig lb-split"
           title={
             splitKnown(pool)
-              ? `${pool.buys24h.toLocaleString()} buys, ${pool.sells24h.toLocaleString()} sells over 24h`
+              ? `${pool.buys24h.toLocaleString()} buys, ${pool.sells24h.toLocaleString()} sells over 24h, from indexed swaps`
               : 'Buys and sells are not split for these hours yet; the next rebuild fills them in.'
           }
         >
@@ -279,6 +324,7 @@ function Row({
             <i style={{ width: `${splitKnown(pool) ? buyShare(pool.buyVolume24hUsd, pool.sellVolume24hUsd) : 0}%` }} />
           </span>
         </div>
+        )
       ) : (
         <div className="lb-fig">
           <Flash
@@ -297,13 +343,14 @@ function Row({
       <Flash
         as="div"
         className="lb-chg"
-        text={pool.change24hPct === null ? '—' : pool.change24hPct.toFixed(1)}
+        text={shownChange(pool) === null ? '—' : (shownChange(pool) as number).toFixed(1)}
+        title={pool.market ? `24h price change, from DexScreener` : '24h price change, from indexed swaps'}
       >
-        <Change pct={pool.change24hPct} />
+        <Change pct={shownChange(pool)} />
       </Flash>
 
-      <div className="lb-spark">
-        <AreaSpark values={pool.volumeHistory} negative={(pool.change24hPct ?? 0) < 0} />
+      <div className="lb-spark" title="Volume by 12-hour bucket over the trailing week, from indexed swaps">
+        <AreaSpark values={pool.volumeHistory} negative={(shownChange(pool) ?? 0) < 0} />
         <button
           className="stake-btn"
           onClick={(e) => {

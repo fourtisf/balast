@@ -25,6 +25,7 @@ import { USER_AGENT } from '../indexer/logo-sources';
 import { resolveUsdg } from '../indexer/anchor';
 import { readWork } from '../indexer/working';
 import { busKind, subscribeTicks } from './bus';
+import { MarketFeed } from './market';
 import { buildSnapshot } from './snapshot';
 
 const USDG = process.env.USDG_ADDRESS ?? '';
@@ -199,10 +200,34 @@ export async function buildServer(options: { logoFetch?: LogoFetch } = {}): Prom
   let cached: { snapshot: MarketSnapshot | null; at: number } | null = null;
   let building: Promise<MarketSnapshot | null> | null = null;
 
+  /**
+   * Live volume from DexScreener (market.ts). A refresh that changed a
+   * quote rebuilds the snapshot and wakes every socket, so the row moves on
+   * the aggregator's cadence even while the indexer is in a long stage and
+   * publishes no tick.
+   */
+  const marketListeners = new Set<() => void>();
+  const market = new MarketFeed({
+    base: env.dexscreenerUrl,
+    chain: env.dexscreenerChain,
+    refreshMs: env.dexscreenerRefreshMs,
+    enabled: env.dexscreenerMarket,
+    log: (line) => app.log.info(line.trim()),
+    onUpdate: () => {
+      void rebuild()
+        .then(() => {
+          for (const wake of marketListeners) wake();
+        })
+        .catch((error) => app.log.warn({ err: error }, 'snapshot rebuild after a market refresh failed'));
+    },
+  });
+  market.start();
+  app.addHook('onClose', async () => market.stop());
+
   /** One query at a time, whoever asks. */
   function rebuild(): Promise<MarketSnapshot | null> {
     if (!building) {
-      building = buildSnapshot({ usdgAddress: USDG || null })
+      building = buildSnapshot({ usdgAddress: USDG || null, market })
         .then((value) => {
           cached = { snapshot: value, at: Date.now() };
           return value;
@@ -381,6 +406,8 @@ export async function buildServer(options: { logoFetch?: LogoFetch } = {}): Prom
       pools: counts?.pools ?? 0,
       swaps: counts?.swaps ?? 0,
       bus: busKind(),
+      /** The DexScreener feed: how many of the board's tokens it quotes, and what it last said. */
+      market: market.status(),
       weth: CONTRACTS.weth,
       usdg: anchor.address,
       usdgSource: anchor.source,
@@ -540,10 +567,12 @@ export async function buildServer(options: { logoFetch?: LogoFetch } = {}): Prom
 
     void send();
     const unsubscribePromise = subscribeTicks(schedule);
+    marketListeners.add(schedule);
 
     connection.on('close', () => {
       closed = true;
       if (timer) clearTimeout(timer);
+      marketListeners.delete(schedule);
       void unsubscribePromise.then((unsubscribe) => unsubscribe());
     });
     connection.on('error', () => {

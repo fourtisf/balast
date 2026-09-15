@@ -133,36 +133,69 @@ export function StakeDrawer() {
                 </div>
                 <div>
                   <div className="k">Volume 24h</div>
-                  <div className="v num">{usd(pool.volume24hUsd)}</div>
+                  <div className="v num">{usd(pool.market ? pool.market.volume24hUsd : pool.volume24hUsd)}</div>
                   <div className="k" style={{ marginTop: 6 }}>
-                    {pool.trades24h} trade{pool.trades24h === 1 ? '' : 's'}
+                    {pool.market
+                      ? `${(pool.market.buys24h + pool.market.sells24h).toLocaleString()} trades · via DexScreener`
+                      : `${pool.trades24h} trade${pool.trades24h === 1 ? '' : 's'}` +
+                        (pool.market === null ? ' · from the chain' : '')}
                   </div>
                 </div>
               </div>
 
-              {/* The split a trader reads, from the same swaps as the volume:
-                  a buy pays the quote for the token, a sell the reverse. */}
-              <div className="split" aria-label="Buys and sells in the last 24 hours">
-                <div className="split-row">
-                  <span>
-                    <span className="k">Buys</span>{' '}
-                    <b className="num">{usd(pool.buyVolume24hUsd)}</b>{' '}
-                    <span className="muted num">· {pool.buys24h}</span>
-                  </span>
-                  <span style={{ textAlign: 'right' }}>
-                    <span className="k">Sells</span>{' '}
-                    <b className="num">{usd(pool.sellVolume24hUsd)}</b>{' '}
-                    <span className="muted num">· {pool.sells24h}</span>
-                  </span>
+              {/* The split a trader reads. Live from DexScreener when it has
+                  a fresh quote — trades by side, since its feed does not
+                  split the dollars — else from the indexed swaps, where a buy
+                  pays the quote for the token and a sell the reverse. */}
+              {pool.market ? (
+                <div className="split" aria-label="Buys and sells in the last 24 hours, from DexScreener">
+                  <div className="split-row">
+                    <span>
+                      <span className="k">Buys</span>{' '}
+                      <b className="num">{pool.market.buys24h.toLocaleString()}</b>{' '}
+                      <span className="muted">trades</span>
+                    </span>
+                    <span style={{ textAlign: 'right' }}>
+                      <span className="k">Sells</span>{' '}
+                      <b className="num">{pool.market.sells24h.toLocaleString()}</b>{' '}
+                      <span className="muted">trades</span>
+                    </span>
+                  </div>
+                  <div className="split-bar" aria-hidden="true">
+                    <i
+                      style={{
+                        width: `${pool.market.buys24h + pool.market.sells24h > 0 ? (100 * pool.market.buys24h) / (pool.market.buys24h + pool.market.sells24h) : 0}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="hint" style={{ marginTop: 8 }}>
+                    Volume, trades and the 24h change here are DexScreener&rsquo;s live figures.
+                    Liquidity, fees and yield are from the chain.
+                  </p>
                 </div>
-                <div className="split-bar" aria-hidden="true">
-                  <i
-                    style={{
-                      width: `${pool.buyVolume24hUsd + pool.sellVolume24hUsd > 0 ? (100 * pool.buyVolume24hUsd) / (pool.buyVolume24hUsd + pool.sellVolume24hUsd) : 50}%`,
-                    }}
-                  />
+              ) : (
+                <div className="split" aria-label="Buys and sells in the last 24 hours">
+                  <div className="split-row">
+                    <span>
+                      <span className="k">Buys</span>{' '}
+                      <b className="num">{pool.buyVolume24hUsd + pool.sellVolume24hUsd > 0 || pool.volume24hUsd <= 0 ? usd(pool.buyVolume24hUsd) : '—'}</b>{' '}
+                      <span className="muted num">· {pool.buys24h}</span>
+                    </span>
+                    <span style={{ textAlign: 'right' }}>
+                      <span className="k">Sells</span>{' '}
+                      <b className="num">{pool.buyVolume24hUsd + pool.sellVolume24hUsd > 0 || pool.volume24hUsd <= 0 ? usd(pool.sellVolume24hUsd) : '—'}</b>{' '}
+                      <span className="muted num">· {pool.sells24h}</span>
+                    </span>
+                  </div>
+                  <div className="split-bar" aria-hidden="true">
+                    <i
+                      style={{
+                        width: `${pool.buyVolume24hUsd + pool.sellVolume24hUsd > 0 ? (100 * pool.buyVolume24hUsd) / (pool.buyVolume24hUsd + pool.sellVolume24hUsd) : 0}%`,
+                      }}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="sect-h" style={{ display: 'block', marginBottom: 8 }}>
                 Contract address

@@ -2660,3 +2660,51 @@ went into the history walk first. A split of zero beside a volume that is
 not is a split that has not been computed, and the row draws it as a dash
 with an empty bar until it has; a day with no trades shows `$0` and an
 empty bar, not a half-full one.
+
+### Live volume from DexScreener: the owner's exception to §4
+
+Asked what API the volume came from, told none, and told why the figures
+were weeks old, ALFA decided: *iya tapi harusnya vol-nya realtime pakai API
+DexScreener aja*. §4 bars a third-party number from the critical path and
+that concern was raised twice; the owner reaffirmed, and this records the
+decision and its limits.
+
+**What comes from DexScreener** (`server/api/market.ts`): for every token
+on the board, the day's volume, its buys and sells as trade counts, the
+24h price change, and the pair it came from — one request per thirty
+tokens against `/latest/dex/tokens/{addresses}`, on a cadence
+(`DEXSCREENER_REFRESH_MS`, 30s), held in the API's memory. The pair chosen
+for a token is the pool on the row when DexScreener lists it — v3's pool
+address, v4's pool id — else the deepest. A quote older than fifteen
+minutes is dropped rather than shown as live; a 429 or a failure keeps
+the last quotes and backs off, doubling to ten minutes. A refresh that
+changed a quote rebuilds the snapshot and wakes every socket, so the row
+moves on the aggregator's cadence even while the indexer is in a long
+stage and publishes no tick.
+
+**What stays the chain's**: everything that prices the site. The anchor,
+the reserves and liquidity, the fees, the yield, the market cap, the
+sparkline's history. `Pool.market` sits beside the chain's fields, never
+in place of them, so the snapshot still carries the figure that can be
+checked against the chain and a test asserts both are present.
+
+**How the page says which is which**: the row's cap reads `vol · 24h ·
+live` over a DexScreener figure and `vol · 24h · chain` when DexScreener
+has no fresh quote for the token, with the source and the quote's age in
+the tooltip; the split column shows trades by side (DexScreener's feed
+does not split the dollars) under `buys` and `sells`, or the chain's
+dollar split as before; the 24h pill follows the same source as the
+volume beside it; the drawer's caption says *via DexScreener*, and a line
+under its split says what is live and what is the chain's. Simulated data
+has no feed and looks as it did.
+
+**Unverified from here**: the sandbox cannot reach DexScreener. The parser
+follows the documented response shape and reads anything else as no quote.
+Two things say what is true on the box: `/api/health` carries `market` —
+how many of the board's tokens are quoted, the last refresh, the last
+error, and the chain ids seen — and `npm run market:probe -- 0xTOKEN`
+prints the raw answer for a token. DexScreener's id for this chain is not
+known; unset, every chain's pairs are accepted and the ids seen are
+listed, and `DEXSCREENER_CHAIN` should then be set to the right one.
+`DEXSCREENER_MARKET=false` turns the feed off and the board back to the
+chain's figures alone.

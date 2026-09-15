@@ -20,6 +20,7 @@
     "tokens:indexed": "tsx server/scripts/indexed-tokens.ts",
     "logos:probe": "tsx server/scripts/probe-logos.ts",
     "logos:status": "tsx server/scripts/logo-status.ts",
+    "market:probe": "tsx server/scripts/market-probe.ts",
     "logos": "tsx server/logos/main.ts",
     "aggregates:rebuild": "tsx server/scripts/force-rebuild.ts",
     "db:migrate": "prisma migrate deploy",

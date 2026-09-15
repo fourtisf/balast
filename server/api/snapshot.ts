@@ -22,6 +22,7 @@
  */
 
 import { CONTRACTS, PROTOCOL_FEE_BPS, REWARD_WINDOW_SECONDS, NATIVE_ETH, isStablecoinSql } from '../../lib/chain';
+import type { MarketFeed } from './market';
 import type {
   FeeYield,
   MarketSnapshot,
@@ -45,6 +46,12 @@ const SPARK_BUCKET_HOURS = YIELD_WINDOW_HOURS / SPARK_BUCKETS; // 12h
 export interface SnapshotOptions {
   /** Wallet to build the portfolio for. Without one the portfolio is empty. */
   wallet?: string | null;
+  /**
+   * Live market figures (market.ts). Given, every listed pool carries its
+   * token's quote under `market` and the feed is told which tokens to keep
+   * quoting. Absent — tests, scripts — `market` is null on every pool.
+   */
+  market?: MarketFeed | null;
   /**
    * USDG's address. Optional: when absent it is discovered from the chain's
    * own tokens, the same way the indexer does it.
@@ -476,6 +483,7 @@ function toPool(row: PoolQueryRow): Pool {
     sells24h: row.sells_24h,
     feeHistory: row.spark.length > 0 ? row.spark : new Array(SPARK_BUCKETS).fill(0),
     volumeHistory: row.vol_spark.length > 0 ? row.vol_spark : new Array(SPARK_BUCKETS).fill(0),
+    market: null,
     feeYield: classifyYield(row),
   };
 }
@@ -643,6 +651,10 @@ export async function buildSnapshot(
   ]);
 
   const pools = onePoolPerToken(rows.map(toPool));
+  if (options.market) {
+    for (const pool of pools) pool.market = options.market.quote(pool.token.address);
+    options.market.follow(pools.map((p) => ({ address: p.token.address, pool: p.address })));
+  }
   const router = await queryRouter(pools);
 
   // Every figure that can be summed from the pools is summed from them, so

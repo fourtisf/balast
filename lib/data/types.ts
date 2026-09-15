@@ -59,6 +59,34 @@ export interface PoolKeyInfo {
   decimals1: number;
 }
 
+/**
+ * A live market figure from an aggregator, beside the chain's own.
+ *
+ * The owner's exception to §4 (CLAUDE.md §20): during a first sync the
+ * chain's volume is weeks old, and the board shows today's from DexScreener
+ * instead, labelled. Only what is named here is taken from it; nothing that
+ * prices the site. Absent (undefined) on simulated data; null when the
+ * aggregator has no fresh quote for the token, in which case the chain's
+ * figure shows, labelled as the chain's.
+ */
+export interface MarketQuote {
+  source: 'dexscreener';
+  chainId: string;
+  dexId: string;
+  pairAddress: string;
+  url: string;
+  priceUsd: number | null;
+  volume24hUsd: number;
+  buys24h: number;
+  sells24h: number;
+  priceChange24hPct: number | null;
+  liquidityUsd: number | null;
+  fdvUsd: number | null;
+  marketCapUsd: number | null;
+  /** When it was fetched, ISO. */
+  at: string;
+}
+
 export interface Pool {
   id: string;
   address: string;
@@ -116,6 +144,8 @@ export interface Pool {
   feeHistory: number[];
   /** The same 14 buckets of volume: the row's sparkline, since the row shows volume. */
   volumeHistory: number[];
+  /** See MarketQuote. */
+  market?: MarketQuote | null;
   feeYield: FeeYield;
 }
 

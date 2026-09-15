@@ -320,6 +320,55 @@ describe('the listing bar', () => {
     await prisma.token.delete({ where: { address: token } });
   });
 
+  it('carries a live market quote beside the chain figures when a feed is given, and tells the feed the board', async () => {
+    // The owner's exception to §4 (market.ts): the row shows DexScreener's
+    // day. The chain's figures are untouched beside it, a token the feed
+    // does not know reads null so the row falls back to the chain's, and
+    // without a feed at all the field is null on every pool.
+    const { MarketFeed } = await import('./market');
+    const fetch = (async (url: string) => {
+      const asked = url.split('/').pop()!.split(',');
+      const pairs = asked.slice(0, 1).map((address) => ({
+        chainId: 'robinhoodchain',
+        dexId: 'uniswap',
+        pairAddress: '0xpair',
+        url: 'https://dexscreener.com/robinhoodchain/0xpair',
+        baseToken: { address },
+        quoteToken: { address: WETH },
+        priceUsd: '1.5',
+        txns: { h24: { buys: 7, sells: 3 } },
+        volume: { h24: 123_456 },
+        priceChange: { h24: -2.5 },
+        liquidity: { usd: 50_000 },
+        fdv: 1_000_000,
+        marketCap: 900_000,
+      }));
+      return { ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => ({ pairs }) };
+    }) as never;
+    const feed = new MarketFeed({ fetch });
+
+    const first = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0, market: feed });
+    expect(first).not.toBeNull();
+    // Nothing quoted yet: the build told the feed what to follow.
+    expect(first!.pools.every((p) => p.market === null)).toBe(true);
+    expect(feed.status().followed).toBe(first!.pools.filter((p) => p.token.address !== '0x0000000000000000000000000000000000000000').length);
+
+    await feed.refresh();
+    const second = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0, market: feed });
+    const quoted = second!.pools.filter((p) => p.market);
+    expect(quoted).toHaveLength(1);
+    expect(quoted[0].market!.volume24hUsd).toBe(123_456);
+    expect(quoted[0].market!.buys24h).toBe(7);
+    expect(quoted[0].market!.priceChange24hPct).toBe(-2.5);
+    // The chain's own figure is still there, unchanged, beside it.
+    expect(quoted[0].volume24hUsd).not.toBe(123_456);
+    expect(second!.pools.filter((p) => p.market === null).length).toBe(second!.pools.length - 1);
+    feed.stop();
+
+    const bare = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0 });
+    expect(bare!.pools.every((p) => p.market === null)).toBe(true);
+  });
+
   it('hides a token with no readable supply below the bar, and never the ether market', async () => {
     // MOONCAT's contract does not answer totalSupply(), so its FDV is zero;
     // at any positive bar it is unlisted — still indexed, just not shown.
