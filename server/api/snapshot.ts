@@ -102,6 +102,7 @@ interface PoolQueryRow {
   /** Computed in SQL (§4.2). Null when there is no depth to divide by. */
   fee_yield_pct: number | null;
   spark: number[];
+  vol_spark: number[];
 }
 
 /**
@@ -294,21 +295,24 @@ async function queryPools(
       GROUP BY p.id
     ),
 
-    -- 14 buckets of 12 hours across the trailing window, for the sparkline.
+    -- 14 buckets of 12 hours across the trailing window, for the sparklines:
+    -- fees for the masthead's chart, volume for the row's.
     spark AS (
       SELECT p.id AS pool_id,
-        array_agg(COALESCE(b.total, 0)::float8 ORDER BY b.bucket) AS spark
+        array_agg(COALESCE(b.total, 0)::float8 ORDER BY b.bucket) AS spark,
+        array_agg(COALESCE(b.vol, 0)::float8 ORDER BY b.bucket) AS vol_spark
       FROM pools p
       JOIN listed l ON l.id = p.id
       CROSS JOIN params pr
       CROSS JOIN LATERAL (
-        SELECT g.bucket,
-          (SELECT SUM(f.fees_usd) FROM pool_fee_hourly f
+        SELECT g.bucket, b2.total, b2.vol
+        FROM generate_series(0, ${SPARK_BUCKETS - 1}) AS g(bucket)
+        CROSS JOIN LATERAL (
+          SELECT SUM(f.fees_usd) AS total, SUM(f.volume_usd) AS vol FROM pool_fee_hourly f
             WHERE f.pool_id = p.id
               AND f.hour >= pr.as_of - ((${SPARK_BUCKETS} - g.bucket) * ${SPARK_BUCKET_HOURS} * interval '1 hour')
               AND f.hour <  pr.as_of - ((${SPARK_BUCKETS} - g.bucket - 1) * ${SPARK_BUCKET_HOURS} * interval '1 hour')
-          ) AS total
-        FROM generate_series(0, ${SPARK_BUCKETS - 1}) AS g(bucket)
+        ) b2
       ) b
       GROUP BY p.id
     )
@@ -380,7 +384,8 @@ async function queryPools(
         )
       END::float8 AS fee_yield_pct,
 
-      s.spark
+      s.spark,
+      s.vol_spark
     FROM pools p
     JOIN listed l ON l.id = p.id
     CROSS JOIN params pr
@@ -470,6 +475,7 @@ function toPool(row: PoolQueryRow): Pool {
     buys24h: row.buys_24h,
     sells24h: row.sells_24h,
     feeHistory: row.spark.length > 0 ? row.spark : new Array(SPARK_BUCKETS).fill(0),
+    volumeHistory: row.vol_spark.length > 0 ? row.vol_spark : new Array(SPARK_BUCKETS).fill(0),
     feeYield: classifyYield(row),
   };
 }

@@ -112,8 +112,10 @@ export interface Pool {
   sellVolume24hUsd: number;
   buys24h: number;
   sells24h: number;
-  /** 14 buckets of recent fee revenue, for the row sparkline. */
+  /** 14 buckets of recent fee revenue: the masthead's chart. */
   feeHistory: number[];
+  /** The same 14 buckets of volume: the row's sparkline, since the row shows volume. */
+  volumeHistory: number[];
   feeYield: FeeYield;
 }
 

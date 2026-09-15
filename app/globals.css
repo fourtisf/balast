@@ -155,6 +155,11 @@ h1 em{font-style:italic;color:var(--ac)}
 .lb-fig{display:flex;flex-direction:column;align-items:flex-end;gap:2px;text-align:right;min-width:0}
 .lb-fig .big{font-weight:600;font-size:18px;line-height:1.2;white-space:nowrap}
 .lb-fig .cap{font-size:11px;color:var(--fg-3);white-space:nowrap}
+.lb-split{gap:1px}
+.lb-side{display:flex;align-items:baseline;gap:6px;font-size:13px;font-weight:500;white-space:nowrap}
+.lb-side .cap{font-size:10px;letter-spacing:.06em;text-transform:uppercase;min-width:26px;text-align:left}
+.lb-bar{display:block;width:100%;max-width:120px;height:4px;margin-top:5px;border-radius:99px;background:var(--raise);overflow:hidden}
+.lb-bar i{display:block;height:100%;background:var(--ac);border-radius:99px}
 .lb-chg{text-align:right}
 .lb-spark{position:relative;display:flex;justify-content:flex-end;align-items:center;min-width:0}
 .lb-spark svg{display:block;max-width:100%;height:auto}
@@ -401,7 +406,7 @@ h1 em{font-style:italic;color:var(--ac)}
   .sum .v{white-space:normal}
   .tl{grid-template-columns:1fr;gap:6px}
   .lb-row{grid-template-columns:40px minmax(0,1fr) 104px 80px;gap:10px;min-height:66px}
-  .lb-vol{display:none}                            /* then the volume: fees are what an LP earns */
+  .lb-split{display:none}                          /* then the split: the total is the figure */
   .rk{font-size:26px;padding-left:8px}
   .logo.lg{width:32px;height:32px;font-size:10.5px}
   .lb-row .tok .n{font-size:15px}

@@ -20,6 +20,12 @@ import {
   yieldPct,
 } from '@/lib/yield';
 
+/** The buy side's share of the day's volume, for the split bar. Half when there was none. */
+function buyShare(buy: number, sell: number): number {
+  const total = buy + sell;
+  return total > 0 ? Math.round((buy / total) * 100) : 50;
+}
+
 /**
  * Three rankings as one list with a facet. Market cap is the default, by the
  * owner's call: the board should lead with the largest projects. Volume ranks
@@ -232,17 +238,28 @@ function Row({
         </span>
       </button>
 
-      {/* Volume is on the row whatever the ranking: fees are what an LP earns,
-          volume is what produced them. */}
+      {/* Volume is on the row whatever the ranking, and beside it the buys
+          and sells it is made of — the same swaps, split by which side paid.
+          The fee figure left the row at the owner's request; fees remain the
+          yield's basis, the masthead's headline and the drawer's line. */}
       <div className="lb-fig lb-vol">
         <Flash as="div" className="big num" text={usd(pool.volume24hUsd)} />
         <span className="cap">vol · 24h</span>
       </div>
 
       {facet !== 'yield' ? (
-        <div className="lb-fig">
-          <Flash as="div" className="big num" text={usd(pool.fees24hUsd)} />
-          <span className="cap">fees · 24h</span>
+        <div className="lb-fig lb-split" title={`${pool.buys24h.toLocaleString()} buys, ${pool.sells24h.toLocaleString()} sells over 24h`}>
+          <span className="lb-side">
+            <Flash as="span" className="num" text={usd(pool.buyVolume24hUsd)} />
+            <span className="cap">buy</span>
+          </span>
+          <span className="lb-side">
+            <Flash as="span" className="num" text={usd(pool.sellVolume24hUsd)} />
+            <span className="cap">sell</span>
+          </span>
+          <span className="lb-bar" role="presentation">
+            <i style={{ width: `${buyShare(pool.buyVolume24hUsd, pool.sellVolume24hUsd)}%` }} />
+          </span>
         </div>
       ) : (
         <div className="lb-fig">
@@ -268,7 +285,7 @@ function Row({
       </Flash>
 
       <div className="lb-spark">
-        <AreaSpark values={pool.feeHistory} negative={(pool.change24hPct ?? 0) < 0} />
+        <AreaSpark values={pool.volumeHistory} negative={(pool.change24hPct ?? 0) < 0} />
         <button
           className="stake-btn"
           onClick={(e) => {

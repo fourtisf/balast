@@ -144,6 +144,9 @@ export class SimProvider implements DataProvider {
           sells24h: trades - buys,
         };
       })(),
+      volumeHistory: Array.from({ length: 14 }, (_, i) =>
+        Math.max(20, s.volume24hUsd * (0.5 + rng()) * (i / 14 + 0.4)),
+      ),
       feeHistory: Array.from({ length: 14 }, (_, i) =>
         Math.max(2, s.fees24hUsd * (0.5 + rng()) * (i / 14 + 0.4)),
       ),
@@ -261,6 +264,9 @@ export class SimProvider implements DataProvider {
       p.feeHistory = p.feeHistory
         .slice(1)
         .concat(Math.max(2, p.feeHistory[p.feeHistory.length - 1] * (1 + (rng() - 0.47) * 0.25)));
+      p.volumeHistory = p.volumeHistory
+        .slice(1)
+        .concat(Math.max(20, p.volumeHistory[p.volumeHistory.length - 1] * (1 + (rng() - 0.47) * 0.25)));
     }
 
     this.global.ethPriceUsd = Math.max(100, this.global.ethPriceUsd * (1 + (rng() - 0.5) * 0.004));

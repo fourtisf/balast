@@ -2622,3 +2622,33 @@ than asking again in the same breath. The burst rule is unchanged: a 429
 with several windows in flight still halves the concurrency and keeps the
 width. A test refuses every window over 500 blocks with a 429 and
 asserts the sync finishes, three refusals in a row and then none.
+
+### The row shows volume and its buys and sells; the fee figure leaves it
+
+ALFA's words on the first board after the history walk: *fee hapus dan vol
+itu hitung buy sale aja* — take the fee figure off the row, and show the
+volume as what it is made of. So the row now carries `vol · 24h` and, in
+the column the fee figure held, the day's buys and sells with a bar for the
+buy share — the same swaps split by which side paid, so the two always sum
+to the volume beside them (there is a test for that in the snapshot
+suite). The row's sparkline draws volume too, from a second series in the
+same fourteen buckets, so nothing on the row is a fee figure in disguise.
+Below 640px the split drops and the total stays.
+
+This sets aside §1's "fee yield is the headline" **for the row only**, and
+it is the owner's decision to set aside. Fees remain where they are what
+is being said: the masthead's headline sums the fees the listed pools paid
+in 24 hours, the drawer's *Fees 24h* line names the tier they came from,
+and the *By fee yield* facet still ranks on them. Removing those too is one
+line each, offered and not changed.
+
+**Why NVDA's liquidity read $25.5K**, asked in the same message. The
+liquidity figure is the pool's own reserves valued in dollars, and the
+board that prompted the question was built before two things landed: the
+v4 sign repair (§20), under which every v4 pool's reserves had been summed
+backwards, and the 12,893 v3 pools the factory's history added, whose
+tables had not yet been rebuilt. The rebuild runs after the history walk;
+until it completes, the liquidity on the board is the old arithmetic. If
+the figure stays thin after it, that is the pool's depth on this chain — a
+token's market cap is its supply at a price, and says nothing about how
+much sits in the pool.
