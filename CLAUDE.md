@@ -2716,3 +2716,19 @@ tokens on its first refresh with no error; and the answer listed pairs on
 same `Swap` signature and are what the poller now counts as `foreign`.
 Whether Balast should index them is a product question, not a defect;
 §4 names Uniswap and the launchpads.
+
+**32 of 76, and NVDA among the unquoted.** The first board with the feed
+on it showed NVDA at `vol · 24h · chain` while DexScreener's own page for
+it read $21M on a v3 NVDA/USDG pair. Two things, one of them mine. The
+feed had asked thirty tokens to a request and no error came back, which
+is the shape of an answer capped in pairs: the tokens at the back of a
+long batch get nothing and look unknown. Batches are ten now, a token
+that came back without a pair is asked for alone before it counts as
+unknown, and one DexScreener still answers nothing for is not asked again
+for ten minutes; `/api/health` reports `unknown` beside `quoted`. Tested
+against a fake that answers only the first three tokens of any
+multi-token request. The other thing is the chain side: the row's pool
+was NVDA/WETH at $25K because the v3 NVDA/USDG pool the history walk
+found — the one DexScreener shows, with $7.1M in it — had not been
+rebuilt into `pool_state` yet; the deepest-pool rule moves the row there
+once it has.

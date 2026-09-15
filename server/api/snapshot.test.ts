@@ -326,9 +326,12 @@ describe('the listing bar', () => {
     // does not know reads null so the row falls back to the chain's, and
     // without a feed at all the field is null on every pool.
     const { MarketFeed } = await import('./market');
+    // DexScreener knows exactly one of the board's tokens: the first it is asked about.
+    let known: string | null = null;
     const fetch = (async (url: string) => {
       const asked = url.split('/').pop()!.split(',');
-      const pairs = asked.slice(0, 1).map((address) => ({
+      if (known === null) known = asked[0];
+      const pairs = asked.filter((a) => a === known).map((address) => ({
         chainId: 'robinhoodchain',
         dexId: 'uniswap',
         pairAddress: '0xpair',

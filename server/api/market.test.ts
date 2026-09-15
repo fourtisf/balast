@@ -106,8 +106,11 @@ describe('choosing a pair', () => {
 });
 
 describe('the feed', () => {
-  it('quotes the tokens it follows, thirty to a request, and says what it did', async () => {
+  it('quotes the tokens it follows, ten to a request, re-asks the rest alone, and says what it did', async () => {
     let clock = 1_000_000;
+    const first = clock;
+    // Answers only for TOKEN, whatever is asked: every other address is
+    // asked again alone, misses, and is remembered as unknown.
     const fetch = fakeFetch(() => ({ status: 200, body: { pairs: [pair()] } }));
     const updates: number[] = [];
     const feed = new MarketFeed({ fetch, now: () => clock, onUpdate: () => updates.push(clock) });
@@ -117,9 +120,17 @@ describe('the feed', () => {
     }));
     feed.follow([{ address: TOKEN, pool: POOL }, ...many]);
     expect(await feed.refresh()).toBe(1);
-    expect(fetch.calls).toHaveLength(2);
+    // Four batches of ten, then each of the 35 unquoted alone.
+    expect(fetch.calls).toHaveLength(4 + 35);
     expect(fetch.calls[0]).toContain(`/latest/dex/tokens/${TOKEN}`);
-    expect(fetch.calls[0].split(',').length).toBe(30);
+    expect(fetch.calls[0].split(',').length).toBe(10);
+    expect(fetch.calls[4].split(',').length).toBe(1);
+    expect(feed.status().unknown).toBe(35);
+    // The next refresh within ten minutes asks the batches only.
+    const before = fetch.calls.length;
+    clock += 30_000;
+    await feed.refresh();
+    expect(fetch.calls.length - before).toBe(4);
 
     const q = feed.quote(TOKEN.toUpperCase());
     expect(q).not.toBeNull();
@@ -127,7 +138,7 @@ describe('the feed', () => {
     expect(q!.volume24hUsd).toBe(45812.33);
     expect(q!.buys24h).toBe(120);
     expect(feed.quote(OTHER)).toBeNull();
-    expect(updates).toEqual([clock]);
+    expect(updates).toEqual([first]);
 
     const status = feed.status();
     expect(status.followed).toBe(36);
@@ -138,6 +149,30 @@ describe('the feed', () => {
     // The same answer again changes nothing and wakes nobody.
     expect(await feed.refresh()).toBe(0);
     expect(updates).toHaveLength(1);
+    feed.stop();
+  });
+
+  it('quotes a token that a long batch starved, by asking for it alone', async () => {
+    // The box: 32 of 76 quoted, no error, and a token DexScreener plainly
+    // lists left unquoted. A fake that answers pairs only for the first
+    // three tokens of any multi-token request, and everything for a single.
+    const fetch = fakeFetch(() => ({ status: 200, body: null }));
+    const capped = (async (url: string) => {
+      fetch.calls.push(url);
+      const asked = url.split('/').pop()!.split(',');
+      const answered = asked.length > 1 ? asked.slice(0, 3) : asked;
+      const pairs = answered.map((address, i) => pair({ baseToken: { address }, pairAddress: `0xp${address.slice(-4)}${i}` }));
+      return { ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => ({ pairs }) };
+    }) as unknown as Fetch;
+    const feed = new MarketFeed({ fetch: capped });
+    const tokens = Array.from({ length: 8 }, (_, i) => ({ address: `0x${(i + 1).toString(16).padStart(40, '0')}`, pool: '' }));
+    feed.follow(tokens);
+    await feed.refresh();
+    for (const t of tokens) expect(feed.quote(t.address)).not.toBeNull();
+    expect(feed.status().quoted).toBe(8);
+    expect(feed.status().unknown).toBe(0);
+    // One batch, then the five it starved, alone.
+    expect(fetch.calls).toHaveLength(1 + 5);
     feed.stop();
   });
 

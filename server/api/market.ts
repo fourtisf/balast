@@ -16,10 +16,15 @@
  * trusted: a quote older than STALE_MS is dropped rather than shown as live,
  * and a refusal keeps the last quotes while the feed backs off.
  *
- * One request per thirty tokens (the documented batch size), the batch
- * listing the board's tokens, so a board of fifty is two requests a
- * refresh. The pair chosen for a token is the one whose address is the
- * pool on the row — v3's pool address, v4's pool id — or else the deepest.
+ * Ten tokens to a request. The endpoint takes thirty, but a first refresh
+ * on the box quoted 32 of 76 tokens with no error while a token it plainly
+ * lists sat unquoted — the shape of an answer capped in pairs, where the
+ * tokens at the back of a long batch get nothing. So batches are short,
+ * and a token that came back without a pair is asked for alone before it
+ * counts as unknown; one DexScreener does not know is not asked again for
+ * MISS_RETRY_MS. The pair chosen for a token is the one whose address is
+ * the pool on the row — v3's pool address, v4's pool id — or else the
+ * deepest.
  *
  * Unverified from the session that wrote it: the sandbox cannot reach
  * DexScreener. The parser follows the documented response shape and treats
@@ -36,6 +41,8 @@ export interface MarketStatus {
   enabled: boolean;
   followed: number;
   quoted: number;
+  /** Tokens DexScreener answered nothing for, alone; asked again after MISS_RETRY_MS. */
+  unknown: number;
   lastRefreshAt: string | null;
   lastError: string | null;
   /** DexScreener's chain ids seen in answers; more than one means DEXSCREENER_CHAIN should be set. */
@@ -56,8 +63,12 @@ export interface MarketFeedOptions {
   now?: () => number;
 }
 
-/** Tokens per request: DexScreener's documented batch size. */
-const BATCH = 30;
+/** Tokens per request. The endpoint takes thirty; see the note at the top on why fewer. */
+const BATCH = 10;
+/** Tokens re-asked alone per refresh, so a board of unknowns cannot turn one refresh into a hundred requests. */
+const SINGLES_PER_REFRESH = 40;
+/** How long a token DexScreener did not know stays unasked. */
+export const MISS_RETRY_MS = 10 * 60_000;
 /** A quote older than this is not live; it is dropped rather than shown. */
 export const STALE_MS = 15 * 60_000;
 const TIMEOUT_MS = 10_000;
@@ -86,6 +97,8 @@ export class MarketFeed {
   private lastRefreshAt: number | null = null;
   private lastError: string | null = null;
   private chains = new Set<string>();
+  /** Address → when it was last asked alone and came back without a pair. */
+  private misses = new Map<string, number>();
   private backoffMs = 0;
   private backoffUntil = 0;
   private warnedChains = false;
@@ -129,11 +142,16 @@ export class MarketFeed {
 
   status(): MarketStatus {
     let quoted = 0;
-    for (const address of this.followed.keys()) if (this.quote(address)) quoted++;
+    let unknown = 0;
+    for (const address of this.followed.keys()) {
+      if (this.quote(address)) quoted++;
+      else if (this.missedRecently(address)) unknown++;
+    }
     return {
       enabled: this.enabled,
       followed: this.followed.size,
       quoted,
+      unknown,
       lastRefreshAt: this.lastRefreshAt === null ? null : new Date(this.lastRefreshAt).toISOString(),
       lastError: this.lastError,
       chains: [...this.chains].sort(),
@@ -177,34 +195,65 @@ export class MarketFeed {
     return this.refreshing;
   }
 
+  private missedRecently(address: string): boolean {
+    const at = this.misses.get(address);
+    return at !== undefined && this.now() - at < MISS_RETRY_MS;
+  }
+
   private async doRefresh(): Promise<number> {
     if (!this.enabled || this.followed.size === 0) return 0;
     if (this.now() < this.backoffUntil) return 0;
     const addresses = [...this.followed.keys()];
     let changed = 0;
     let failed: string | null = null;
-    for (let i = 0; i < addresses.length; i += BATCH) {
-      const batch = addresses.slice(i, i + BATCH);
+    const unquoted: string[] = [];
+
+    /** Ask for these addresses in one request; returns the ones that came back with no pair, or null on a refusal. */
+    const ask = async (batch: string[]): Promise<string[] | null> => {
       const answer = await this.get(`${this.base}/latest/dex/tokens/${batch.join(',')}`);
       if (answer.status === 429) {
         failed = 'DexScreener answered 429 (rate limited)';
-        break;
+        return null;
       }
       if (answer.status < 200 || answer.status >= 300) {
         failed = `DexScreener answered ${answer.status}`;
-        break;
+        return null;
       }
       const pairs = parsePairs(answer.body);
       const at = new Date(this.now()).toISOString();
+      const missing: string[] = [];
       for (const address of batch) {
         const pair = choosePair(pairs, address, this.followed.get(address)?.pool ?? '', this.chain);
-        if (!pair) continue;
+        if (!pair) {
+          missing.push(address);
+          continue;
+        }
         this.chains.add(pair.chainId);
+        this.misses.delete(address);
         const quote = toQuote(pair, at);
         const before = this.quotes.get(address);
         this.quotes.set(address, quote);
         if (!before || differs(before, quote)) changed++;
       }
+      return missing;
+    };
+
+    for (let i = 0; i < addresses.length && !failed; i += BATCH) {
+      const missing = await ask(addresses.slice(i, i + BATCH));
+      if (missing === null) break;
+      unquoted.push(...missing);
+    }
+    // A token that got nothing in a batch is asked for alone: a long
+    // batch's answer can be capped in pairs, and that says nothing about
+    // the token. One DexScreener still answers nothing for is remembered.
+    let singles = 0;
+    for (const address of unquoted) {
+      if (failed || singles >= SINGLES_PER_REFRESH) break;
+      if (this.missedRecently(address)) continue;
+      singles++;
+      const missing = await ask([address]);
+      if (missing === null) break;
+      if (missing.length > 0) this.misses.set(address, this.now());
     }
     if (failed) {
       this.lastError = failed;
