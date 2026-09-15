@@ -2652,3 +2652,11 @@ until it completes, the liquidity on the board is the old arithmetic. If
 the figure stays thin after it, that is the pool's depth on this chain — a
 token's market cap is its supply at a price, and says nothing about how
 much sits in the pool.
+
+The first live board with the split on it read `$0 buy · $0 sell` beside
+`$459.7K vol`: the four columns arrived by migration with a default of zero
+and are filled by the next rebuild, which had not run — each restart since
+went into the history walk first. A split of zero beside a volume that is
+not is a split that has not been computed, and the row draws it as a dash
+with an empty bar until it has; a day with no trades shows `$0` and an
+empty bar, not a half-full one.

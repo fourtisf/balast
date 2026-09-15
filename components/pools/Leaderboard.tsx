@@ -20,10 +20,21 @@ import {
   yieldPct,
 } from '@/lib/yield';
 
-/** The buy side's share of the day's volume, for the split bar. Half when there was none. */
+/** The buy side's share of the day's volume, for the split bar. Empty when there was none. */
 function buyShare(buy: number, sell: number): number {
   const total = buy + sell;
-  return total > 0 ? Math.round((buy / total) * 100) : 50;
+  return total > 0 ? Math.round((buy / total) * 100) : 0;
+}
+
+/**
+ * Whether the day's buys and sells are known. The split is derived from the
+ * same swaps as the volume and always sums to it — so a volume with a split
+ * of zero is a split that has not been computed for those hours yet (the
+ * columns arrived by migration and are filled by the next rebuild), and it
+ * is drawn as a dash rather than as $0 beside a volume that says otherwise.
+ */
+function splitKnown(pool: { volume24hUsd: number; buyVolume24hUsd: number; sellVolume24hUsd: number }): boolean {
+  return pool.volume24hUsd <= 0 || pool.buyVolume24hUsd + pool.sellVolume24hUsd > 0;
 }
 
 /**
@@ -248,17 +259,24 @@ function Row({
       </div>
 
       {facet !== 'yield' ? (
-        <div className="lb-fig lb-split" title={`${pool.buys24h.toLocaleString()} buys, ${pool.sells24h.toLocaleString()} sells over 24h`}>
+        <div
+          className="lb-fig lb-split"
+          title={
+            splitKnown(pool)
+              ? `${pool.buys24h.toLocaleString()} buys, ${pool.sells24h.toLocaleString()} sells over 24h`
+              : 'Buys and sells are not split for these hours yet; the next rebuild fills them in.'
+          }
+        >
           <span className="lb-side">
-            <Flash as="span" className="num" text={usd(pool.buyVolume24hUsd)} />
+            <Flash as="span" className="num" text={splitKnown(pool) ? usd(pool.buyVolume24hUsd) : '—'} />
             <span className="cap">buy</span>
           </span>
           <span className="lb-side">
-            <Flash as="span" className="num" text={usd(pool.sellVolume24hUsd)} />
+            <Flash as="span" className="num" text={splitKnown(pool) ? usd(pool.sellVolume24hUsd) : '—'} />
             <span className="cap">sell</span>
           </span>
           <span className="lb-bar" role="presentation">
-            <i style={{ width: `${buyShare(pool.buyVolume24hUsd, pool.sellVolume24hUsd)}%` }} />
+            <i style={{ width: `${splitKnown(pool) ? buyShare(pool.buyVolume24hUsd, pool.sellVolume24hUsd) : 0}%` }} />
           </span>
         </div>
       ) : (
