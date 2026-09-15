@@ -2260,3 +2260,39 @@ refresh of the deploy. The `FDV` state remains for a token whose
 holdings are genuinely unread, because labelling the whole supply as
 market cap is the overstatement §15 refused; it is now a state that
 lasts a minute rather than an hour.
+
+### Ranked by market cap, by the owner's call
+
+ALFA's words: *kita harus ambil dari MC paling gede biar project gede* —
+the board should lead with the largest projects. So the default facet is
+**By market cap**; volume and fee yield stay as the second and third.
+This sets aside §1's "every ranking defaults to fee yield" and §19's
+open question on the volume default, and it is the owner's decision to
+set aside.
+
+The key is the market cap, or the fully diluted figure while a token's
+holdings are still unread, which is the same magnitude and the row says
+which. A token with neither — ether above all, whose market cap is not a
+figure this site can derive (§18) — follows the ranked rows, deepest
+first. So the ETH market sits after the ranked tokens under this facet,
+which is honest and will look odd; the ETH filter and the volume facet
+both put it back in front.
+
+A market-cap ranking has a failure mode the volume ranking did not: a
+market cap is circulating supply times a price, and a price from a pool
+with a few dollars in it supports nothing. On a launchpad chain such a
+token can carry a supply that makes its "market cap" the largest on the
+board. So there is a **liquidity floor** on the listing now
+(`LISTING_MIN_LIQUIDITY_USD`, default $10,000, `set-env.sh` to tune)
+beside the FDV bar — applied only to a *known* liquidity, so a pool
+whose depth the indexer cannot reconstruct (§14) is still listed with
+its dash, and the ether/USDG market is exempt as before. Like the FDV
+bar, **this is ALFA's number**: $10K is a first guess at "a real pool",
+not a measurement, and the first board under this ranking is what says
+whether it is high enough.
+
+Asked in the same message: what *fees · 24h* is. It is the swap fees
+traders paid in that pool over the last 24 hours of chain time — the
+pool's volume times its fee tier — and it is the pool's income, which
+the LPs own. That is why §1 makes it the headline: volume is what
+traders did, fees are what LPs earned.

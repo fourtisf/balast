@@ -21,17 +21,30 @@ import {
 } from '@/lib/yield';
 
 /**
- * The two rankings the prototype kept on separate boards, as one list with
- * a facet. Volume ranks the whole listing; fee yield ranks the pools with a
- * real seven-day record (§10's assumption), and only those — a yield figure
- * from less data is not worth ranking on (§1, §7).
+ * Three rankings as one list with a facet. Market cap is the default, by the
+ * owner's call: the board should lead with the largest projects. Volume ranks
+ * the whole listing too; fee yield ranks the pools with a real seven-day
+ * record (§10's assumption), and only those — a yield figure from less data
+ * is not worth ranking on (§1, §7).
  */
-type Facet = 'volume' | 'yield';
+type Facet = 'mc' | 'volume' | 'yield';
 
 const FACETS: { id: Facet; label: string }[] = [
+  { id: 'mc', label: 'By market cap' },
   { id: 'volume', label: 'By volume' },
   { id: 'yield', label: 'By fee yield' },
 ];
+
+/**
+ * The figure a market-cap ranking sorts on: the market cap, or the fully
+ * diluted figure while the token's holdings are still unread — the same
+ * magnitude, and the row says which it is. Zero for a token with neither,
+ * ether included: its market cap is not a figure this site can derive (§18),
+ * so those rows follow the ranked ones, deepest first.
+ */
+function capKey(pool: Pool): number {
+  return pool.marketCapUsd > 0 ? pool.marketCapUsd : pool.fdvUsd;
+}
 
 const FILTERS: { id: 'all' | Quote; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -42,7 +55,7 @@ const FILTERS: { id: 'all' | Quote; label: string }[] = [
 export function Leaderboard() {
   const pools = usePools();
   const { query, openStake } = useUi();
-  const [facet, setFacet] = useState<Facet>('volume');
+  const [facet, setFacet] = useState<Facet>('mc');
   const [filter, setFilter] = useState<'all' | Quote>('all');
   const reduced = useReducedMotion();
   const register = useFlip(!reduced);
@@ -58,6 +71,11 @@ export function Leaderboard() {
           p.token.name.toLowerCase().includes(q),
       );
 
+    if (facet === 'mc') {
+      return matching
+        .slice()
+        .sort((a, b) => capKey(b) - capKey(a) || b.tvlUsd - a.tvlUsd);
+    }
     if (facet === 'volume') {
       return matching.slice().sort((a, b) => b.volume24hUsd - a.volume24hUsd);
     }
@@ -75,9 +93,11 @@ export function Leaderboard() {
             Leaderboard
           </h2>
           <p className="lb-sub">
-            {facet === 'volume'
-              ? 'Ranked by 24h volume · fee yield appears at seven days of history'
-              : 'Ranked by fee yield, trailing 7d · only pools with seven days of history'}
+            {facet === 'mc'
+              ? 'Ranked by market cap · fee yield appears at seven days of history'
+              : facet === 'volume'
+                ? 'Ranked by 24h volume · fee yield appears at seven days of history'
+                : 'Ranked by fee yield, trailing 7d · only pools with seven days of history'}
           </p>
         </div>
         <div className="row">
@@ -114,7 +134,7 @@ export function Leaderboard() {
             <div className="empty">
               <b>{facet === 'yield' && query.trim() === '' ? 'Nothing to rank yet' : 'No match'}</b>
               {facet === 'yield' && query.trim() === ''
-                ? 'No pool has seven days of fees yet. Volume ranks everything.'
+                ? 'No pool has seven days of fees yet. Market cap and volume rank everything.'
                 : 'Try a ticker, or clear the search.'}
             </div>
           </li>
@@ -212,14 +232,14 @@ function Row({
         </span>
       </button>
 
-      {/* The board is ranked by volume, so the volume is on the row: fees are
-          what an LP earns, volume is what produced them. */}
+      {/* Volume is on the row whatever the ranking: fees are what an LP earns,
+          volume is what produced them. */}
       <div className="lb-fig lb-vol">
         <Flash as="div" className="big num" text={usd(pool.volume24hUsd)} />
         <span className="cap">vol · 24h</span>
       </div>
 
-      {facet === 'volume' ? (
+      {facet !== 'yield' ? (
         <div className="lb-fig">
           <Flash as="div" className="big num" text={usd(pool.fees24hUsd)} />
           <span className="cap">fees · 24h</span>

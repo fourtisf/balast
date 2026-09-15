@@ -90,6 +90,18 @@ export const env = {
    * market. Set to 0 to list everything.
    */
   listingMinFdvUsd: int('LISTING_MIN_FDV_USD', 1_000_000),
+  /**
+   * Minimum liquidity, in USD, for a pool to be listed — applied only when
+   * the liquidity is known, so a pool whose depth the indexer cannot
+   * reconstruct (§14) is still listed with its dash.
+   *
+   * The board ranks by market cap, and a market cap is circulating supply
+   * times a price; a price from a pool with a few dollars in it supports
+   * nothing, and on a launchpad chain such a token can carry a supply that
+   * makes its "market cap" the largest on the board. Below this a pool is
+   * indexed and counted, not listed. Set to 0 to list everything.
+   */
+  listingMinLiquidityUsd: int('LISTING_MIN_LIQUIDITY_USD', 10_000),
 
   apiPort: int('API_PORT', 3001),
   apiHost: process.env.API_HOST ?? '127.0.0.1',

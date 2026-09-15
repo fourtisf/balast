@@ -55,6 +55,11 @@ export interface SnapshotOptions {
    * `LISTING_MIN_FDV_USD`; ether/USDG pools are always listed (see env.ts).
    */
   minFdvUsd?: number;
+  /**
+   * Minimum known liquidity for a pool to be listed. Defaults to
+   * `LISTING_MIN_LIQUIDITY_USD`; unknown liquidity is not held against a pool.
+   */
+  minLiquidityUsd?: number;
 }
 
 interface PoolQueryRow {
@@ -100,7 +105,12 @@ interface PoolQueryRow {
  * measured back from it, so the figures describe a consistent moment rather
  * than a mixture of chain time and wall time.
  */
-async function queryPools(usdg: string, asOf: Date, minFdvUsd: number): Promise<PoolQueryRow[]> {
+async function queryPools(
+  usdg: string,
+  asOf: Date,
+  minFdvUsd: number,
+  minLiquidityUsd: number,
+): Promise<PoolQueryRow[]> {
   const weth = CONTRACTS.weth.toLowerCase();
   const usdgLower = usdg.toLowerCase();
   if (!/^0x[0-9a-fA-F]{40}$/.test(usdgLower)) {
@@ -108,6 +118,9 @@ async function queryPools(usdg: string, asOf: Date, minFdvUsd: number): Promise<
   }
   if (!Number.isFinite(minFdvUsd) || minFdvUsd < 0) {
     throw new Error(`minFdvUsd must be a non-negative number, got ${String(minFdvUsd)}`);
+  }
+  if (!Number.isFinite(minLiquidityUsd) || minLiquidityUsd < 0) {
+    throw new Error(`minLiquidityUsd must be a non-negative number, got ${String(minLiquidityUsd)}`);
   }
 
   /** Pick a column from whichever side of the pool is the traded one. */
@@ -154,6 +167,16 @@ async function queryPools(usdg: string, asOf: Date, minFdvUsd: number): Promise<
         -- construction, not by size.
         AND (
           COALESCE(ps.mc_usd, 0) >= ${minFdvUsd}
+          OR (${isEtherSql('p.token0', weth)} AND lower(p.token1) = '${usdgLower}')
+          OR (lower(p.token0) = '${usdgLower}' AND ${isEtherSql('p.token1', weth)})
+        )
+        -- The liquidity floor (LISTING_MIN_LIQUIDITY_USD): a price from a pool
+        -- with a few dollars in it supports no market cap. Only a KNOWN
+        -- liquidity is held against a pool — zero is unknown depth (§14),
+        -- listed with its dash — and the ether/USDG market is exempt again.
+        AND (
+          COALESCE(ps.tvl_usd, 0) = 0
+          OR ps.tvl_usd >= ${minLiquidityUsd}
           OR (${isEtherSql('p.token0', weth)} AND lower(p.token1) = '${usdgLower}')
           OR (lower(p.token0) = '${usdgLower}' AND ${isEtherSql('p.token1', weth)})
         )
@@ -567,7 +590,12 @@ export async function buildSnapshot(
 
   const asOf = cursor.lastIndexedAt;
   const [rows, vaults, portfolio] = await Promise.all([
-    queryPools(anchor.address, asOf, options.minFdvUsd ?? env.listingMinFdvUsd),
+    queryPools(
+      anchor.address,
+      asOf,
+      options.minFdvUsd ?? env.listingMinFdvUsd,
+      options.minLiquidityUsd ?? env.listingMinLiquidityUsd,
+    ),
     queryVaults(),
     queryPortfolio(options.wallet ?? null),
   ]);
