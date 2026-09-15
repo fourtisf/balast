@@ -2323,3 +2323,58 @@ that pool over the last 24 hours of chain time, and `$0` means nobody
 traded there — which is why such a row has no fees and no logo either:
 no source lists a token nobody trades, and the logo process asks about
 the board's rows by volume, so a $0 row is asked about last.
+
+### The empties, and the sign Uniswap v4 puts on a swap
+
+ALFA looked at the board ranked by market cap — USDe first with
+`liquidity —`, WIF and BRODIE the same, the drawer reading `Pool
+liquidity $0` and `Your share of pool 100.00%` — and asked for the empty
+data to be filled in. Most of it had one cause, and it was mine.
+
+**Uniswap v4's Swap event carries the trader's deltas, not the pool's.**
+v4-core `Pool.sol` builds the emitted `swapDelta` from
+`amountSpecified - amountSpecifiedRemaining`, which for an exact input is
+negative, and `amountCalculated`, the positive output. v3's Swap is the
+other way round: the pool's deltas, input positive. The decoder stored v4
+rows as emitted, and everything downstream reads the pool's signs: the
+reserves are the sum of the rows, the fee side is the positive one, the
+volume is the positive one. So for every v4 pool the swaps were summed
+backwards — each trade *removed* its input from the reserves and *added*
+its output — and reserves fell with volume until they went negative,
+which is unknown depth (§14), which is `liquidity —` on exactly the pools
+that trade. The fee was attributed to the token the trader received. The
+pools with a known liquidity were the v3 pools and the v4 pools that had
+barely traded.
+
+The fixture had been encoding v4 swaps with the pool's signs, so the
+suites — §9's replay proof included — proved the indexer against a
+convention the chain does not use. `swapLog` now takes the pool's signs
+and encodes the trader's, as the PoolManager does; the decoder negates
+v4 on the way in, so there is one convention in the tables and nothing
+below the decoder changed. `server/indexer/v4-sign.test.ts` decodes a
+log built the chain's way and asserts the pool's signs come out.
+
+**The rows already on the box** were written wrong and are repaired by
+a migration rather than a re-sync, which would have cost the days the
+first sync took. It flips the v4 rows, re-derives the fee side, and
+recomputes the fee from the true input: exactly for a static-fee pool,
+whose swap fee is the pool's; by proportion for a dynamic-fee pool
+(flag `0x800000`), whose per-swap fee the row does not keep — within a
+wei of a fresh sync, and said so here rather than left to be discovered
+by §9's comparison. v3 rows are untouched. The migration then forgets
+the rebuilt-anchor marker, so the indexer's first pass after the deploy
+rebuilds every priced table from the corrected rows — a full rebuild,
+during which no pass completes (§19); the site shows the last snapshot
+until it does. The test runs the migration's own statements against
+rows stored the old way and asserts all three cases.
+
+**The drawer** said `$0` for an unknown liquidity and `100.00%` for a
+share of it — dividing by zero and calling the result a fact (§7). Both
+are dashes now, the weekly estimate with them, and the `Max 4.18` beside
+the amount, a prototype figure nothing on the live site backs, is gone.
+
+What stays empty after this, honestly: fee yield until a pool has seven
+days of fees in the window; the market cap for the tokens whose holdings
+have not been read yet, which the refresh reaches in the board's order;
+and the Stakes, Positions and Portfolio pages, which are the §20
+decisions and not the indexer's.

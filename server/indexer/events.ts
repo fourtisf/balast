@@ -149,8 +149,17 @@ export function decodePoolManagerLog(log: RawLog, blockTime: Date): ChainEvent |
         kind: 'swap',
         ...at,
         poolId,
-        amount0: args.amount0 as bigint,
-        amount1: args.amount1 as bigint,
+        // v4 emits the TRADER's deltas — the input negative, the output
+        // positive (Pool.sol: `amountSpecified - amountSpecifiedRemaining` is
+        // the negative exact-input, `amountCalculated` the positive output).
+        // v3 emits the pool's. Everything downstream — reserves summed from
+        // the rows, the side the fee was taken in, volume — reads the pool's
+        // signs, so v4 is negated here and there is one convention in the
+        // tables. Stored as emitted, every traded v4 pool's reserves fell
+        // with its volume, and the board read "liquidity —" on exactly the
+        // pools that trade.
+        amount0: -(args.amount0 as bigint),
+        amount1: -(args.amount1 as bigint),
         sqrtPriceX96: args.sqrtPriceX96 as bigint,
         liquidity: args.liquidity as bigint,
         tick: Number(args.tick),

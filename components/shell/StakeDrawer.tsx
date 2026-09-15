@@ -61,8 +61,11 @@ export function StakeDrawer() {
 
   const eth = Number.parseFloat(amount) || 0;
   const depositUsd = eth * global.ethPriceUsd;
-  const share = pool ? depositUsd / (pool.tvlUsd + depositUsd) : 0;
-  const enoughData = pool?.feeYield.basis !== 'insufficient';
+  // A share of a pool whose liquidity is unknown (§14) is unknown too — not
+  // 100%, which is what dividing by zero liquidity said.
+  const liquidityKnown = !!pool && pool.tvlUsd > 0;
+  const share = pool && liquidityKnown ? depositUsd / (pool.tvlUsd + depositUsd) : 0;
+  const enoughData = pool?.feeYield.basis !== 'insufficient' && liquidityKnown;
   // Weekly fees, after the protocol's 10% cut, from the trailing window only.
   const weeklyWeth = pool
     ? ((pool.feesWindowUsd * (168 / pool.feeWindowHours)) * share * 0.9) / global.ethPriceUsd
@@ -123,7 +126,7 @@ export function StakeDrawer() {
                 </div>
                 <div>
                   <div className="k">Pool liquidity</div>
-                  <div className="v num">{usd(pool.tvlUsd)}</div>
+                  <div className="v num">{pool.tvlUsd > 0 ? usd(pool.tvlUsd) : '—'}</div>
                 </div>
                 <div>
                   <div className="k">Volume 24h</div>
@@ -150,14 +153,13 @@ export function StakeDrawer() {
                         onChange={(e) => setAmount(e.target.value)}
                       />
                       <span className="unit">ETH</span>
-                      <span className="max">Max 4.18</span>
                     </div>
                   </div>
 
                   <div className="note">
                     <div className="disclose">
                       <span className="muted">Your share of pool</span>
-                      <b className="num">{(share * 100).toFixed(2)}%</b>
+                      <b className="num">{liquidityKnown ? `${(share * 100).toFixed(2)}%` : '—'}</b>
                     </div>
                     <div className="disclose">
                       <span className="muted">Est. weekly fees · from trailing 7d</span>

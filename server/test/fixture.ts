@@ -177,6 +177,15 @@ function initializeLog(pool: FixturePool, block: number, logIndex: number): RawL
   };
 }
 
+/**
+ * A v4 Swap log. `amount0`/`amount1` are given from the POOL's side — input
+ * positive, the convention the fixture's reserve bookkeeping and every v3
+ * log share — and encoded the way the PoolManager actually emits them: from
+ * the trader's side, input negative (v4-core Pool.sol). The fixture used to
+ * encode the pool's signs directly, so the suites proved the indexer against
+ * a convention the real chain does not use, and every traded v4 pool on the
+ * live board read "liquidity —".
+ */
 function swapLog(args: {
   poolId: `0x${string}`;
   sender: `0x${string}`;
@@ -198,8 +207,8 @@ function swapLog(args: {
       'int128 amount0, int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick, uint24 fee',
     ),
     [
-      args.amount0,
-      args.amount1,
+      -args.amount0,
+      -args.amount1,
       getSqrtRatioAtTick(args.tick),
       args.liquidity,
       args.tick,
