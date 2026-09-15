@@ -103,6 +103,15 @@ export interface Pool {
   feeWindowHours: number;
   volume24hUsd: number;
   trades24h: number;
+  /**
+   * The split a trader reads: a swap that pays the quote for the token is a
+   * buy, the reverse a sell. Derived from the same swaps as the volume, so
+   * buys + sells is the volume and buys24h + sells24h is trades24h.
+   */
+  buyVolume24hUsd: number;
+  sellVolume24hUsd: number;
+  buys24h: number;
+  sells24h: number;
   /** 14 buckets of recent fee revenue, for the row sparkline. */
   feeHistory: number[];
   feeYield: FeeYield;

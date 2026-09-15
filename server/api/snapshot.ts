@@ -95,6 +95,10 @@ interface PoolQueryRow {
   window_hours: number;
   volume_24h_usd: number;
   trades_24h: number;
+  buy_volume_24h_usd: number;
+  sell_volume_24h_usd: number;
+  buys_24h: number;
+  sells_24h: number;
   /** Computed in SQL (§4.2). Null when there is no depth to divide by. */
   fee_yield_pct: number | null;
   spark: number[];
@@ -278,7 +282,11 @@ async function queryPools(
         COALESCE(SUM(CASE WHEN f.hour >= pr.since_24h THEN f.fees_usd END), 0)    AS fees_24h_usd,
         COALESCE(SUM(CASE WHEN f.hour >= pr.since_window THEN f.fees_usd END), 0) AS fees_window_usd,
         COALESCE(SUM(CASE WHEN f.hour >= pr.since_24h THEN f.volume_usd END), 0)  AS volume_24h_usd,
-        COALESCE(SUM(CASE WHEN f.hour >= pr.since_24h THEN f.swaps END), 0)::int  AS trades_24h
+        COALESCE(SUM(CASE WHEN f.hour >= pr.since_24h THEN f.swaps END), 0)::int  AS trades_24h,
+        COALESCE(SUM(CASE WHEN f.hour >= pr.since_24h THEN f.buy_volume_usd END), 0)  AS buy_volume_24h_usd,
+        COALESCE(SUM(CASE WHEN f.hour >= pr.since_24h THEN f.sell_volume_usd END), 0) AS sell_volume_24h_usd,
+        COALESCE(SUM(CASE WHEN f.hour >= pr.since_24h THEN f.buys END), 0)::int  AS buys_24h,
+        COALESCE(SUM(CASE WHEN f.hour >= pr.since_24h THEN f.sells END), 0)::int AS sells_24h
       FROM pools p
       JOIN listed l ON l.id = p.id
       CROSS JOIN params pr
@@ -355,6 +363,10 @@ async function queryPools(
       )::float8 AS window_hours,
       f.volume_24h_usd::float8  AS volume_24h_usd,
       f.trades_24h,
+      f.buy_volume_24h_usd::float8  AS buy_volume_24h_usd,
+      f.sell_volume_24h_usd::float8 AS sell_volume_24h_usd,
+      f.buys_24h,
+      f.sells_24h,
 
       -- §4.2: the yield arithmetic, in SQL.
       CASE
@@ -453,6 +465,10 @@ function toPool(row: PoolQueryRow): Pool {
     feeWindowHours: row.window_hours,
     volume24hUsd: row.volume_24h_usd,
     trades24h: row.trades_24h,
+    buyVolume24hUsd: row.buy_volume_24h_usd,
+    sellVolume24hUsd: row.sell_volume_24h_usd,
+    buys24h: row.buys_24h,
+    sells24h: row.sells_24h,
     feeHistory: row.spark.length > 0 ? row.spark : new Array(SPARK_BUCKETS).fill(0),
     feeYield: classifyYield(row),
   };

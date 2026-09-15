@@ -190,6 +190,20 @@ describe('buildSnapshot', () => {
     expect(pons!.marketCapUsd).toBeCloseTo(pons!.fdvUsd * 0.6, 2);
   });
 
+  it('splits the day\'s volume into buys and sells that add back up to it', () => {
+    // A buy pays the quote for the token, a sell the reverse; both come from
+    // the same swap rows as the volume, so the two halves must be the whole
+    // and the two counts must be the trade count. That is what makes the
+    // split the chain's own rather than an aggregator's.
+    for (const pool of snapshot.pools) {
+      expect(pool.buyVolume24hUsd + pool.sellVolume24hUsd).toBeCloseTo(pool.volume24hUsd, 6);
+      expect(pool.buys24h + pool.sells24h).toBe(pool.trades24h);
+      expect(pool.buyVolume24hUsd).toBeGreaterThanOrEqual(0);
+      expect(pool.sellVolume24hUsd).toBeGreaterThanOrEqual(0);
+    }
+    expect(snapshot.pools.some((p) => p.trades24h > 0)).toBe(true);
+  });
+
   it('shows no figure at all for a token that will not report its supply', () => {
     // MOONCAT's contract does not answer totalSupply() in the fixture. Zero,
     // which the column renders as an em dash — never a guess.

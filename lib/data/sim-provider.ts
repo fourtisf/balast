@@ -132,6 +132,18 @@ export class SimProvider implements DataProvider {
       feeWindowHours: windowHours,
       volume24hUsd: s.volume24hUsd,
       trades24h: Math.round(s.volume24hUsd / (120 + rng() * 90)),
+      // A rising token was bought more than sold in the day, and vice versa.
+      ...(() => {
+        const trades = Math.round(s.volume24hUsd / (120 + rng() * 90));
+        const buyShare = Math.min(0.8, Math.max(0.2, 0.5 + s.change24hPct / 100));
+        const buys = Math.round(trades * buyShare);
+        return {
+          buyVolume24hUsd: s.volume24hUsd * buyShare,
+          sellVolume24hUsd: s.volume24hUsd * (1 - buyShare),
+          buys24h: buys,
+          sells24h: trades - buys,
+        };
+      })(),
       feeHistory: Array.from({ length: 14 }, (_, i) =>
         Math.max(2, s.fees24hUsd * (0.5 + rng()) * (i / 14 + 0.4)),
       ),

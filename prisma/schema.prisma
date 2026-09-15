@@ -204,6 +204,12 @@ model PoolFeeHourly {
   feesUsd    Decimal  @map("fees_usd") @db.Decimal(38, 18)
   volumeUsd  Decimal  @map("volume_usd") @db.Decimal(38, 18)
   swaps      Int
+  /// The split a trader reads: a swap paying the quote for the token is a
+  /// buy, the reverse a sell. Derived from the swap rows' input side.
+  buys          Int     @default(0)
+  sells         Int     @default(0)
+  buyVolumeUsd  Decimal @default(0) @map("buy_volume_usd") @db.Decimal(38, 18)
+  sellVolumeUsd Decimal @default(0) @map("sell_volume_usd") @db.Decimal(38, 18)
 
   pool Pool @relation(fields: [poolId], references: [id], onDelete: Cascade)
 

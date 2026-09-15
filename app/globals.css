@@ -188,6 +188,10 @@ h1 em{font-style:italic;color:var(--ac)}
 .ca{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:1px solid var(--bd-n);border-radius:10px;background:var(--raise)}
 .ca code{font-size:12px;word-break:break-all;color:var(--fg-2)}
 .ca-actions{display:flex;gap:8px}
+.split{margin:12px 0 4px;padding:10px 12px;border:1px solid var(--bd-n);border-radius:10px;background:var(--panel)}
+.split-row{display:flex;justify-content:space-between;gap:12px;font-size:12.5px}
+.split-bar{height:6px;margin-top:8px;border-radius:99px;background:var(--raise);overflow:hidden}
+.split-bar i{display:block;height:100%;background:var(--ac);border-radius:99px}
 .btn.sm{padding:6px 12px;font-size:12px;min-height:0}
 
 /* value-change flash (§6) */

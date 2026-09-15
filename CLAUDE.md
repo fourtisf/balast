@@ -2499,3 +2499,41 @@ is every twenty windows. The test gives a poller the factory late,
 after another has synced without it, and asserts the pool appears, its
 swaps and state with it, nothing is read twice on the next start, and
 the fee rows equal a poller's that followed the factory throughout.
+
+### Buys and sells, from the chain; and what the NFT is not
+
+ALFA asked for the volume to be DexScreener's buy and sell volume, asked
+again what the fee is, and asked whether a person without an NFT can
+stake at all.
+
+**Buys and sells are on the drawer now, and they are the chain's.** A
+swap that pays the quote (ether or USDG) and takes the token is a buy;
+the reverse is a sell. The side the fee was taken in — the input side,
+which the v4 sign fix made right — says which, so the split comes from
+the same rows as the volume: buys plus sells is the volume, and the two
+counts are the trade count, and there is a test that says so for every
+pool. `pool_fee_hourly` carries `buys`, `sells`, `buy_volume_usd` and
+`sell_volume_usd` (one migration, filled by the next full rebuild); the
+snapshot sums them over the day; the drawer shows both figures, both
+counts and a bar. The bar is accent and neutral, not green and red:
+red means a negative number and a sell is not one (§5).
+
+**Not DexScreener's figures.** §4 bars a third-party number from the
+critical path, and the reason is the whole product: every figure on
+this site can be checked against the chain, and a figure taken from an
+aggregator cannot. The disagreement ALFA saw had three causes, none of
+them the source: the sync is in July, the v4 signs were wrong, and the
+pool it compared was one Balast had not indexed — all three above, all
+three fixed or in hand. Once the sync reaches the same day, the split
+here and the split there are the same swaps counted the same way.
+
+**The fee, once more, on the page.** Under *Fees 24h* the drawer now
+says the pool's own tier — *1% of every trade, paid to the pool* — so the
+figure explains itself: every trade pays that fraction into the pool,
+and the pool's liquidity providers own it. Under *Volume 24h* it says
+the trade count.
+
+**The NFT is not a ticket.** Nobody needs one to start: the stake
+*creates* it. The transaction mints the position as an NFT into the
+wallet, and the NFT is how the wallet owns the position from then on.
+The drawer says so in that sentence.

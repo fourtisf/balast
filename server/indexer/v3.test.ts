@@ -90,6 +90,20 @@ describe('the v3 factory', () => {
     expect(row.zero).toBe(0);
   });
 
+  it('counts a swap that pays the token as a sell, and only as a sell', async () => {
+    // Every v3 swap in the fixture pays NVDA into the pool for WETH: the
+    // trader is selling the token. The split reads the input side.
+    const [row] = await prisma.$queryRaw<{ swaps: number; buys: number; sells: number; vol: string; sold: string }[]>`
+      SELECT SUM(swaps)::int AS swaps, SUM(buys)::int AS buys, SUM(sells)::int AS sells,
+             SUM(volume_usd)::text AS vol, SUM(sell_volume_usd)::text AS sold
+      FROM pool_fee_hourly WHERE pool_id = ${V3_POOL_ID}
+    `;
+    expect(row.swaps).toBeGreaterThan(0);
+    expect(row.sells).toBe(row.swaps);
+    expect(row.buys).toBe(0);
+    expect(row.sold).toBe(row.vol);
+  });
+
   it('reads amounts straight off v3 Mint, which carries them', async () => {
     // The v4 path has to derive them from a liquidity delta; v3 does not.
     const mint = await prisma.liquidityEvent.findFirst({ where: { poolId: V3_POOL_ID } });

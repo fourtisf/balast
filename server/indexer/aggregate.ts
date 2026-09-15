@@ -319,6 +319,13 @@ export async function rebuildFeeHours(
         sw.amount1,
         t0.decimals AS dec0,
         t1.decimals AS dec1,
+        -- A buy pays the quote for the token: the input side (the side the
+        -- fee was taken in) is the one that is NOT the traded token.
+        CASE
+          WHEN sw.fee_token = 0 THEN NOT ${tradedSide({ addr0: 'p.token0', addr1: 'p.token1', weth, usdg, whenToken0: 'true', whenToken1: 'false', otherwise: 'true' })}
+          WHEN sw.fee_token = 1 THEN ${tradedSide({ addr0: 'p.token0', addr1: 'p.token1', weth, usdg, whenToken0: 'true', whenToken1: 'false', otherwise: 'true' })}
+          ELSE NULL
+        END AS is_buy,
         ${SWAP_RATIO} AS ratio,
         CASE
           WHEN ${isEtherSql('p.token1', weth)} THEN wu.weth_usd
@@ -342,7 +349,7 @@ export async function rebuildFeeHours(
     -- discard anything outside a sane bound rather than carrying it forward.
     usd AS (
       SELECT
-        pool_id, hour, fee_amount, fee_token, amount0, amount1, dec0, dec1,
+        pool_id, hour, fee_amount, fee_token, amount0, amount1, dec0, dec1, is_buy,
         ${sane(
           `COALESCE(quote0_usd, CASE WHEN quote1_usd IS NOT NULL THEN ratio * quote1_usd END)`,
           MAX_SANE_PRICE_USD,
@@ -352,9 +359,21 @@ export async function rebuildFeeHours(
           MAX_SANE_PRICE_USD,
         )} AS price1_usd
       FROM priced
+    ),
+
+    -- Each swap's volume: the side that entered the pool, at its price.
+    valued AS (
+      SELECT *,
+        CASE
+          WHEN amount0 > 0 THEN amount0 / power(10::numeric, dec0) * COALESCE(price0_usd, 0)
+          WHEN amount1 > 0 THEN amount1 / power(10::numeric, dec1) * COALESCE(price1_usd, 0)
+          ELSE 0
+        END AS volume_usd
+      FROM usd
     )
 
-    INSERT INTO pool_fee_hourly (pool_id, hour, fees_token0, fees_token1, fees_usd, volume_usd, swaps)
+    INSERT INTO pool_fee_hourly (pool_id, hour, fees_token0, fees_token1, fees_usd, volume_usd, swaps,
+                                 buys, sells, buy_volume_usd, sell_volume_usd)
     SELECT
       pool_id,
       hour,
@@ -372,25 +391,25 @@ export async function rebuildFeeHours(
         MAX_SANE_TOTAL_USD,
       )}, 0)::numeric(38,18),
       -- Volume is the side that entered the pool, valued the same way.
-      COALESCE(${sane(
-        `SUM(
-          CASE
-            WHEN amount0 > 0 THEN amount0 / power(10::numeric, dec0) * COALESCE(price0_usd, 0)
-            WHEN amount1 > 0 THEN amount1 / power(10::numeric, dec1) * COALESCE(price1_usd, 0)
-            ELSE 0
-          END
-        )`,
-        MAX_SANE_TOTAL_USD,
-      )}, 0)::numeric(38,18),
-      COUNT(*)::int
-    FROM usd
+      COALESCE(${sane(`SUM(volume_usd)`, MAX_SANE_TOTAL_USD)}, 0)::numeric(38,18),
+      COUNT(*)::int,
+      -- The buy/sell split of the same swaps and the same dollars.
+      COUNT(*) FILTER (WHERE is_buy)::int,
+      COUNT(*) FILTER (WHERE is_buy = false)::int,
+      COALESCE(${sane(`SUM(volume_usd) FILTER (WHERE is_buy)`, MAX_SANE_TOTAL_USD)}, 0)::numeric(38,18),
+      COALESCE(${sane(`SUM(volume_usd) FILTER (WHERE is_buy = false)`, MAX_SANE_TOTAL_USD)}, 0)::numeric(38,18)
+    FROM valued
     GROUP BY pool_id, hour
     ON CONFLICT (pool_id, hour) DO UPDATE SET
-      fees_token0 = EXCLUDED.fees_token0,
-      fees_token1 = EXCLUDED.fees_token1,
-      fees_usd    = EXCLUDED.fees_usd,
-      volume_usd  = EXCLUDED.volume_usd,
-      swaps       = EXCLUDED.swaps
+      fees_token0     = EXCLUDED.fees_token0,
+      fees_token1     = EXCLUDED.fees_token1,
+      fees_usd        = EXCLUDED.fees_usd,
+      volume_usd      = EXCLUDED.volume_usd,
+      swaps           = EXCLUDED.swaps,
+      buys            = EXCLUDED.buys,
+      sells           = EXCLUDED.sells,
+      buy_volume_usd  = EXCLUDED.buy_volume_usd,
+      sell_volume_usd = EXCLUDED.sell_volume_usd
   `);
 }
 

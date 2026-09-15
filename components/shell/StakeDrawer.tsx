@@ -123,6 +123,9 @@ export function StakeDrawer() {
                 <div>
                   <div className="k">Fees 24h</div>
                   <div className="v num">{usd(pool.fees24hUsd)}</div>
+                  <div className="k" style={{ marginTop: 6 }}>
+                    {(pool.feeTierBps / 100).toFixed(2).replace(/\.?0+$/, '')}% of every trade, paid to the pool
+                  </div>
                 </div>
                 <div>
                   <div className="k">Pool liquidity</div>
@@ -131,6 +134,33 @@ export function StakeDrawer() {
                 <div>
                   <div className="k">Volume 24h</div>
                   <div className="v num">{usd(pool.volume24hUsd)}</div>
+                  <div className="k" style={{ marginTop: 6 }}>
+                    {pool.trades24h} trade{pool.trades24h === 1 ? '' : 's'}
+                  </div>
+                </div>
+              </div>
+
+              {/* The split a trader reads, from the same swaps as the volume:
+                  a buy pays the quote for the token, a sell the reverse. */}
+              <div className="split" aria-label="Buys and sells in the last 24 hours">
+                <div className="split-row">
+                  <span>
+                    <span className="k">Buys</span>{' '}
+                    <b className="num">{usd(pool.buyVolume24hUsd)}</b>{' '}
+                    <span className="muted num">· {pool.buys24h}</span>
+                  </span>
+                  <span style={{ textAlign: 'right' }}>
+                    <span className="k">Sells</span>{' '}
+                    <b className="num">{usd(pool.sellVolume24hUsd)}</b>{' '}
+                    <span className="muted num">· {pool.sells24h}</span>
+                  </span>
+                </div>
+                <div className="split-bar" aria-hidden="true">
+                  <i
+                    style={{
+                      width: `${pool.buyVolume24hUsd + pool.sellVolume24hUsd > 0 ? (100 * pool.buyVolume24hUsd) / (pool.buyVolume24hUsd + pool.sellVolume24hUsd) : 50}%`,
+                    }}
+                  />
                 </div>
               </div>
 
@@ -170,9 +200,9 @@ export function StakeDrawer() {
                     PositionManager straight to your wallet. Uniswap represents every liquidity
                     position as an NFT: the NFT <em>is</em> the position — its range, its liquidity
                     and the fees it has earned — and whoever holds it is the only one who can
-                    withdraw. It earns this pool&rsquo;s fee on every trade and is never out of
-                    range. You deposit both sides at today&rsquo;s ratio — the builder shows exactly
-                    how much of each.
+                    withdraw. You do not need one to start: staking creates it. It earns this
+                    pool&rsquo;s fee on every trade and is never out of range. You deposit both sides
+                    at today&rsquo;s ratio — the builder shows exactly how much of each.
                   </p>
                   <div className="note">
                     {/* §7: the protocol fee is disclosed here, before signing. There is none:
