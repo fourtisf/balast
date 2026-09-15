@@ -2378,3 +2378,21 @@ days of fees in the window; the market cap for the tokens whose holdings
 have not been read yet, which the refresh reaches in the board's order;
 and the Stakes, Positions and Portfolio pages, which are the §20
 decisions and not the indexer's.
+
+### A dollar is not a project
+
+ALFA asked why USDe and syrupUSDG were on the board at all. Ranked by
+market cap they led it: a stablecoin's market cap is how much of it was
+minted or bridged, which says nothing about a project, and on this
+ranking it sits above every project there is.
+
+Stablecoins get no row of their own now. The rule is the symbol —
+`isStablecoinSymbol` in `lib/chain.ts`: `USD` anywhere in it, which
+catches USDC, USDT, USDe and syrupUSDG, plus the few dollars that do not
+carry the letters (DAI, FRAX, GHO, LUSD, MIM, TUSD, PYUSD) and the euro
+pair — applied in the listing CTE on the traded side, with the same rule
+as SQL kept beside it. USDG remains the quote that prices the whole
+site; its pools stay indexed; the ether market is untouched.
+`LISTING_STABLECOINS=true` lists them again. The test builds a
+USDe/WETH pool with a $327M figure and asserts it is unlisted by
+default, listed on request, and that the ether market stays either way.

@@ -102,6 +102,13 @@ export const env = {
    * indexed and counted, not listed. Set to 0 to list everything.
    */
   listingMinLiquidityUsd: int('LISTING_MIN_LIQUIDITY_USD', 10_000),
+  /**
+   * Whether stablecoins are listed as rows of their own. Off by the owner's
+   * call: a dollar is not a project, and on a board ranked by market cap it
+   * would sit above every one of them. Their pools stay indexed, and a
+   * stablecoin remains a quote (USDG prices the whole site).
+   */
+  listStablecoins: (process.env.LISTING_STABLECOINS ?? 'false').toLowerCase() === 'true',
 
   apiPort: int('API_PORT', 3001),
   apiHost: process.env.API_HOST ?? '127.0.0.1',

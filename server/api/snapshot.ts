@@ -21,7 +21,7 @@
  * no harvest payouts — the components already have empty states for that.
  */
 
-import { CONTRACTS, PROTOCOL_FEE_BPS, REWARD_WINDOW_SECONDS, NATIVE_ETH } from '../../lib/chain';
+import { CONTRACTS, PROTOCOL_FEE_BPS, REWARD_WINDOW_SECONDS, NATIVE_ETH, isStablecoinSql } from '../../lib/chain';
 import type {
   FeeYield,
   MarketSnapshot,
@@ -60,6 +60,8 @@ export interface SnapshotOptions {
    * `LISTING_MIN_LIQUIDITY_USD`; unknown liquidity is not held against a pool.
    */
   minLiquidityUsd?: number;
+  /** Whether stablecoins get rows of their own. Defaults to `LISTING_STABLECOINS`. */
+  listStablecoins?: boolean;
 }
 
 interface PoolQueryRow {
@@ -110,6 +112,7 @@ async function queryPools(
   asOf: Date,
   minFdvUsd: number,
   minLiquidityUsd: number,
+  listStablecoins: boolean,
 ): Promise<PoolQueryRow[]> {
   const weth = CONTRACTS.weth.toLowerCase();
   const usdgLower = usdg.toLowerCase();
@@ -158,10 +161,16 @@ async function queryPools(
       SELECT p.id
       FROM pools p
       LEFT JOIN pool_state ps ON ps.pool_id = p.id
+      JOIN tokens lt0 ON lower(lt0.address) = lower(p.token0)
+      JOIN tokens lt1 ON lower(lt1.address) = lower(p.token1)
       -- A pool with neither WETH nor USDG on a side cannot be priced through
       -- the one allowed path, so it is not listed rather than listed at zero.
       WHERE (${isEtherSql('p.token0', weth)} OR lower(p.token0) = '${usdgLower}'
          OR ${isEtherSql('p.token1', weth)} OR lower(p.token1) = '${usdgLower}')
+        -- A dollar is not a project (LISTING_STABLECOINS): a stablecoin on
+        -- the traded side is not a row, whatever its market cap. It remains
+        -- a quote, and its pools stay indexed.
+        AND (${listStablecoins ? 'true' : `NOT ${isStablecoinSql(side('lt0.symbol', 'lt1.symbol'))}`})
         -- The listing bar (env.ts LISTING_MIN_FDV_USD): dust stays indexed and
         -- unlisted. The ether/USDG market is exempt — ether's FDV is zero by
         -- construction, not by size.
@@ -605,6 +614,7 @@ export async function buildSnapshot(
       asOf,
       options.minFdvUsd ?? env.listingMinFdvUsd,
       options.minLiquidityUsd ?? env.listingMinLiquidityUsd,
+      options.listStablecoins ?? env.listStablecoins,
     ),
     queryVaults(),
     queryPortfolio(options.wallet ?? null),

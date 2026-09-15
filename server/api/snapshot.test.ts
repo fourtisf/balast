@@ -16,6 +16,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { isStablecoinSymbol } from '../../lib/chain';
 import type { MarketSnapshot } from '../../lib/data/types';
 import { MIN_DATA_HOURS, YIELD_WINDOW_HOURS, computeFeeYield, yieldPct } from '../../lib/yield';
 import { prisma } from '../db';
@@ -239,6 +240,72 @@ describe('buildSnapshot', () => {
 });
 
 describe('the listing bar', () => {
+  it('does not list a stablecoin as a row of its own, unless asked to', async () => {
+    // Ranked by market cap, the first board led with USDe: a dollar is not
+    // a project, and its market cap is how much of it was minted. The rule is
+    // the symbol (`isStablecoinSymbol`); USDG stays the quote that prices the
+    // site, and the ether market is untouched.
+    expect(isStablecoinSymbol('USDe')).toBe(true);
+    expect(isStablecoinSymbol('syrupUSDG')).toBe(true);
+    expect(isStablecoinSymbol('DAI')).toBe(true);
+    expect(isStablecoinSymbol('CASHCAT')).toBe(false);
+
+    const cursor = await prisma.indexerCursor.findFirstOrThrow();
+    const asOf = cursor.lastIndexedAt;
+    const token = '0x00000000000000000000000000000000000000e1';
+    await prisma.token.create({
+      data: {
+        address: token,
+        symbol: 'USDe',
+        name: 'Ethena USDe',
+        decimals: 18,
+        totalSupply: '327000000000000000000000000',
+        nonCirculating: '0',
+        supplyReadAt: asOf,
+        firstSeen: asOf,
+      },
+    });
+    const poolId = `0x${'e1'.repeat(32)}`;
+    await prisma.pool.create({
+      data: {
+        id: poolId,
+        address: poolId,
+        chainId: 4663,
+        token0: token,
+        token1: WETH,
+        feeTier: 100,
+        tickSpacing: 1,
+        hooks: null,
+        protocol: 'v4',
+        createdBlock: 1n,
+        createdAt: new Date(asOf.getTime() - 30 * 24 * 3600_000),
+      },
+    });
+    await prisma.poolState.create({
+      data: {
+        poolId,
+        tvlUsd: 250_000,
+        priceUsd: 1,
+        mcUsd: 327_000_000,
+        circMcUsd: 327_000_000,
+        sqrtPrice: '0',
+        tick: 0,
+        liquidity: '0',
+        updatedAt: asOf,
+      },
+    });
+
+    const board = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0 });
+    expect(board!.pools.map((p) => p.token.symbol)).not.toContain('USDe');
+    expect(board!.pools.map((p) => p.token.symbol)).toContain('WETH');
+
+    const withStables = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0, listStablecoins: true });
+    expect(withStables!.pools.map((p) => p.token.symbol)).toContain('USDe');
+
+    await prisma.pool.delete({ where: { id: poolId } });
+    await prisma.token.delete({ where: { address: token } });
+  });
+
   it('hides a token with no readable supply below the bar, and never the ether market', async () => {
     // MOONCAT's contract does not answer totalSupply(), so its FDV is zero;
     // at any positive bar it is unlisted — still indexed, just not shown.

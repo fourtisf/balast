@@ -112,6 +112,25 @@ export const STABLECOIN_SYMBOL = 'USDG';
 /** The quote assets a pool can be priced against. */
 export const QUOTES = ['ETH', STABLECOIN_SYMBOL] as const;
 
+/**
+ * Whether a token is a dollar, by its symbol.
+ *
+ * A stablecoin is not a project: its market cap is how much of it was
+ * minted or bridged, and a board ranked by market cap would lead with the
+ * dollars. Matched on the symbol — `USD` anywhere in it catches USDC, USDT,
+ * USDe, syrupUSDG and the rest — plus the few that do not carry the letters.
+ */
+const STABLE_SYMBOLS = new Set(['DAI', 'FRAX', 'GHO', 'LUSD', 'MIM', 'TUSD', 'EURC', 'EURS', 'PYUSD']);
+export function isStablecoinSymbol(symbol: string): boolean {
+  const upper = symbol.trim().toUpperCase();
+  return upper.includes('USD') || STABLE_SYMBOLS.has(upper);
+}
+/** The same rule as SQL over a symbol expression. Keep in step with `isStablecoinSymbol`. */
+export function isStablecoinSql(symbolExpr: string): string {
+  const list = [...STABLE_SYMBOLS].map((s) => `'${s}'`).join(', ');
+  return `(upper(trim(${symbolExpr})) LIKE '%USD%' OR upper(trim(${symbolExpr})) IN (${list}))`;
+}
+
 /** Events the P1 indexer subscribes to (§4), kept next to the addresses. */
 export const INDEXED_EVENTS = {
   poolManagerV4: ['Initialize', 'Swap', 'ModifyLiquidity'],
