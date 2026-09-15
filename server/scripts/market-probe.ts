@@ -1,7 +1,7 @@
 /**
  * What the market sources actually answer for a token (api/market-sources.ts).
  *
- *   npm run market:probe -- 0xTOKEN [0xTOKEN ...]
+ *   npm run market:probe -- BRODIE 0xabc…     by symbol or address
  *
  * Asks every configured source in turn and prints, per source: the request,
  * the status, every pair in the raw answer, and the quote the feed would
@@ -17,6 +17,7 @@ import '../load-env';
 
 import { USER_AGENT, type Fetch } from '../indexer/logo-sources';
 import { aggregate, dexscreener, geckoterminal, parsePairs } from '../api/market-sources';
+import { resolveTokens } from './resolve-tokens';
 
 const money = (n: number | null): string => (n === null ? '—' : `$${Math.round(n).toLocaleString()}`);
 
@@ -31,10 +32,19 @@ function loudFetch(): Fetch {
 }
 
 async function main(): Promise<void> {
-  const addresses = process.argv.slice(2).map((a) => a.trim().toLowerCase()).filter(Boolean);
-  if (addresses.length === 0) {
-    process.stderr.write('usage: npm run market:probe -- 0xTOKEN [0xTOKEN ...]\n');
+  const args = process.argv.slice(2).map((a) => a.trim()).filter(Boolean);
+  if (args.length === 0) {
+    process.stderr.write('usage: npm run market:probe -- BRODIE [0xTOKEN ...]\n');
     process.exit(2);
+  }
+  // A symbol off the board, not a forty-character address: the same
+  // resolution `logos:probe` does, so neither has to be remembered
+  // differently from the other.
+  const named = await resolveTokens(args);
+  const addresses = named.map((t) => t.address);
+  if (addresses.length === 0) return;
+  for (const t of named) {
+    if (t.symbol) process.stdout.write(`${t.symbol} is ${t.address}\n`);
   }
 
   const chain = process.env.DEXSCREENER_CHAIN?.trim().toLowerCase() || null;

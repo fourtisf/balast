@@ -18,6 +18,7 @@ import '../load-env';
 
 import { CHAIN } from '../../lib/chain';
 import { prisma } from '../db';
+import { resolveTokens } from './resolve-tokens';
 import { env } from '../env';
 import { createSources, logoCandidates, type Fetch } from '../indexer/logo-sources';
 
@@ -29,44 +30,12 @@ function shortUrl(url: string): string {
   return `${u.host}${u.pathname}${u.search ? '?…' : ''}`;
 }
 
-/**
- * Arguments are addresses or symbols. A symbol names the token of that
- * symbol with the most 24h volume — the one on the board — so the row a
- * person is looking at is the row the probe asks about.
- */
-async function named(args: string[]): Promise<{ address: string; symbol: string }[]> {
-  const out: { address: string; symbol: string }[] = [];
-  for (const arg of args) {
-    if (/^0x[0-9a-fA-F]{40}$/.test(arg)) {
-      out.push({ address: arg.toLowerCase(), symbol: '' });
-      continue;
-    }
-    const rows = await prisma.$queryRaw<{ address: string; symbol: string }[]>`
-      WITH latest AS (SELECT MAX(hour) AS newest FROM pool_fee_hourly),
-      volume AS (
-        SELECT f.pool_id, SUM(f.volume_usd) AS volume
-        FROM pool_fee_hourly f, latest
-        WHERE f.hour > latest.newest - interval '24 hours'
-        GROUP BY f.pool_id
-      )
-      SELECT t.address, t.symbol
-      FROM tokens t
-      LEFT JOIN pools p ON lower(p.token0) = lower(t.address) OR lower(p.token1) = lower(t.address)
-      LEFT JOIN volume v ON v.pool_id = p.id
-      WHERE lower(t.symbol) = lower(${arg})
-      GROUP BY t.address, t.symbol
-      ORDER BY MAX(COALESCE(v.volume, 0)) DESC NULLS LAST, t.first_seen ASC
-      LIMIT 1
-    `;
-    if (rows.length === 0) process.stdout.write(`\nno token called ${arg} in the indexer's tables\n`);
-    else out.push(rows[0]);
-  }
-  return out;
-}
-
 async function main(): Promise<void> {
+  // Arguments are addresses or symbols (resolve-tokens.ts): a symbol names
+  // the token of that symbol with the most 24h volume — the one on the board
+  // — so the row a person is looking at is the row the probe asks about.
   const args = process.argv.slice(2).filter((a) => a.trim() !== '');
-  const tokens = args.length ? await named(args) : await logoCandidates(6, null);
+  const tokens = args.length ? await resolveTokens(args) : await logoCandidates(6, null);
 
   const sources = createSources(env.logoSources);
   process.stdout.write(
