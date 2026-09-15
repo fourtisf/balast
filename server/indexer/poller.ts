@@ -35,6 +35,7 @@ import {
 import { resolveUsdg } from './anchor';
 import { planIngest } from './ingest';
 import { V3_HISTORY_KEY, backfillV3History, writeState } from './v3-history';
+import { clearWork, withWork } from './working';
 import { prisma } from '../db';
 import {
   loadFeeTiers,
@@ -335,6 +336,9 @@ export class Poller {
     // v3 pools discovered on an earlier run have to be followed again after a
     // restart, or the process would stop indexing them without saying so.
     if (!this.v3Loaded) {
+      // A stage record left by a process that was killed mid-stage is not
+      // this process's; its heartbeat is stale, but say so rather than rely on it.
+      await clearWork();
       this.followV3Pools(await loadV3PoolAddresses());
       // And the pools the factory named before it was followed at all: the
       // factory was configured with the cursor millions of blocks in, so
@@ -348,7 +352,6 @@ export class Poller {
           toBlock: cursorNow,
           window: this.minRange,
           maxWindow: this.maxRange,
-          cursorKey: POOL_MANAGER_CURSOR,
           tokenReader: this.tokenReader,
           log: this.log,
         });
@@ -631,7 +634,10 @@ export class Poller {
         // aggregates:rebuild` forgets the marker when a repair needs one.
         this.log(`  anchor ${anchors.usdg}: rebuilding every priced table from the raw rows`);
         const started = Date.now();
-        await rebuildAggregates(anchors, undefined, this.log);
+        // Hours on the real tables, and no cursor write until it is done:
+        // recorded as a stage with a heartbeat, so health reads `working`
+        // rather than `stalled` while it runs (working.ts).
+        await withWork('full rebuild', (note) => rebuildAggregates(anchors, undefined, this.log, undefined, note));
         await prisma.indexerState.upsert({
           where: { key: REBUILT_ANCHOR_KEY },
           create: { key: REBUILT_ANCHOR_KEY, value: anchors.usdg, updatedAt: new Date() },

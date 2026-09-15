@@ -273,6 +273,16 @@ else
     behind)
       warn "indexer catching up — newest block is ${LAG%.*}s old"
       ;;
+    working)
+      # A stage that writes no block for hours — the full rebuild a repair
+      # migration forces, or the factory's history — with a live heartbeat.
+      # The cursor is stale by definition here and that is not a stall.
+      STAGE=$(printf '%s' "$BODY" | grep -o '"stage":"[^"]*"' | head -1 | cut -d'"' -f4)
+      DETAIL=$(printf '%s' "$BODY" | grep -o '"detail":"[^"]*"' | head -1 | cut -d'"' -f4)
+      SECS=$(printf '%s' "$BODY" | grep -o '"seconds":[0-9.]*' | head -1 | cut -d: -f2)
+      SECS=${SECS%.*}
+      ok "indexer busy — ${STAGE:-a stage}${DETAIL:+ ($DETAIL)}, $(( ${SECS:-0} / 60 )) min so far, alive; no block until it finishes"
+      ;;
     stalled)
       IDLE=$(printf '%s' "$BODY" | grep -o '"idleSeconds":[0-9.]*' | head -1 | cut -d: -f2)
       bad "indexer stalled — nothing written for ${IDLE%.*}s; the site is showing numbers ${LAG%.*}s old"

@@ -2537,3 +2537,38 @@ the trade count.
 *creates* it. The transaction mints the position as an NFT into the
 wallet, and the NFT is how the wallet owns the position from then on.
 The drawer says so in that sentence.
+
+### "Stalled" over an indexer that was busy
+
+The deploy summary after the v4-sign repair read `indexer: STALLED —
+nothing written for 16818s`, with every process online and zero restarts.
+Health judges liveness by the cursor's write time (§18), which is right for
+a pass — a pass ends by writing the cursor — and wrong for the two stages a
+first pass can spend hours in without one: the full rebuild of every priced
+table, which the repair migrations force by forgetting the anchor marker,
+and the v3 factory's history walk, which touched the cursor only every
+twenty windows. Both are expected work after exactly this deploy, and the
+monitor would have paged through all of it — the failure §18 describes as
+how a monitor gets muted.
+
+A stage that writes no block is now recorded (`server/indexer/working.ts`,
+one `indexer_state` row): its name, where it is — `fees`, or `block
+1,200,000 of 4,470,000` — when it started, and a heartbeat every ten
+seconds from a timer while it runs. A large SQL statement is I/O to Node,
+so the timer fires while it executes. Health reads the record and answers
+**`working`** while the heartbeat is fresh: 200, `ok: false`, the stage and
+its duration in the message and under `working`. A process killed
+mid-stage stops beating, and past the threshold both clocks are stale and
+the verdict is `stalled` as before; the record is also cleared on every
+start so a leftover is never read as current. The deploy summary, the
+doctor, the monitor, the waiting page and `logos:status` all know the
+state. `stalled` still means what it did — dead or stuck — and nothing
+else.
+
+What this does not explain is the 16,818s itself: the summary is printed
+seconds after the restart, so that idle belongs to the *previous* process,
+and nothing in the code it ran is a known stage of that length. The log is
+the only evidence; `pm2 logs balast-indexer --lines 100` from before the
+restart says whether it was refused by every endpoint on every pass (the
+one case that neither writes nor touches the cursor and is not a stage),
+mid-rebuild, or something new.

@@ -17,6 +17,7 @@ import type { MarketSnapshot } from '../../lib/data/types';
 import { prisma } from '../db';
 import { env } from '../env';
 import { imageLoads, type Fetch } from '../indexer/logo-sources';
+import { readWork } from '../indexer/working';
 
 interface Counts {
   with_logo: number;
@@ -116,9 +117,13 @@ async function main(): Promise<void> {
         'the moment it starts; if this stays at zero: pm2 status, then pm2 logs balast-logos --lines 50\n',
     );
     if (idleSeconds !== null && idleSeconds > 300) {
+      const work = await readWork();
       process.stdout.write(
-        `  Separately: the indexer cursor has not moved for ${Math.round(idleSeconds)}s. Logos no ` +
-          'longer depend on it, but the numbers do: pm2 logs balast-indexer --lines 100\n',
+        work
+          ? `  Separately: the indexer cursor has not moved for ${Math.round(idleSeconds)}s — it is on ` +
+              `"${work.stage}"${work.detail ? ` (${work.detail})` : ''} since ${work.startedAt}, which writes no block.\n`
+          : `  Separately: the indexer cursor has not moved for ${Math.round(idleSeconds)}s. Logos no ` +
+              'longer depend on it, but the numbers do: pm2 logs balast-indexer --lines 100\n',
       );
     }
   } else if (counts.with_logo === 0) {

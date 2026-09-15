@@ -188,6 +188,66 @@ describe('/api/health', () => {
     expect(body.message).toMatch(/not written/i);
   });
 
+  it('reads a stage that is heartbeating as "working", not as a stall', async () => {
+    // The cursor is still ten minutes stale from the test above. The full
+    // rebuild and the factory's history write no block for hours, and the
+    // deploy summary after the v4-sign repair read STALLED over an indexer
+    // that was busy the whole time. A fresh heartbeat on a named stage is
+    // alive, and health says so with the stage and how long it has run.
+    const { WORKING_KEY } = await import('../indexer/working');
+    const startedAt = new Date(Date.now() - 3 * 3600_000 - 12 * 60_000).toISOString();
+    await prisma.indexerState.upsert({
+      where: { key: WORKING_KEY },
+      create: {
+        key: WORKING_KEY,
+        value: JSON.stringify({ stage: 'full rebuild', detail: 'fees', startedAt, heartbeatAt: new Date().toISOString() }),
+        updatedAt: new Date(),
+      },
+      update: {
+        value: JSON.stringify({ stage: 'full rebuild', detail: 'fees', startedAt, heartbeatAt: new Date().toISOString() }),
+        updatedAt: new Date(),
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { 'x-forwarded-for': '203.0.113.23' },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.status).toBe('working');
+    expect(body.ok).toBe(false);
+    expect(body.working.stage).toBe('full rebuild');
+    expect(body.working.detail).toBe('fees');
+    expect(body.working.seconds).toBeGreaterThan(3 * 3600);
+    expect(body.message).toMatch(/full rebuild — fees, 3h 12m so far/);
+    expect(body.message).toMatch(/No block is written/);
+  });
+
+  it('ignores a stage whose heartbeat has stopped: that is a stall', async () => {
+    // A process killed mid-rebuild leaves its record behind. Its heartbeat
+    // is what made it count, and past the threshold it counts for nothing.
+    const { WORKING_KEY } = await import('../indexer/working');
+    const value = JSON.stringify({
+      stage: 'full rebuild',
+      startedAt: new Date(Date.now() - 3600_000).toISOString(),
+      heartbeatAt: new Date(Date.now() - 900_000).toISOString(),
+    });
+    await prisma.indexerState.update({ where: { key: WORKING_KEY }, data: { value } });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { 'x-forwarded-for': '203.0.113.24' },
+    });
+    expect(response.statusCode).toBe(503);
+    const body = response.json();
+    expect(body.status).toBe('stalled');
+    expect(body.working).toBeNull();
+    await prisma.indexerState.delete({ where: { key: WORKING_KEY } });
+  });
+
   it('reads a first sync as "syncing" with a 200, not as a stall', async () => {
     const cursor = await prisma.indexerCursor.findFirstOrThrow();
     await prisma.indexerCursor.update({

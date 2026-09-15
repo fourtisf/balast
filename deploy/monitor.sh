@@ -93,7 +93,9 @@ case "$status" in
     ;;
   # A first sync or a catch-up is the indexer working, with the lag on the
   # site. Alerting on it for forty hours would teach everyone to mute this.
-  ok | syncing | behind) ;;
+  # `working` is a heartbeating stage that writes no block — a full rebuild
+  # or the factory's history — and a dead one turns into `stalled` above.
+  ok | syncing | behind | working) ;;
   *)
     alert "unknown" "/api/health returned no status field: ${body:0:200}"
     exit 1

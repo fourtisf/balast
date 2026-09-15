@@ -16,8 +16,9 @@
  * own logs from their creation to the cursor, all of them in one window at a
  * time. Windows adapt the way the poller's do — halved on a refusal, doubled
  * when empty — progress is remembered, so a restart resumes rather than
- * repeats, and the cursor is touched between windows so liveness stays
- * honest while it runs (§19).
+ * repeats, and each phase is a recorded stage with a heartbeat (working.ts),
+ * so health reads `working` with the block it has reached rather than
+ * `stalled` while it runs (§19).
  */
 
 import { CHAIN } from '../../lib/chain';
@@ -30,11 +31,11 @@ import {
   loadFeeTiers,
   loadKnownPools,
   loadPriceState,
-  touchCursor,
   writeLiquidity,
   writePools,
   writeSwaps,
 } from './store';
+import { withWork } from './working';
 
 /** `indexer_state`: the block up to which the factory's PoolCreated logs have been read. */
 export const V3_HISTORY_KEY = 'v3_history_block';
@@ -68,7 +69,6 @@ export async function backfillV3History(args: {
   toBlock: bigint;
   window: bigint;
   maxWindow: bigint;
-  cursorKey: string;
   tokenReader?: TokenReader;
   log?: (message: string) => void;
 }): Promise<V3HistoryResult> {
@@ -83,8 +83,9 @@ export async function backfillV3History(args: {
   if (from <= args.toBlock) {
     log(`  v3 history: reading the factory from block ${from} to ${args.toBlock}`);
     const known = await loadKnownPools();
-    await walk(args.source, [factory], from, args.toBlock, args.window, args.maxWindow, async (logs, w) => {
+    await withWork('v3 history: factory', (note) => walk(args.source, [factory], from, args.toBlock, args.window, args.maxWindow, async (logs, w) => {
       windows++;
+      note(`block ${w.to.toLocaleString()} of ${args.toBlock.toLocaleString()}, ${found.length} pool(s) so far`);
       if (logs.length > 0) {
         const times = await args.source.getBlockTimes(w.from, w.to);
         const events: ChainEvent[] = [];
@@ -111,10 +112,9 @@ export async function backfillV3History(args: {
       }
       await writeState(V3_HISTORY_KEY, w.to.toString());
       if (windows % 20 === 0) {
-        await touchCursor(args.cursorKey);
         log(`  v3 history: factory read to block ${w.to} of ${args.toBlock}, ${found.length} pool(s) so far`);
       }
-    });
+    }));
     if (found.length > 0) {
       const earliest = found.reduce((a, p) => (p.createdBlock < a ? p.createdBlock : a), found[0].createdBlock);
       const pending: Pending = {
@@ -141,8 +141,9 @@ export async function backfillV3History(args: {
       const feePips = await loadFeeTiers();
       const ids = addresses.map((a) => `v3:${a}`);
       let walked = 0;
-      await walk(args.source, addresses, pfrom, pto, args.window, args.maxWindow, async (logs, w) => {
+      await withWork('v3 history: pools', (note) => walk(args.source, addresses, pfrom, pto, args.window, args.maxWindow, async (logs, w) => {
         walked++;
+        note(`${addresses.length} pool(s), block ${w.to.toLocaleString()} of ${pto.toLocaleString()}, ${events} event(s) so far`);
         if (logs.length > 0) {
           const times = await args.source.getBlockTimes(w.from, w.to);
           const decoded: ChainEvent[] = [];
@@ -161,10 +162,9 @@ export async function backfillV3History(args: {
         }
         await writeState(V3_PENDING_KEY, JSON.stringify({ ...pending, from: (w.to + 1n).toString() }));
         if (walked % 20 === 0) {
-          await touchCursor(args.cursorKey);
           log(`  v3 history: pools read to block ${w.to} of ${pto}, ${events} event(s) so far`);
         }
-      });
+      }));
     }
     await prisma.indexerState.deleteMany({ where: { key: V3_PENDING_KEY } });
   }

@@ -607,12 +607,15 @@ export async function rebuildAggregates(
   log?: (message: string) => void,
   /** With bounds: the pools those blocks touched, so pool state is rebuilt for them alone. */
   poolIds?: Iterable<string>,
+  /** Told the name of each step as it starts — the full rebuild's heartbeat carries it (working.ts). */
+  onStep?: (name: string) => void,
 ): Promise<void> {
   // Timed per step when asked, because an unbounded rebuild on a large
   // table is minutes to hours and a silent one is indistinguishable from a
   // hang. Only the full rebuild logs; a bounded one runs every pass.
   const step = async (name: string, run: () => Promise<unknown>) => {
     const started = Date.now();
+    onStep?.(name);
     await run();
     if (log && !bounds) log(`    ${name}: ${((Date.now() - started) / 1000).toFixed(1)}s`);
   };

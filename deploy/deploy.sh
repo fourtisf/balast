@@ -151,6 +151,14 @@ else
           console.log(`  first sync running${pct}: block ${i.lastBlock} of ${i.headBlock}, ${h.pools} pool(s). The site is up and shows the lag. Not an error.`); break;
         case "behind":
           console.log(`  indexing, catching up${lag}.`); break;
+        case "working": {
+          // A stage that writes no block — the full rebuild after a repair
+          // migration, or the history of the v3 factory — heartbeating. Busy, not dead.
+          const w = h.working || {};
+          const dur = Math.round((w.seconds || 0) / 60);
+          console.log(`  busy: ${w.stage}${w.detail ? " — " + w.detail : ""}, ${dur} min so far, alive. No block is written until it finishes; not an error.`);
+          break;
+        }
         case "stalled":
           console.log(`  STALLED — nothing written for ${Math.round(i.idleSeconds || 0)}s. runuser -u balast -- pm2 logs balast-indexer --lines 30 --nostream`); break;
         case "never-indexed":

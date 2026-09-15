@@ -32,6 +32,7 @@ interface Health {
   } | null;
   pools?: number;
   swaps?: number;
+  working?: { stage: string; detail?: string | null; seconds?: number | null } | null;
 }
 
 const API_BASE =
@@ -126,7 +127,12 @@ export function AwaitingIndexer() {
               // here contradicted the progress line directly beneath it.
               health?.status === 'syncing' || health?.status === 'behind' || health?.status === 'ok'
               ? 'Loading the snapshot'
-              : 'Waiting for the indexer';
+              : // A stage that writes no block — a full rebuild, the factory's
+                // history — with a live heartbeat. Busy, and the message
+                // beneath says on what and for how long.
+                health?.status === 'working'
+                ? 'The indexer is busy'
+                : 'Waiting for the indexer';
 
   return (
     <div className="awaiting" role="status">
@@ -140,6 +146,10 @@ export function AwaitingIndexer() {
             : health?.status === 'syncing' || health?.status === 'behind' || health?.status === 'ok'
               ? 'The indexer has priced data; the first snapshot is on its way. The ' +
                 'boards appear as soon as it arrives — no placeholder numbers in the meantime.'
+              : health?.status === 'working'
+                ? 'The indexer is rebuilding its tables or reading history, and writes no ' +
+                  'block until that finishes. The boards appear when it does — no placeholder ' +
+                  'numbers in the meantime.'
               : 'No indexed blocks yet, so there is nothing honest to show. The boards ' +
                 'appear as soon as the first swap is attributed — no placeholder ' +
                 'numbers in the meantime.'}

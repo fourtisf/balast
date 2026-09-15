@@ -23,6 +23,7 @@ import { env } from '../env';
 import { POOL_MANAGER_CURSOR } from '../indexer/poller';
 import { USER_AGENT } from '../indexer/logo-sources';
 import { resolveUsdg } from '../indexer/anchor';
+import { readWork } from '../indexer/working';
 import { busKind, subscribeTicks } from './bus';
 import { buildSnapshot } from './snapshot';
 
@@ -44,6 +45,18 @@ const SYNCING_BLOCKS = 50_000n;
  * will not help. The page showed the first sentence and not this one, so the
  * dead end was indistinguishable from progress.
  */
+/** `4h 12m`, `37m`, `50s` — a duration a person reads at a glance. */
+function humanSeconds(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  const d = Math.floor(h / 24);
+  return `${d}d ${h % 24}h`;
+}
+
 function syncingNote(args: {
   syncing: boolean;
   progress: number | null;
@@ -267,6 +280,20 @@ export async function buildServer(options: { logoFetch?: LogoFetch } = {}): Prom
     const idleSeconds = cursor
       ? Math.max(0, (Date.now() - cursor.updatedAt.getTime()) / 1000)
       : null;
+    // A third clock, for the stages that write no block at all: the full
+    // rebuild of every priced table and the factory's history, hours each
+    // on the real tables. Both heartbeat while they run (indexer/working.ts).
+    // A fresh heartbeat is an indexer that is alive and busy, and says on
+    // what and for how long; a stale one is ignored, so a process killed
+    // mid-stage reads as stalled once the threshold passes, as before.
+    const work = await readWork();
+    const heartbeatSeconds = work ? (Date.now() - Date.parse(work.heartbeatAt)) / 1000 : null;
+    const working =
+      work !== null &&
+      heartbeatSeconds !== null &&
+      Number.isFinite(heartbeatSeconds) &&
+      heartbeatSeconds <= env.stallSeconds;
+    const workSeconds = work ? Math.max(0, (Date.now() - Date.parse(work.startedAt)) / 1000) : null;
     const [counts] = await prisma.$queryRaw<{ pools: number; swaps: number }[]>`
       SELECT (SELECT COUNT(*) FROM pools)::int AS pools,
              (SELECT COUNT(*) FROM swap_events)::int AS swaps
@@ -295,20 +322,22 @@ export async function buildServer(options: { logoFetch?: LogoFetch } = {}): Prom
     // SYMPTOM when the indexer cannot start, and reporting the symptom sends
     // whoever is looking to the wrong place.
     const problem = configurationProblem();
-    const stalled = idleSeconds !== null && idleSeconds > env.stallSeconds;
+    const stalled = idleSeconds !== null && idleSeconds > env.stallSeconds && !working;
     const status = problem
       ? 'misconfigured'
-      : cursor === null
-        ? 'never-indexed'
-        : stalled
-          ? 'stalled'
-          : !anchor.address
-            ? 'no-anchor'
-            : syncing
-              ? 'syncing'
-              : lagSeconds !== null && lagSeconds > env.stallSeconds
-                ? 'behind'
-                : 'ok';
+      : working
+        ? 'working'
+        : cursor === null
+          ? 'never-indexed'
+          : stalled
+            ? 'stalled'
+            : !anchor.address
+              ? 'no-anchor'
+              : syncing
+                ? 'syncing'
+                : lagSeconds !== null && lagSeconds > env.stallSeconds
+                  ? 'behind'
+                  : 'ok';
     // 503 is for states a person has to act on. A first sync and a catch-up
     // are the indexer doing its job with the lag on screen; a monitor that
     // pages for forty hours of expected work is a monitor that gets muted.
@@ -338,6 +367,17 @@ export async function buildServer(options: { logoFetch?: LogoFetch } = {}): Prom
             lastPass,
           }
         : null,
+      /** The stage in progress that writes no block, with its heartbeat; null between stages. */
+      working:
+        work && working
+          ? {
+              stage: work.stage,
+              detail: work.detail ?? null,
+              startedAt: work.startedAt,
+              seconds: workSeconds,
+              heartbeatSeconds,
+            }
+          : null,
       pools: counts?.pools ?? 0,
       swaps: counts?.swaps ?? 0,
       bus: busKind(),
@@ -355,6 +395,12 @@ export async function buildServer(options: { logoFetch?: LogoFetch } = {}): Prom
                 // to do about it: a sync that has not reached the pools yet is
                 // not the same problem as one that has and found none.
                 `${anchor.note} ${syncingNote({ syncing, progress, behind, pools: counts?.pools ?? 0 })}`
+              : status === 'working'
+              ? `The indexer is busy: ${work!.stage}` +
+                (work!.detail ? ` — ${work!.detail}` : '') +
+                `, ${humanSeconds(workSeconds ?? 0)} so far, alive ${Math.round(heartbeatSeconds ?? 0)}s ago. ` +
+                'No block is written until this finishes' +
+                (lagSeconds === null ? '.' : `; the site is showing numbers ${humanSeconds(lagSeconds)} old.`)
               : status === 'stalled'
               ? `The indexer has not written a block for ${Math.round(idleSeconds ?? 0)}s, past the ` +
                 `${env.stallSeconds}s threshold. It is dead or stuck; the site is showing numbers ` +
