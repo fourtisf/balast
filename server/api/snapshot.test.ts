@@ -21,7 +21,7 @@ import { MIN_DATA_HOURS, YIELD_WINDOW_HOURS, computeFeeYield, yieldPct } from '.
 import { prisma } from '../db';
 import { Poller } from '../indexer/poller';
 import { isReachable, resetDatabase } from '../test/db';
-import { FixtureLogSource, USDG, buildFixtureChain, fixtureTokenReader } from '../test/fixture';
+import { FixtureLogSource, USDG, WETH, buildFixtureChain, fixtureTokenReader } from '../test/fixture';
 import { buildSnapshot } from './snapshot';
 
 const chain = buildFixtureChain();
@@ -258,5 +258,83 @@ describe('the listing bar', () => {
     // And a bar of zero is the full board.
     const everything = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0 });
     expect(everything!.pools.length).toBe(snapshot.pools.length);
+  });
+
+  it('does not list a dead pool whose liquidity is unknown, and lists one that trades', async () => {
+    // The first board ranked by market cap led with catAI at "FDV $2.48
+    // trillion", GLTCHT at $1.76 trillion, sato at $361M — every one with
+    // $0 volume, $0 fees and a liquidity of "—". Dust with an absurd supply
+    // and a pool the indexer cannot reconstruct; the liquidity floor did not
+    // apply because their liquidity was unknown rather than small. Unknown
+    // liquidity is forgiven only for a pool that has traded in the window.
+    const cursor = await prisma.indexerCursor.findFirstOrThrow();
+    const asOf = cursor.lastIndexedAt;
+    const token = '0x00000000000000000000000000000000000000d1';
+    await prisma.token.create({
+      data: {
+        address: token,
+        symbol: 'DUST',
+        name: 'Dust with a trillion supply',
+        decimals: 18,
+        totalSupply: '1000000000000000000000000000000000',
+        nonCirculating: '0',
+        supplyReadAt: asOf,
+        firstSeen: asOf,
+      },
+    });
+    const poolId = `0x${'d1'.repeat(32)}`;
+    await prisma.pool.create({
+      data: {
+        id: poolId,
+        address: poolId,
+        chainId: 4663,
+        token0: token,
+        token1: WETH,
+        feeTier: 3000,
+        tickSpacing: 60,
+        hooks: null,
+        protocol: 'v4',
+        createdBlock: 1n,
+        createdAt: new Date(asOf.getTime() - 30 * 24 * 3600_000),
+      },
+    });
+    await prisma.poolState.create({
+      data: {
+        poolId,
+        tvlUsd: 0, // unknown depth (§14)
+        priceUsd: 2.48,
+        mcUsd: 2_480_000_000_000,
+        circMcUsd: 2_480_000_000_000,
+        sqrtPrice: '0',
+        tick: 0,
+        liquidity: '0',
+        updatedAt: asOf,
+      },
+    });
+
+    const dead = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0 });
+    expect(dead!.pools.map((p) => p.token.symbol)).not.toContain('DUST');
+
+    // One trade inside the window and the same pool is listed, with its
+    // liquidity honestly unknown rather than invented.
+    await prisma.poolFeeHourly.create({
+      data: {
+        poolId,
+        hour: new Date(asOf.getTime() - 2 * 3600_000),
+        feesToken0: '0',
+        feesToken1: '0',
+        feesUsd: 1,
+        volumeUsd: 100,
+        swaps: 1,
+      },
+    });
+    const traded = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0 });
+    const row = traded!.pools.find((p) => p.token.symbol === 'DUST');
+    expect(row).toBeDefined();
+    expect(row!.tvlUsd).toBe(0);
+
+    // Tidy up so the suite's other counts hold.
+    await prisma.pool.delete({ where: { id: poolId } });
+    await prisma.token.delete({ where: { address: token } });
   });
 });

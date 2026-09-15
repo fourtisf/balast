@@ -171,12 +171,22 @@ async function queryPools(
           OR (lower(p.token0) = '${usdgLower}' AND ${isEtherSql('p.token1', weth)})
         )
         -- The liquidity floor (LISTING_MIN_LIQUIDITY_USD): a price from a pool
-        -- with a few dollars in it supports no market cap. Only a KNOWN
-        -- liquidity is held against a pool — zero is unknown depth (§14),
-        -- listed with its dash — and the ether/USDG market is exempt again.
+        -- with a few dollars in it supports no market cap. An UNKNOWN
+        -- liquidity — zero, which is unknown depth (§14) — is not held
+        -- against a pool that trades: it is listed with its dash. A pool with
+        -- unknown liquidity and no trade in the whole yield window is a dead
+        -- pool with a supply, and on a launchpad chain that is a "market cap"
+        -- of trillions at the top of the board with $0 beside it. The
+        -- ether/USDG market is exempt again.
         AND (
-          COALESCE(ps.tvl_usd, 0) = 0
-          OR ps.tvl_usd >= ${minLiquidityUsd}
+          ps.tvl_usd >= ${minLiquidityUsd}
+          OR (
+            COALESCE(ps.tvl_usd, 0) = 0
+            AND EXISTS (
+              SELECT 1 FROM pool_fee_hourly f, params pr
+              WHERE f.pool_id = p.id AND f.hour >= pr.since_window AND f.volume_usd > 0
+            )
+          )
           OR (${isEtherSql('p.token0', weth)} AND lower(p.token1) = '${usdgLower}')
           OR (lower(p.token0) = '${usdgLower}' AND ${isEtherSql('p.token1', weth)})
         )

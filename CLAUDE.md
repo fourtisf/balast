@@ -2296,3 +2296,30 @@ traders paid in that pool over the last 24 hours of chain time — the
 pool's volume times its fee tier — and it is the pool's income, which
 the LPs own. That is why §1 makes it the headline: volume is what
 traders did, fees are what LPs earned.
+
+### The first board by market cap: trillions, $0, and no liquidity
+
+The failure mode the previous section named arrived on the first board:
+catAI at `FDV $2,481.99B`, GLTCHT at `$1,759.51B`, sato at `$360.81M` —
+each with `vol · 24h $0`, `fees · 24h $0`, `liquidity —`, and no logo.
+The liquidity floor did not catch them because their liquidity was
+*unknown* rather than small, and unknown was exempt so that GUH and Index
+(hooked pools with real trading) stayed listed. The exemption was too
+wide: a pool with unknown liquidity, a supply, and no trade at all is a
+dead pool, and on a launchpad chain a dead pool with an absurd supply is
+the largest "market cap" on the board.
+
+Unknown liquidity is now forgiven only for a pool that has traded in the
+yield window (seven days of chain time). A dead pool with unknown
+liquidity is unlisted whatever its supply; GUH and Index, which trade,
+stay. The test builds exactly that board — a token with a trillion
+supply, a pool the indexer cannot reconstruct, no fee hours — asserts it
+is unlisted, adds one trade, and asserts it appears with its liquidity
+still honestly unknown.
+
+Two questions asked in the same message, answered on the board rather
+than in this file: `vol · 24h` is the dollar value of the swaps traded in
+that pool over the last 24 hours of chain time, and `$0` means nobody
+traded there — which is why such a row has no fees and no logo either:
+no source lists a token nobody trades, and the logo process asks about
+the board's rows by volume, so a $0 row is asked about last.
