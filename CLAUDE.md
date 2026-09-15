@@ -1958,3 +1958,52 @@ announced. A pool with a hook can refuse outside liquidity; the dry run
 catches that and says so, and `LAUNCHPAD_HOOKS` (§14) still needs
 setting so such pools are not offered at all.
 
+### The backfill that ran at the speed of the chain
+
+The board on the box read *68d 2h behind* one night and *68d 15h behind*
+the next noon: thirteen hours of wall time, thirteen hours of lag gained,
+no net progress at all. The indexer was processing chain time at roughly
+the rate the chain produced it, so nothing launched in the last two months
+— every Pons token the owner asked for among them — had ever been read.
+
+The pass was doing four things that scale with the size of the tables or
+the busyness of the chain rather than with the window:
+
+- **One `getBlock` per block that carried a log**, sixteen at a time. On a
+  launchpad chain most blocks carry a log, so a 2000-block window was
+  hundreds of sequential round trips to a public endpoint. `eth_getLogs`
+  is now called raw, because a recent node stamps `blockTimestamp` on
+  every log and viem's formatter drops it; what is still missing is
+  fetched fifty blocks to one JSON-RPC batch, and an endpoint that refuses
+  a batch is found out once and asked one call at a time from then on.
+- **`rebuildPoolState` for every pool, every pass** — a `DISTINCT ON` over
+  every pool's whole swap history and a sum over all its flow. It is
+  scoped to the pools the window touched, with every pool redone once the
+  pass reaches head and every sixtieth pass while it is far from it,
+  because untouched pools still carry the anchor's price.
+- **`classifyPools` walking every pool with a query each, every pass.**
+  Once per run for every pool; after that, only the pools a pass found.
+- **Four RPC calls per new token**, one token at a time. Missing tokens go
+  through Multicall3 fifty at a time, with the old per-token path as the
+  fallback when a multicall itself fails. `loadPriceState` is scoped to
+  the batch's pools, and supplies are re-read every twentieth pass rather
+  than every pass while backfilling.
+
+None of it changes a row. §9's adaptive-versus-fixed comparison still
+holds byte for byte, and the late-anchor and native-ether suites pass
+unchanged.
+
+**Every pass now says where its time went** — `logs`, `times`, `tokens`,
+`ingest`, `rebuild`, and blocks per second — in the log line, and the last
+pass is kept in `indexer_state` and shown by `/api/health` under
+`indexed.lastPass`. The number to watch is blocks per second: at 2000-block
+windows the chain makes ~10 blocks a second, so anything under that is a
+backfill that will never finish, and the stage that dominates the line is
+where to look next.
+
+What this does not solve: a launchpad's **pre-graduation** trading happens
+through its hook, not through plain pool swaps, and the indexer only
+decodes what it knows. `LAUNCHPAD_HOOKS` (§14) still needs the hook
+addresses; post-graduation pools appear on their own once the backfill
+reaches them.
+

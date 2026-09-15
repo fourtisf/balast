@@ -42,6 +42,26 @@ const clients: PublicClient<Transport, typeof robinhoodChain>[] = RPC_URLS.map((
   }),
 );
 
+/**
+ * The same endpoints with JSON-RPC batching: concurrent requests made within
+ * a few milliseconds go out as one HTTP request carrying an array. The
+ * indexer's block-timestamp reads are hundreds of tiny calls a pass, and on
+ * a public endpoint the round trip is the whole cost. Not every endpoint
+ * accepts a batch, so callers fall back to the plain clients on a failure.
+ */
+const BATCH_SIZE = 50;
+const batchedClients: PublicClient<Transport, typeof robinhoodChain>[] = RPC_URLS.map((url) =>
+  createPublicClient({
+    chain: robinhoodChain,
+    transport: http(url, {
+      timeout: 20_000,
+      retryCount: 1,
+      retryDelay: 250,
+      batch: { batchSize: BATCH_SIZE, wait: 5 },
+    }),
+  }),
+);
+
 if (clients.length === 0) throw new Error('No RPC endpoints configured. Set RPC_URLS.');
 
 /** Endpoint currently believed good. Stays put until it fails. */
@@ -56,12 +76,13 @@ export interface FailoverResult<T> {
 export async function withFailover<T>(
   fn: (client: PublicClient<Transport, typeof robinhoodChain>) => Promise<T>,
   label = 'rpc',
+  pool: PublicClient<Transport, typeof robinhoodChain>[] = clients,
 ): Promise<FailoverResult<T>> {
   const errors: string[] = [];
-  for (let attempt = 0; attempt < clients.length; attempt++) {
-    const index = (preferred + attempt) % clients.length;
+  for (let attempt = 0; attempt < pool.length; attempt++) {
+    const index = (preferred + attempt) % pool.length;
     try {
-      const value = await fn(clients[index]);
+      const value = await fn(pool[index]);
       // Stick with whatever worked; rotating on success would spread load but
       // also spread any single endpoint's stale head across our writes.
       preferred = index;
@@ -80,6 +101,17 @@ export async function rpc<T>(
 ): Promise<T> {
   return (await withFailover(fn, label)).value;
 }
+
+/** The same, over the batching transport. Fire the calls concurrently inside `fn` and they share one request. */
+export async function rpcBatched<T>(
+  fn: (client: PublicClient<Transport, typeof robinhoodChain>) => Promise<T>,
+  label?: string,
+): Promise<T> {
+  return (await withFailover(fn, label, batchedClients)).value;
+}
+
+/** How many calls the batching transport folds into one request. */
+export const RPC_BATCH_SIZE = BATCH_SIZE;
 
 /** Current head. Used for the lag figure in the top bar (§7). */
 export async function getHead(): Promise<{ number: bigint; timestamp: Date }> {

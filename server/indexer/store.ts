@@ -163,13 +163,27 @@ export async function writeCursor(
  */
 export async function loadPriceState(
   beforeBlock: bigint,
+  /** Only these pools — the ones the batch has events for. Every pool when omitted. */
+  poolIds?: Iterable<string>,
 ): Promise<Map<string, bigint>> {
-  const rows = await prisma.$queryRaw<{ pool_id: string; sqrt_price_x96: string }[]>`
-    SELECT DISTINCT ON (pool_id) pool_id, sqrt_price_x96::text
-    FROM swap_events
-    WHERE block_num < ${beforeBlock}
-    ORDER BY pool_id, block_num DESC, log_index DESC
-  `;
+  const ids = poolIds ? [...new Set(poolIds)] : null;
+  if (ids && ids.length === 0) return new Map();
+  // Scoped to the batch's pools: the unscoped DISTINCT ON walked every
+  // pool's swap history on every pass, and on a chain with thousands of
+  // launchpad pools that was a full index scan per 2000 blocks.
+  const rows = ids
+    ? await prisma.$queryRaw<{ pool_id: string; sqrt_price_x96: string }[]>`
+        SELECT DISTINCT ON (pool_id) pool_id, sqrt_price_x96::text
+        FROM swap_events
+        WHERE block_num < ${beforeBlock} AND pool_id IN (${Prisma.join(ids)})
+        ORDER BY pool_id, block_num DESC, log_index DESC
+      `
+    : await prisma.$queryRaw<{ pool_id: string; sqrt_price_x96: string }[]>`
+        SELECT DISTINCT ON (pool_id) pool_id, sqrt_price_x96::text
+        FROM swap_events
+        WHERE block_num < ${beforeBlock}
+        ORDER BY pool_id, block_num DESC, log_index DESC
+      `;
   const map = new Map<string, bigint>();
   for (const row of rows) map.set(row.pool_id, BigInt(row.sqrt_price_x96));
 
@@ -181,11 +195,17 @@ export async function loadPriceState(
   // and was filtered out — which is what left a freshly created pool with no
   // price at all and halted the indexer. The pool row carries the Initialize
   // price directly, which is the value an in-memory replay would have had.
-  const created = await prisma.$queryRaw<{ id: string; sqrt_price_x96: string }[]>`
-    SELECT p.id, p.init_sqrt_price_x96::text AS sqrt_price_x96
-    FROM pools p
-    WHERE p.init_sqrt_price_x96 IS NOT NULL AND p.init_sqrt_price_x96 > 0
-  `;
+  const created = ids
+    ? await prisma.$queryRaw<{ id: string; sqrt_price_x96: string }[]>`
+        SELECT p.id, p.init_sqrt_price_x96::text AS sqrt_price_x96
+        FROM pools p
+        WHERE p.init_sqrt_price_x96 IS NOT NULL AND p.init_sqrt_price_x96 > 0 AND p.id IN (${Prisma.join(ids)})
+      `
+    : await prisma.$queryRaw<{ id: string; sqrt_price_x96: string }[]>`
+        SELECT p.id, p.init_sqrt_price_x96::text AS sqrt_price_x96
+        FROM pools p
+        WHERE p.init_sqrt_price_x96 IS NOT NULL AND p.init_sqrt_price_x96 > 0
+      `;
   for (const row of created) {
     if (!map.has(row.id)) map.set(row.id, BigInt(row.sqrt_price_x96));
   }

@@ -402,8 +402,16 @@ export async function rebuildFeeHours(
  * a sum over a small table. The latest price comes from a `DISTINCT ON`
  * backed by the `(pool_id, block_num, log_index)` index.
  */
-export async function rebuildPoolState(anchors: PriceAnchors): Promise<number> {
+export async function rebuildPoolState(anchors: PriceAnchors, poolIds?: Iterable<string>): Promise<number> {
   const { weth, usdg } = checkAnchors(anchors);
+  // Scoped to the pools a pass touched, or every pool when unscoped. The
+  // unscoped form walks every pool's whole swap history and flow, which is
+  // right once at start and on a caught-up pass and far too much for every
+  // 2000-block window of a backfill.
+  const ids = poolIds ? [...new Set(poolIds)] : null;
+  if (ids && ids.length === 0) return 0;
+  const inIds = ids ? `(${ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')})` : null;
+  const scope = (column: string) => (inIds ? `WHERE ${column} IN ${inIds}` : '');
 
   return prisma.$executeRawUnsafe(`
     WITH
@@ -417,6 +425,7 @@ export async function rebuildPoolState(anchors: PriceAnchors): Promise<number> {
       SELECT DISTINCT ON (pool_id)
         pool_id, sqrt_price_x96, tick, liquidity, block_time
       FROM swap_events
+      ${scope('pool_id')}
       ORDER BY pool_id, block_num DESC, log_index DESC
     ),
 
@@ -424,6 +433,7 @@ export async function rebuildPoolState(anchors: PriceAnchors): Promise<number> {
     reserves AS (
       SELECT pool_id, SUM(delta0) AS r0, SUM(delta1) AS r1
       FROM pool_flow_hourly
+      ${scope('pool_id')}
       GROUP BY pool_id
     ),
 
@@ -451,6 +461,7 @@ export async function rebuildPoolState(anchors: PriceAnchors): Promise<number> {
       JOIN tokens t1 ON lower(t1.address) = lower(p.token1)
       LEFT JOIN last_swap ls ON ls.pool_id = p.id
       LEFT JOIN reserves  r  ON r.pool_id  = p.id
+      ${scope('p.id')}
     ),
 
     quoted AS (
@@ -555,6 +566,8 @@ export async function rebuildAggregates(
   anchors: PriceAnchors,
   bounds?: Bounds,
   log?: (message: string) => void,
+  /** With bounds: the pools those blocks touched, so pool state is rebuilt for them alone. */
+  poolIds?: Iterable<string>,
 ): Promise<void> {
   // Timed per step when asked, because an unbounded rebuild on a large
   // table is minutes to hours and a silent one is indistinguishable from a
@@ -567,5 +580,5 @@ export async function rebuildAggregates(
   await step('anchor prices', () => rebuildAnchorPrices(anchors, bounds));
   await step('flow', () => rebuildFlowHours(bounds));
   await step('fees', () => rebuildFeeHours(anchors, bounds));
-  await step('pool state', () => rebuildPoolState(anchors));
+  await step('pool state', () => rebuildPoolState(anchors, bounds ? poolIds : undefined));
 }

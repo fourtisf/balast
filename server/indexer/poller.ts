@@ -16,7 +16,7 @@ import { CHAIN, CONTRACTS } from '../../lib/chain';
 import { POOL_MANAGER_ABI, V3_POOL_ABI } from '../chain/abi';
 import { env } from '../env';
 import type { PriceAnchors } from './aggregate';
-import { rebuildAggregates, rebuildFlowHours } from './aggregate';
+import { rebuildAggregates, rebuildFlowHours, rebuildPoolState } from './aggregate';
 import {
   classifyPools,
   ensureTokens,
@@ -85,6 +85,22 @@ export interface LogSource {
   >;
 }
 
+/** Where a pass spent its time, in milliseconds. Logged every pass and kept in `indexer_state` for /api/health. */
+export interface PassTimings {
+  logsMs: number;
+  timesMs: number;
+  tokensMs: number;
+  ingestMs: number;
+  rebuildMs: number;
+  totalMs: number;
+}
+
+const NO_TIMINGS: PassTimings = { logsMs: 0, timesMs: 0, tokensMs: 0, ingestMs: 0, rebuildMs: 0, totalMs: 0 };
+
+/** While backfilling: every Nth pass re-reads a few token supplies, and rebuilds every pool's state. */
+const SUPPLY_EVERY = 20;
+const FULL_STATE_EVERY = 60;
+
 export interface PassResult {
   fromBlock: bigint;
   toBlock: bigint;
@@ -102,6 +118,7 @@ export interface PassResult {
   /** Seconds between the last indexed block's time and head's. Shown in the top bar (§7). */
   lagSeconds: number;
   caughtUp: boolean;
+  timings: PassTimings;
 }
 
 export interface PollerOptions {
@@ -186,6 +203,10 @@ export class Poller {
   private v3Pools: string[];
   /** Set once the known v3 pools have been loaded from the database. */
   private v3Loaded = false;
+  /** Passes this run. Drives the backfill cadences above. */
+  private passes = 0;
+  /** Every pool is classified once per run; after that, only the pools a pass discovers. */
+  private classifiedAll = false;
 
   constructor(options: PollerOptions) {
     this.source = options.source;
@@ -241,6 +262,8 @@ export class Poller {
       this.v3Loaded = true;
     }
 
+    this.passes++;
+    const startedAt = Date.now();
     const head = await this.source.getHeadBlock();
     const cursor = await readCursor(POOL_MANAGER_CURSOR);
 
@@ -271,6 +294,7 @@ export class Poller {
         lagSeconds: 0,
         caughtUp: true,
         blockRange: Number(this.blockRange),
+        timings: { ...NO_TIMINGS, totalMs: Date.now() - startedAt },
       };
     }
 
@@ -281,6 +305,7 @@ export class Poller {
       ...this.v3Pools,
     ];
     let logs;
+    const logsStarted = Date.now();
     try {
       logs = await this.source.getLogs({ address: addresses, fromBlock: from, toBlock: to });
     } catch (error) {
@@ -309,9 +334,13 @@ export class Poller {
         lagSeconds: 0,
         caughtUp: false,
         blockRange: Number(this.blockRange),
+        timings: { ...NO_TIMINGS, totalMs: Date.now() - startedAt },
       };
     }
+    const logsMs = Date.now() - logsStarted;
+    const timesStarted = Date.now();
     const blockTimes = await this.source.getBlockTimes(from, to);
+    const timesMs = Date.now() - timesStarted;
 
     const events: ChainEvent[] = [];
     for (const raw of logs) {
@@ -343,7 +372,9 @@ export class Poller {
       { chainId: CHAIN.id, sqrtPriceByPool: new Map(), feePipsByPool: new Map() },
     );
     const tokenAddresses = initializePlan.pools.flatMap((p) => [p.token0, p.token1]);
+    const tokensStarted = Date.now();
     const tokensFound = await ensureTokens(tokenAddresses, head.timestamp, this.tokenReader);
+    const tokensMs = Date.now() - tokensStarted;
     await writePools(initializePlan);
 
     // A v3 pool announced by the factory in THIS range emits everything else
@@ -379,6 +410,7 @@ export class Poller {
 
     // Then the rest, with the carried price state loaded from the database so
     // a restart mid-chain resumes exactly where a full replay would be.
+    const ingestStarted = Date.now();
     const known = await loadKnownPools();
     const withBackfill = backfilled.length > 0 ? sortEvents([...ordered, ...backfilled]) : ordered;
     const usable = withBackfill.filter((e) => known.has(e.poolId));
@@ -394,9 +426,12 @@ export class Poller {
       );
     }
 
+    // The pools this batch touches: what the price state is loaded for and
+    // what the pool-state rebuild below is scoped to.
+    const touched = new Set(usable.map((e) => e.poolId));
     const plan = planIngest(usable, {
       chainId: CHAIN.id,
-      sqrtPriceByPool: await loadPriceState(from),
+      sqrtPriceByPool: await loadPriceState(from, touched),
       feePipsByPool: await loadFeeTiers(),
     });
 
@@ -414,16 +449,22 @@ export class Poller {
 
     const swapsWritten = await writeSwaps(plan);
     const liquidityWritten = await writeLiquidity(plan);
+    const ingestMs = Date.now() - ingestStarted;
 
     // Aggregates, in dependency order: the anchor price series, the staged
     // token flow, the fee hours valued through the anchor, then pool state
     // built on the flow. Scoped to the hours this range touched.
+    const rebuildStarted = Date.now();
+    const caughtUpNow = to >= head.number;
     const anchors = await this.anchors();
     // Supplies first: the FDV figure in pool_state is computed from them, so
-    // refreshing after the rebuild would leave it a pass behind.
-    const suppliesRefreshed = await refreshSupplies(head.timestamp, {
-      read: this.tokenReader,
-    });
+    // refreshing after the rebuild would leave it a pass behind. While
+    // backfilling they are re-read on a cadence rather than every pass: each
+    // is RPC calls, and the figure only shows once the board is current.
+    const suppliesRefreshed =
+      caughtUpNow || this.passes % SUPPLY_EVERY === 1
+        ? await refreshSupplies(head.timestamp, { read: this.tokenReader })
+        : 0;
     const bounds = { fromBlock: from, toBlock: to };
 
     if (!this.nativeRepaired) {
@@ -465,13 +506,24 @@ export class Poller {
         this.lastAnchorAddress = anchors.usdg;
         this.log(`  rebuilt in ${((Date.now() - started) / 1000).toFixed(1)}s`);
       } else {
-        await rebuildAggregates(anchors, bounds);
+        await rebuildAggregates(anchors, bounds, undefined, touched);
+        // Pool state depends on the latest anchor price as well as on each
+        // pool's own flow, so the scoped rebuild above leaves untouched pools
+        // priced at an older anchor. Every pool is redone once the pass
+        // reaches head, and on a cadence while it is still far from it.
+        if (caughtUpNow || this.passes % FULL_STATE_EVERY === 0) await rebuildPoolState(anchors);
       }
     }
     // No anchor yet means no dollar figure is derivable. The raw rows and the
     // flow above are still written; the full rebuild on the pass that first
     // finds USDG prices them. Skipping the priced tables here is not data loss.
-    await classifyPools();
+    if (!this.classifiedAll) {
+      await classifyPools();
+      this.classifiedAll = true;
+    } else {
+      await classifyPools(initializePlan.pools.map((p) => p.id));
+    }
+    const rebuildMs = Date.now() - rebuildStarted;
 
     const lastBlockTime = blockTimes.get(to) ?? head.timestamp;
     await writeCursor(POOL_MANAGER_CURSOR, to, lastBlockTime, head.number);
@@ -513,6 +565,7 @@ export class Poller {
       lagSeconds,
       caughtUp: to >= head.number,
       blockRange: Number(to - from + 1n),
+      timings: { logsMs, timesMs, tokensMs, ingestMs, rebuildMs, totalMs: Date.now() - startedAt },
     };
   }
 

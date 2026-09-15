@@ -7,15 +7,39 @@
  * range is 2000 timestamps and about three minutes of chain. Fetching each
  * block individually would be 2000 round trips a pass, so timestamps are
  * fetched only for the blocks that actually carry a log, cached, and reused.
+ *
+ * Two things make that cheap on a busy chain. A recent node puts
+ * `blockTimestamp` on every log it returns, which is the whole answer for
+ * free, so `eth_getLogs` is called raw rather than through viem's formatter
+ * (which drops the field). What is still missing is fetched fifty blocks
+ * per JSON-RPC batch; an endpoint that refuses batches is detected once and
+ * the source drops back to small concurrent groups for the rest of the run.
  */
 
-import { rpc } from '../chain/client';
+import { RPC_BATCH_SIZE, rpc, rpcBatched } from '../chain/client';
 import type { LogSource } from './poller';
+
+interface RawLog {
+  address: string;
+  topics: string[];
+  data: string;
+  blockNumber: string | null;
+  logIndex: string | null;
+  transactionHash: string | null;
+  /** Present on nodes that carry the field (geth ≥ 1.14.11 and its forks). */
+  blockTimestamp?: string;
+}
 
 export class ViemLogSource implements LogSource {
   /** Block number to timestamp. Blocks are immutable, so this never expires. */
   private readonly times = new Map<bigint, Date>();
   private readonly needed = new Set<bigint>();
+  /** Whether the endpoints accept a JSON-RPC batch. Assumed until one refuses. */
+  private batching = true;
+  /** How many timestamps the logs themselves supplied, for the pass log. */
+  timestampsFromLogs = 0;
+
+  constructor(private readonly log: (message: string) => void = () => {}) {}
 
   async getHeadBlock(): Promise<{ number: bigint; timestamp: Date }> {
     const block = await rpc((c) => c.getBlock({ blockTag: 'latest' }), 'getBlock(latest)');
@@ -34,11 +58,16 @@ export class ViemLogSource implements LogSource {
     );
     const logs = await rpc(
       (c) =>
-        c.getLogs({
-          address: addresses.length === 1 ? addresses[0] : addresses,
-          fromBlock: args.fromBlock,
-          toBlock: args.toBlock,
-        }),
+        c.request({
+          method: 'eth_getLogs',
+          params: [
+            {
+              address: addresses.length === 1 ? addresses[0] : addresses,
+              fromBlock: `0x${args.fromBlock.toString(16)}`,
+              toBlock: `0x${args.toBlock.toString(16)}`,
+            },
+          ],
+        }) as Promise<RawLog[]>,
       `getLogs(${args.fromBlock}-${args.toBlock})`,
     );
 
@@ -49,14 +78,19 @@ export class ViemLogSource implements LogSource {
         // the next pass sees it mined.
         continue;
       }
+      const blockNumber = BigInt(log.blockNumber);
+      if (log.blockTimestamp && !this.times.has(blockNumber)) {
+        this.times.set(blockNumber, new Date(Number(BigInt(log.blockTimestamp)) * 1000));
+        this.timestampsFromLogs++;
+      }
       // Remember which blocks we will need a timestamp for.
-      this.needed.add(log.blockNumber);
+      this.needed.add(blockNumber);
       out.push({
         address: log.address,
-        topics: log.topics as string[],
+        topics: log.topics,
         data: log.data,
-        blockNumber: log.blockNumber,
-        logIndex: log.logIndex,
+        blockNumber,
+        logIndex: Number(BigInt(log.logIndex)),
         transactionHash: log.transactionHash,
       });
     }
@@ -75,20 +109,20 @@ export class ViemLogSource implements LogSource {
     this.needed.clear();
 
     const missing = [...wanted].filter((b) => !this.times.has(b));
-    // Sequential in small groups: a public endpoint that rate-limits will
-    // refuse a 2000-way burst, and a refused timestamp means a dropped event.
-    const GROUP = 16;
-    for (let i = 0; i < missing.length; i += GROUP) {
-      const group = missing.slice(i, i + GROUP);
-      const blocks = await Promise.all(
-        group.map((number) =>
-          rpc((c) => c.getBlock({ blockNumber: number }), `getBlock(${number})`),
-        ),
-      );
-      for (const block of blocks) {
-        this.times.set(block.number, new Date(Number(block.timestamp) * 1000));
+    if (this.batching && missing.length > 1) {
+      try {
+        await this.fetchBatched(missing);
+      } catch (error) {
+        // A refused batch is a fact about the endpoint, not about the blocks.
+        this.batching = false;
+        this.log(
+          `  endpoint refused a JSON-RPC batch (${(error as Error).message.split('\n')[0]}) — ` +
+            'reading block times one call each from here on',
+        );
       }
     }
+    const still = missing.filter((b) => !this.times.has(b));
+    await this.fetchPlain(still);
 
     const result = new Map<bigint, Date>();
     for (const block of wanted) {
@@ -103,5 +137,29 @@ export class ViemLogSource implements LogSource {
       for (const [k, v] of kept) this.times.set(k, v);
     }
     return result;
+  }
+
+  /** One HTTP request per RPC_BATCH_SIZE blocks. */
+  private async fetchBatched(blocks: bigint[]): Promise<void> {
+    for (let i = 0; i < blocks.length; i += RPC_BATCH_SIZE) {
+      const group = blocks.slice(i, i + RPC_BATCH_SIZE);
+      const found = await rpcBatched(
+        (c) => Promise.all(group.map((number) => c.getBlock({ blockNumber: number }))),
+        `getBlock×${group.length}`,
+      );
+      for (const block of found) this.times.set(block.number, new Date(Number(block.timestamp) * 1000));
+    }
+  }
+
+  /** Sequential in small groups: a rate-limited endpoint refuses a 2000-way burst, and a refused timestamp is a dropped event. */
+  private async fetchPlain(blocks: bigint[]): Promise<void> {
+    const GROUP = 16;
+    for (let i = 0; i < blocks.length; i += GROUP) {
+      const group = blocks.slice(i, i + GROUP);
+      const found = await Promise.all(
+        group.map((number) => rpc((c) => c.getBlock({ blockNumber: number }), `getBlock(${number})`)),
+      );
+      for (const block of found) this.times.set(block.number, new Date(Number(block.timestamp) * 1000));
+    }
   }
 }

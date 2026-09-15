@@ -23,8 +23,11 @@ import { findDeploymentBlock } from '../chain/deployment';
 import { env } from '../env';
 import { prisma } from '../db';
 import { publishTick } from '../api/bus';
-import { Poller } from './poller';
+import { Poller, type PassResult } from './poller';
 import { ViemLogSource } from './viem-source';
+
+/** `indexer_state` key holding the last pass's timings. */
+export const LAST_PASS_KEY = 'last_pass';
 
 const USDG = process.env.USDG_ADDRESS;
 
@@ -74,7 +77,7 @@ async function main(): Promise<void> {
   }
 
   const poller = new Poller({
-    source: new ViemLogSource(),
+    source: new ViemLogSource(log),
     usdgAddress: USDG,
     startBlock,
     v3Factory,
@@ -106,8 +109,9 @@ async function main(): Promise<void> {
             `${behind.toLocaleString()} behind, window ${result.blockRange.toLocaleString()}): ` +
             `${result.events} events, +${result.swapsWritten} swaps, ` +
             `+${result.liquidityWritten} liquidity, +${result.poolsFound} pools, ` +
-            `+${result.tokensFound} tokens`,
+            `+${result.tokensFound} tokens · ${timingLine(result)}`,
         );
+        await rememberPass(result);
         // Tell the API something changed; it debounces before pushing (§4.4).
         await publishTick({ toBlock: result.toBlock.toString(), lagSeconds: result.lagSeconds });
       }
@@ -125,6 +129,41 @@ async function main(): Promise<void> {
 
   await prisma.$disconnect();
   log('stopped');
+}
+
+/** Seconds per stage, so a slow pass says which stage it is. */
+function timingLine(result: PassResult): string {
+  const t = result.timings;
+  const s = (ms: number) => (ms / 1000).toFixed(1);
+  const blocks = Number(result.toBlock - result.fromBlock + 1n);
+  const rate = t.totalMs > 0 ? Math.round((blocks * 1000) / t.totalMs) : 0;
+  return (
+    `${s(t.totalMs)}s (logs ${s(t.logsMs)}, times ${s(t.timesMs)}, tokens ${s(t.tokensMs)}, ` +
+    `ingest ${s(t.ingestMs)}, rebuild ${s(t.rebuildMs)}) · ${rate.toLocaleString()} blocks/s`
+  );
+}
+
+/** The last pass's shape, for /api/health and the doctor: throughput is a fact worth reading from outside. */
+async function rememberPass(result: PassResult): Promise<void> {
+  const value = JSON.stringify({
+    at: new Date().toISOString(),
+    fromBlock: result.fromBlock.toString(),
+    toBlock: result.toBlock.toString(),
+    blocks: Number(result.toBlock - result.fromBlock + 1n),
+    events: result.events,
+    poolsFound: result.poolsFound,
+    tokensFound: result.tokensFound,
+    timings: result.timings,
+  });
+  try {
+    await prisma.indexerState.upsert({
+      where: { key: LAST_PASS_KEY },
+      create: { key: LAST_PASS_KEY, value, updatedAt: new Date() },
+      update: { value, updatedAt: new Date() },
+    });
+  } catch {
+    /* telemetry must never stop a pass */
+  }
 }
 
 function sleep(ms: number): Promise<void> {

@@ -241,6 +241,15 @@ export async function buildServer(options: { logoFetch?: LogoFetch } = {}): Prom
     const cursor = await prisma.indexerCursor.findUnique({
       where: { contract: POOL_MANAGER_CURSOR },
     });
+    // The poller's last pass — blocks, events, and seconds per stage — so a
+    // slow backfill can be read from outside the box, not only from its log.
+    const lastPassRow = await prisma.indexerState.findUnique({ where: { key: 'last_pass' } });
+    let lastPass: unknown = null;
+    try {
+      lastPass = lastPassRow ? JSON.parse(lastPassRow.value) : null;
+    } catch {
+      lastPass = null;
+    }
     // Two different clocks, and they answer two different questions.
     //
     // `lagSeconds` is CHAIN time: how old the newest indexed block is. It is
@@ -326,6 +335,7 @@ export async function buildServer(options: { logoFetch?: LogoFetch } = {}): Prom
             blocksBehind: behind === null ? null : behind.toString(),
             progressPct: progress,
             syncing,
+            lastPass,
           }
         : null,
       pools: counts?.pools ?? 0,

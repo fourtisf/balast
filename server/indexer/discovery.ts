@@ -9,7 +9,7 @@
 
 import { Prisma } from '@prisma/client';
 import { getAddress } from 'viem';
-import { CHAIN, NATIVE_ETH, etherCurrencies } from '../../lib/chain';
+import { CHAIN, CONTRACTS, NATIVE_ETH, etherCurrencies } from '../../lib/chain';
 import { tokenMark } from '../../lib/token-mark';
 import { ERC20_ABI } from '../chain/abi';
 import { rpc } from '../chain/client';
@@ -180,11 +180,71 @@ export async function repairNativeToken(): Promise<number> {
  *  decimals included — and decimals are an input to every price. */
 export type TokenReader = (address: string) => Promise<TokenFacts>;
 
+/**
+ * Every missing token's four facts in one Multicall3 round trip per fifty
+ * tokens, falling back to one token at a time if the multicall itself fails.
+ *
+ * A launchpad chain creates dozens of tokens in a 2000-block window, and
+ * `readToken` is four RPC calls each; at public-endpoint latency that alone
+ * was a large share of a pass. A token whose call reverts (a bytes32 symbol,
+ * say) gets the same fallback `readToken` would have given it.
+ */
+export async function readTokensBatch(addresses: string[]): Promise<TokenFacts[]> {
+  const out: TokenFacts[] = [];
+  const contractsFor = (address: string) =>
+    (['symbol', 'name', 'decimals', 'totalSupply'] as const).map((functionName) => ({
+      address: getAddress(address),
+      abi: ERC20_ABI,
+      functionName,
+    }));
+  const CHUNK = 50;
+  for (let i = 0; i < addresses.length; i += CHUNK) {
+    const chunk = addresses.slice(i, i + CHUNK);
+    const erc20 = chunk.filter((a) => a.toLowerCase() !== NATIVE_ETH);
+    for (const a of chunk) if (a.toLowerCase() === NATIVE_ETH) out.push(await readToken(a));
+    if (erc20.length === 0) continue;
+    let results: { status: string; result?: unknown }[] | null = null;
+    try {
+      results = (await rpc(
+        (c) =>
+          c.multicall({
+            contracts: erc20.flatMap(contractsFor),
+            allowFailure: true,
+            multicallAddress: CONTRACTS.multicall3,
+          }),
+        `readTokens×${erc20.length}`,
+      )) as { status: string; result?: unknown }[];
+    } catch {
+      results = null;
+    }
+    if (!results || results.length !== erc20.length * 4) {
+      for (const a of erc20) out.push(await readToken(a));
+      continue;
+    }
+    erc20.forEach((address, j) => {
+      const at = (k: number) => (results![j * 4 + k].status === 'success' ? results![j * 4 + k].result : null);
+      const symbol = at(0) as string | null;
+      const name = at(1) as string | null;
+      const decimals = at(2) as number | null;
+      const totalSupply = at(3) as bigint | null;
+      const fallback = `${address.slice(2, 6)}…${address.slice(-4)}`.toUpperCase();
+      out.push({
+        address: address.toLowerCase(),
+        totalSupply: typeof totalSupply === 'bigint' && totalSupply > 0n ? totalSupply : null,
+        symbol: (typeof symbol === 'string' ? symbol : fallback).trim().slice(0, 16) || fallback,
+        name: (typeof name === 'string' ? name : 'Unknown token').trim().slice(0, 64) || 'Unknown token',
+        decimals: typeof decimals === 'number' && decimals >= 0 && decimals <= 36 ? decimals : 18,
+      });
+    });
+  }
+  return out;
+}
+
 /** Upsert tokens we have not seen. Existing rows are left alone. */
 export async function ensureTokens(
   addresses: Iterable<string>,
   seenAt: Date,
-  read: TokenReader = readToken,
+  read?: TokenReader,
 ): Promise<number> {
   const wanted = [...new Set([...addresses].map((a) => a.toLowerCase()))];
   if (wanted.length === 0) return 0;
@@ -196,8 +256,10 @@ export async function ensureTokens(
   const known = new Set(existing.map((t) => t.address.toLowerCase()));
   const missing = wanted.filter((a) => !known.has(a));
 
-  for (const address of missing) {
-    const facts = await read(address);
+  // The chain's own reader goes through Multicall3; an injected one (the
+  // test fixture's) is called per token, as before.
+  const all = read ? await Promise.all(missing.map((a) => read(a))) : await readTokensBatch(missing);
+  for (const facts of all) {
     await prisma.token.upsert({
       where: { address: facts.address },
       create: {
@@ -271,8 +333,15 @@ export async function refreshSupplies(
  * because it depends on configuration rather than on the log stream, and a
  * re-scan must not undo it.
  */
-export async function classifyPools(): Promise<number> {
-  const pools = await prisma.pool.findMany({ select: { id: true, hooks: true, token0: true, token1: true } });
+export async function classifyPools(poolIds?: string[]): Promise<number> {
+  // Scoped to the pools given — a pass classifies what it discovered — or
+  // every pool when called without: on start, and when LAUNCHPAD_HOOKS may
+  // have changed. It used to walk every pool with a query each, every pass.
+  if (poolIds && poolIds.length === 0) return 0;
+  const pools = await prisma.pool.findMany({
+    where: poolIds ? { id: { in: poolIds } } : undefined,
+    select: { id: true, hooks: true, token0: true, token1: true },
+  });
   let changed = 0;
   for (const pool of pools) {
     const launchpad = launchpadFor(pool.hooks);
