@@ -2183,3 +2183,52 @@ had been swallowing it. The repair only helps once the new script is on
 disk, so this one time the operator runs the chown by hand first — the
 same shape as the wrong-branch deploy in §18, and the same lesson: a fix
 in `deploy.sh` reaches the box one deploy after the fault.
+
+### Depth, and a market cap from the chain
+
+ALFA looked at a row reading `FDV $302.8K · depth $95.0K` and asked what
+depth meant against so small an FDV, and for a market cap.
+
+**Depth is the pool, FDV is the token.** Depth is the pool's liquidity
+valued in dollars, both sides — what a swap trades against and what a
+stake is a share of. FDV is the token's whole supply at its price. They
+are independent, and for a launchpad token a depth that is a third of the
+FDV is ordinary: a large part of the supply sits in the pool that
+launched it. A depth of `—` is unknown depth (§14): the pool's own events
+do not reconcile to a positive reserve, which on a young chain usually
+means a hook doing its own accounting — and `LAUNCHPAD_HOOKS` (§14) is
+still the missing input that would let the indexer say so.
+
+**Market cap.** §15 recorded why the figure was FDV: a contract reports
+its total supply and nothing about who holds it. That was too
+conservative. A contract also answers `balanceOf`, and three holders are
+tokens that cannot circulate by construction: the zero address, the
+`dEaD` address, and the token contract itself. Total supply less those
+is a circulating figure from on-chain reads alone, which §4 allows. It
+is read in the same multicall as the supply (`tokens.non_circulating`,
+one migration), and `pool_state.circ_mc_usd` is that figure at the
+traded side's price beside the FDV. The row reads `MC` and shows `FDV`
+next to it only when the two differ by more than a percent, because for
+a token with nothing burned they are one number; a token whose holdings
+have not been read yet shows the FDV alone, labelled; ether stays
+`native asset`. The tooltip says what circulating means here and what it
+cannot know: vesting and treasury holdings are indistinguishable on
+chain, so the figure can overstate, never understate.
+
+The supply refresh changed shape to make the backlog short. It reads
+fifty tokens a pass through Multicall3 rather than five one call at a
+time, every fifth pass while backfilling, ordered so that tokens with a
+supply and no holdings read come first and the largest pools' tokens
+among them — the board gains its market caps within minutes of the
+deploy, the rest of the table over the following hour.
+
+Smaller, from the same screenshot: a 24h change that rounds to `0.0%`
+was drawn as `▼ −0.0%` in red — a negative sign on a number that is not
+negative, and red means one thing here (§5). It is `0.0%` in the neutral
+colour now.
+
+Still ALFA's: the default ranking. The row that prompted the question
+was third by volume with fees of $54, under a row with sixteen times the
+fees; §1 says fee yield is the headline and volume is trivially washed.
+`By fees · 24h` as the default facet is one line, offered and not
+changed.

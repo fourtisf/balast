@@ -62,13 +62,15 @@ export const USDG = address(0xd6);
 export const FIXTURE_TOKENS: Record<string, TokenFacts> = {
   // Native ether, as v4 spells it. No `totalSupply()` to read — see
   // `readToken`, which answers for this address without an RPC call.
-  [NATIVE_ETH]: { address: NATIVE_ETH, symbol: 'ETH', name: 'Ether', decimals: 18, totalSupply: null },
-  [WETH]: { address: WETH, symbol: 'WETH', name: 'Wrapped Ether', decimals: 18, totalSupply: 120_000n * 10n ** 18n },
-  [USDG]: { address: USDG.toLowerCase(), symbol: 'USDG', name: 'Global Dollar', decimals: 6, totalSupply: 900_000_000n * 10n ** 6n },
-  [address(0x01).toLowerCase()]: { address: address(0x01).toLowerCase(), symbol: 'NVDA', name: 'NVIDIA Token', decimals: 18, totalSupply: 112_000n * 10n ** 18n },
-  [address(0x02).toLowerCase()]: { address: address(0x02).toLowerCase(), symbol: 'PONS', name: 'Pons', decimals: 18, totalSupply: 1_000_000_000n * 10n ** 18n },
-  [address(0x03).toLowerCase()]: { address: address(0x03).toLowerCase(), symbol: 'MOONCAT', name: 'Mooncat', decimals: 18, totalSupply: null },
-  [address(0x04).toLowerCase()]: { address: address(0x04).toLowerCase(), symbol: 'TWINE', name: 'Twine', decimals: 18, totalSupply: 1_000_000_000n * 10n ** 18n },
+  [NATIVE_ETH]: { address: NATIVE_ETH, symbol: 'ETH', name: 'Ether', decimals: 18, totalSupply: null, nonCirculating: null },
+  [WETH]: { address: WETH, symbol: 'WETH', name: 'Wrapped Ether', decimals: 18, totalSupply: 120_000n * 10n ** 18n, nonCirculating: 0n },
+  [USDG]: { address: USDG.toLowerCase(), symbol: 'USDG', name: 'Global Dollar', decimals: 6, totalSupply: 900_000_000n * 10n ** 6n, nonCirculating: 0n },
+  [address(0x01).toLowerCase()]: { address: address(0x01).toLowerCase(), symbol: 'NVDA', name: 'NVIDIA Token', decimals: 18, totalSupply: 112_000n * 10n ** 18n, nonCirculating: 0n },
+  // Forty percent of PONS sits at the burn addresses: the case where the
+  // market cap and the fully diluted figure differ.
+  [address(0x02).toLowerCase()]: { address: address(0x02).toLowerCase(), symbol: 'PONS', name: 'Pons', decimals: 18, totalSupply: 1_000_000_000n * 10n ** 18n, nonCirculating: 400_000_000n * 10n ** 18n },
+  [address(0x03).toLowerCase()]: { address: address(0x03).toLowerCase(), symbol: 'MOONCAT', name: 'Mooncat', decimals: 18, totalSupply: null, nonCirculating: null },
+  [address(0x04).toLowerCase()]: { address: address(0x04).toLowerCase(), symbol: 'TWINE', name: 'Twine', decimals: 18, totalSupply: 1_000_000_000n * 10n ** 18n, nonCirculating: 0n },
 };
 
 /** The fixture's token reader: no network, exact decimals, fixed supplies. */
@@ -81,6 +83,7 @@ export const fixtureTokenReader = async (addr: string): Promise<TokenFacts> => {
     name: 'Unknown token',
     decimals: 18,
     totalSupply: null,
+    nonCirculating: null,
   };
 };
 

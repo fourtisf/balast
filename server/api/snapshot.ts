@@ -81,6 +81,7 @@ interface PoolQueryRow {
   tvl_usd: number;
   price_usd: number;
   mc_usd: number;
+  circ_mc_usd: number;
   change_24h_pct: number | null;
   fees_24h_usd: number;
   fees_window_usd: number;
@@ -294,6 +295,7 @@ async function queryPools(usdg: string, asOf: Date, minFdvUsd: number): Promise<
       COALESCE(ps.tvl_usd, 0)::float8   AS tvl_usd,
       COALESCE(ps.price_usd, 0)::float8 AS price_usd,
       COALESCE(ps.mc_usd, 0)::float8    AS mc_usd,
+      COALESCE(ps.circ_mc_usd, 0)::float8 AS circ_mc_usd,
 
       -- 24h move, both prices through the same path so the ratio is honest.
       CASE
@@ -395,11 +397,12 @@ function toPool(row: PoolQueryRow): Pool {
     stakeable: row.stakeable,
     ageHours: row.age_hours,
     priceUsd: row.price_usd,
-    // totalSupply x price. That is fully diluted value, not market cap, and
-    // it is flagged so the row can say which it is (§7). Zero means no supply
-    // has been read yet, and the column renders an em dash.
-    marketCapUsd: row.mc_usd,
-    marketCapIsFdv: row.mc_usd > 0,
+    // Circulating supply x price, where circulating is the total less what
+    // the chain shows cannot circulate; zero until those holdings are read,
+    // and the row then shows the FDV alone, labelled (§7). Neither read: an
+    // em dash.
+    marketCapUsd: row.circ_mc_usd,
+    fdvUsd: row.mc_usd,
     tvlUsd: row.tvl_usd,
     // Null stays null: no price a day ago is "unknown", and the row says so.
     change24hPct: row.change_24h_pct,

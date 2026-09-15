@@ -123,8 +123,12 @@ const NO_TIMINGS: PassTimings = {
   totalMs: 0,
 };
 
-/** While backfilling: every Nth pass re-reads a few token supplies, and rebuilds every pool's state. */
-const SUPPLY_EVERY = 20;
+/**
+ * While backfilling: every Nth pass re-reads token supplies and holdings (one
+ * multicall per fifty tokens, so the cadence is short), and rebuilds every
+ * pool's state.
+ */
+const SUPPLY_EVERY = 5;
 const FULL_STATE_EVERY = 60;
 /**
  * The narrowest window a refusal can force. The configured floor is a

@@ -90,6 +90,30 @@ export interface TokenFacts {
    * called market cap (§7).
    */
   totalSupply?: bigint | null;
+  /**
+   * Tokens that cannot circulate, in the smallest units: the balances of the
+   * burn addresses and of the token contract itself. Total supply less this
+   * is what the market cap is computed from. Null when the supply is null;
+   * a balance that could not be read counts as zero, which errs toward the
+   * fully diluted figure rather than inventing a burn.
+   */
+  nonCirculating?: bigint | null;
+}
+
+/** Where burned tokens sit: the zero address and the conventional dead address. */
+export const BURN_ADDRESSES = [
+  '0x0000000000000000000000000000000000000000',
+  '0x000000000000000000000000000000000000dEaD',
+] as const;
+
+/** The holders whose balances cannot circulate: the burn addresses and the token itself. */
+function nonCirculatingHolders(token: `0x${string}`): `0x${string}`[] {
+  return [...BURN_ADDRESSES, token];
+}
+
+/** Sum of the balances that were read; one that was not counts as zero. */
+function sumHeld(values: unknown[]): bigint {
+  return values.reduce<bigint>((acc, v) => (typeof v === 'bigint' ? acc + v : acc), 0n);
 }
 
 /**
@@ -115,6 +139,7 @@ export async function readToken(address: string): Promise<TokenFacts> {
       name: CHAIN.nativeCurrency.name,
       decimals: CHAIN.nativeCurrency.decimals,
       totalSupply: null,
+      nonCirculating: null,
     };
   }
 
@@ -134,16 +159,31 @@ export async function readToken(address: string): Promise<TokenFacts> {
     }
   };
 
-  const [symbol, name, decimals, totalSupply] = await Promise.all([
+  const balance = async (holder: `0x${string}`): Promise<bigint | null> => {
+    try {
+      return (await rpc(
+        (c) =>
+          c.readContract({ address: checksummed, abi: ERC20_ABI, functionName: 'balanceOf', args: [holder] }),
+        `balanceOf(${address})`,
+      )) as bigint;
+    } catch {
+      return null;
+    }
+  };
+
+  const [symbol, name, decimals, totalSupply, ...held] = await Promise.all([
     read<string>('symbol'),
     read<string>('name'),
     read<number>('decimals'),
     read<bigint>('totalSupply'),
+    ...nonCirculatingHolders(checksummed).map(balance),
   ]);
+  const supply = typeof totalSupply === 'bigint' && totalSupply > 0n ? totalSupply : null;
 
   return {
     address: address.toLowerCase(),
-    totalSupply: typeof totalSupply === 'bigint' && totalSupply > 0n ? totalSupply : null,
+    totalSupply: supply,
+    nonCirculating: supply === null ? null : sumHeld(held),
     // Trim: a token whose symbol is padded or absurdly long would break the
     // table layout, and the ticker is 14px/700 in a fixed column (§5).
     symbol: (symbol ?? fallback).trim().slice(0, 16) || fallback,
@@ -170,6 +210,7 @@ export async function repairNativeToken(): Promise<number> {
       name: CHAIN.nativeCurrency.name,
       decimals: CHAIN.nativeCurrency.decimals,
       totalSupply: null,
+      nonCirculating: null,
     },
   });
   return count;
@@ -191,13 +232,27 @@ export type TokenReader = (address: string) => Promise<TokenFacts>;
  */
 export async function readTokensBatch(addresses: string[]): Promise<TokenFacts[]> {
   const out: TokenFacts[] = [];
-  const contractsFor = (address: string) =>
-    (['symbol', 'name', 'decimals', 'totalSupply'] as const).map((functionName) => ({
-      address: getAddress(address),
-      abi: ERC20_ABI,
-      functionName,
-    }));
-  const CHUNK = 50;
+  // Four facts and three balances per token: the holdings that cannot
+  // circulate are read in the same round trip as the supply they qualify.
+  const CALLS = 7;
+  const contractsFor = (address: string) => {
+    const token = getAddress(address);
+    return [
+      ...(['symbol', 'name', 'decimals', 'totalSupply'] as const).map((functionName) => ({
+        address: token,
+        abi: ERC20_ABI,
+        functionName,
+      })),
+      ...nonCirculatingHolders(token).map((holder) => ({
+        address: token,
+        abi: ERC20_ABI,
+        functionName: 'balanceOf' as const,
+        args: [holder] as const,
+      })),
+    ];
+  };
+  // Seven calls a token: a smaller chunk keeps one multicall a modest eth_call.
+  const CHUNK = 25;
   for (let i = 0; i < addresses.length; i += CHUNK) {
     const chunk = addresses.slice(i, i + CHUNK);
     const erc20 = chunk.filter((a) => a.toLowerCase() !== NATIVE_ETH);
@@ -217,20 +272,23 @@ export async function readTokensBatch(addresses: string[]): Promise<TokenFacts[]
     } catch {
       results = null;
     }
-    if (!results || results.length !== erc20.length * 4) {
+    if (!results || results.length !== erc20.length * CALLS) {
       for (const a of erc20) out.push(await readToken(a));
       continue;
     }
     erc20.forEach((address, j) => {
-      const at = (k: number) => (results![j * 4 + k].status === 'success' ? results![j * 4 + k].result : null);
+      const at = (k: number) =>
+        results![j * CALLS + k].status === 'success' ? results![j * CALLS + k].result : null;
       const symbol = at(0) as string | null;
       const name = at(1) as string | null;
       const decimals = at(2) as number | null;
       const totalSupply = at(3) as bigint | null;
+      const supply = typeof totalSupply === 'bigint' && totalSupply > 0n ? totalSupply : null;
       const fallback = `${address.slice(2, 6)}…${address.slice(-4)}`.toUpperCase();
       out.push({
         address: address.toLowerCase(),
-        totalSupply: typeof totalSupply === 'bigint' && totalSupply > 0n ? totalSupply : null,
+        totalSupply: supply,
+        nonCirculating: supply === null ? null : sumHeld([at(4), at(5), at(6)]),
         symbol: (typeof symbol === 'string' ? symbol : fallback).trim().slice(0, 16) || fallback,
         name: (typeof name === 'string' ? name : 'Unknown token').trim().slice(0, 64) || 'Unknown token',
         decimals: typeof decimals === 'number' && decimals >= 0 && decimals <= 36 ? decimals : 18,
@@ -268,6 +326,7 @@ export async function ensureTokens(
         name: facts.name,
         decimals: facts.decimals,
         totalSupply: facts.totalSupply ? new Prisma.Decimal(facts.totalSupply.toString()) : null,
+        nonCirculating: nonCirculatingOf(facts),
         supplyReadAt: facts.totalSupply ? seenAt : null,
         logoColor: brandColor(facts.address),
         launchpad: null,
@@ -295,37 +354,60 @@ export async function refreshSupplies(
   options: { maxAgeMinutes?: number; limit?: number; read?: TokenReader } = {},
 ): Promise<number> {
   const maxAge = options.maxAgeMinutes ?? 60;
-  const limit = options.limit ?? 5;
-  const read = options.read ?? readToken;
+  const limit = options.limit ?? 50;
   const cutoff = new Date(now.getTime() - maxAge * 60_000);
 
-  const stale = await prisma.token.findMany({
-    where: {
-      // Native ether has no `totalSupply()` and never will, so it would sit at
-      // the head of this queue for ever — `nulls: 'first'` — and take one of
-      // the few slots a pass has, starving the tokens that do answer.
-      address: { not: NATIVE_ETH },
-      OR: [{ supplyReadAt: null }, { supplyReadAt: { lt: cutoff } }],
-    },
-    orderBy: [{ supplyReadAt: { sort: 'asc', nulls: 'first' } }],
-    take: limit,
-    select: { address: true },
-  });
+  // Native ether has no `totalSupply()` and never will, so it would sit at
+  // the head of this queue for ever — nulls first — and take one of the
+  // slots a pass has, starving the tokens that do answer.
+  //
+  // Order: tokens whose supply is known but whose non-circulating holdings
+  // are not — the backlog a fresh migration leaves — come first, so the
+  // board gains a market cap before the rest of the table does; within
+  // that, the largest pools' tokens first, which is the board's own order;
+  // then the most stale.
+  const stale = await prisma.$queryRaw<{ address: string }[]>`
+    SELECT t.address
+    FROM tokens t
+    WHERE t.address <> ${NATIVE_ETH}
+      AND (t.supply_read_at IS NULL OR t.supply_read_at < ${cutoff}
+           OR (t.total_supply IS NOT NULL AND t.non_circulating IS NULL))
+    ORDER BY
+      (t.total_supply IS NOT NULL AND t.non_circulating IS NULL) DESC,
+      (SELECT MAX(ps.mc_usd) FROM pools p JOIN pool_state ps ON ps.pool_id = p.id
+        WHERE lower(p.token0) = t.address OR lower(p.token1) = t.address) DESC NULLS LAST,
+      t.supply_read_at ASC NULLS FIRST
+    LIMIT ${limit}
+  `;
+  if (stale.length === 0) return 0;
+
+  // The chain's own reader goes through Multicall3, one round trip per
+  // chunk; an injected one (the test fixture's) is called per token.
+  const addresses = stale.map((t) => t.address);
+  const all = options.read
+    ? await Promise.all(addresses.map((a) => options.read!(a)))
+    : await readTokensBatch(addresses);
 
   let updated = 0;
-  for (const token of stale) {
-    const facts = await read(token.address);
+  for (const facts of all) {
     if (!facts.totalSupply) continue;
     await prisma.token.update({
-      where: { address: token.address },
+      where: { address: facts.address },
       data: {
         totalSupply: new Prisma.Decimal(facts.totalSupply.toString()),
+        nonCirculating: nonCirculatingOf(facts),
         supplyReadAt: now,
       },
     });
     updated++;
   }
   return updated;
+}
+
+/** The non-circulating figure as stored: null unless both it and the supply were read. */
+function nonCirculatingOf(facts: TokenFacts): Prisma.Decimal | null {
+  if (!facts.totalSupply || facts.nonCirculating === null || facts.nonCirculating === undefined) return null;
+  return new Prisma.Decimal(facts.nonCirculating.toString());
 }
 
 /**

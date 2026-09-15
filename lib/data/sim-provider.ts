@@ -122,9 +122,9 @@ export class SimProvider implements DataProvider {
       ageHours,
       priceUsd: s.priceUsd,
       marketCapUsd: s.marketCapUsd,
-      // The prototype's figures are nominal market caps, not derived from a
-      // supply, so they are not labelled FDV. The live provider's are.
-      marketCapIsFdv: false,
+      // The prototype's figures are nominal market caps with nothing burned,
+      // so the fully diluted figure is the same one.
+      fdvUsd: s.marketCapUsd,
       tvlUsd: s.tvlUsd,
       change24hPct: s.change24hPct,
       fees24hUsd: s.fees24hUsd,

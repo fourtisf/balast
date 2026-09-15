@@ -452,6 +452,8 @@ export async function rebuildPoolState(anchors: PriceAnchors, poolIds?: Iterable
         t1.address  AS addr1,
         t0.total_supply AS supply0,
         t1.total_supply AS supply1,
+        t0.non_circulating AS nonc0,
+        t1.non_circulating AS nonc1,
         CASE WHEN ls.sqrt_price_x96 IS NULL THEN NULL ELSE
           ${ratioSql('ls.sqrt_price_x96', 't0.decimals', 't1.decimals')}
         END AS ratio,
@@ -492,7 +494,7 @@ export async function rebuildPoolState(anchors: PriceAnchors, poolIds?: Iterable
       FROM quoted
     )
 
-    INSERT INTO pool_state (pool_id, tvl_usd, price_usd, mc_usd, sqrt_price_x96, tick, liquidity, updated_at)
+    INSERT INTO pool_state (pool_id, tvl_usd, price_usd, mc_usd, circ_mc_usd, sqrt_price_x96, tick, liquidity, updated_at)
     SELECT
       pool_id,
       -- Both sides at their own prices. Never doubled from one side, never
@@ -523,13 +525,9 @@ export async function rebuildPoolState(anchors: PriceAnchors, poolIds?: Iterable
         otherwise: '0',
       })}, 0), 0)::numeric(38,18),
       -- Fully diluted value: the traded token's TOTAL supply times its price.
-      --
-      -- Not market cap. Circulating supply is not distinguishable on chain —
-      -- locked, vested and treasury-held tokens are all inside totalSupply —
-      -- so this figure is FDV and the UI labels it that way (§7). Calling it
-      -- market cap would overstate every token with a vesting schedule.
-      --
-      -- Zero when the supply has not been read, which renders as an em dash.
+      -- Locked, vested and treasury-held tokens are all inside totalSupply,
+      -- and the UI labels the figure for what it is (§7). Zero when the
+      -- supply has not been read, which renders as an em dash.
       GREATEST(COALESCE(${sane(
         tradedSide({
           addr0: 'addr0',
@@ -538,6 +536,27 @@ export async function rebuildPoolState(anchors: PriceAnchors, poolIds?: Iterable
           usdg,
           whenToken0: 'supply0 / power(10::numeric, dec0) * price0_usd',
           whenToken1: 'supply1 / power(10::numeric, dec1) * price1_usd',
+          otherwise: 'NULL',
+        }),
+        MAX_SANE_TOTAL_USD,
+      )}, 0), 0)::numeric(38,18),
+      -- Market cap: circulating supply times the same price, where
+      -- circulating is total supply less the tokens that cannot circulate —
+      -- the burn addresses' balances and the token contract's own, read
+      -- from the chain with the supply. Vesting and treasury holdings are
+      -- not distinguishable on chain, so this can still overstate, never
+      -- understate, and the row's tooltip says so. Zero until the holdings
+      -- have been read; the row then shows the FDV alone, labelled.
+      GREATEST(COALESCE(${sane(
+        tradedSide({
+          addr0: 'addr0',
+          addr1: 'addr1',
+          weth,
+          usdg,
+          whenToken0:
+            'CASE WHEN nonc0 IS NULL THEN NULL ELSE GREATEST(supply0 - nonc0, 0) / power(10::numeric, dec0) * price0_usd END',
+          whenToken1:
+            'CASE WHEN nonc1 IS NULL THEN NULL ELSE GREATEST(supply1 - nonc1, 0) / power(10::numeric, dec1) * price1_usd END',
           otherwise: 'NULL',
         }),
         MAX_SANE_TOTAL_USD,
@@ -551,6 +570,7 @@ export async function rebuildPoolState(anchors: PriceAnchors, poolIds?: Iterable
       tvl_usd        = EXCLUDED.tvl_usd,
       price_usd      = EXCLUDED.price_usd,
       mc_usd         = EXCLUDED.mc_usd,
+      circ_mc_usd    = EXCLUDED.circ_mc_usd,
       sqrt_price_x96 = EXCLUDED.sqrt_price_x96,
       tick           = EXCLUDED.tick,
       liquidity      = EXCLUDED.liquidity,

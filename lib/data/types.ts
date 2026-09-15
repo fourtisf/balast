@@ -78,22 +78,18 @@ export interface Pool {
 
   priceUsd: number;
   /**
-   * The token's total value at the current price.
+   * Market cap: circulating supply × price.
    *
-   * `marketCapIsFdv` says which figure it actually is. Zero means the
-   * provider could not establish a supply, and the row shows an em dash.
+   * The live indexer's circulating figure is total supply less what the
+   * chain shows cannot circulate — the burn addresses' balances and the
+   * token contract's own. Vesting and treasury holdings cannot be told
+   * apart on chain, so this can overstate, never understate, and the row's
+   * tooltip says so (§7). Zero when it could not be derived; the row then
+   * shows `fdvUsd` alone, labelled, or an em dash when that is zero too.
    */
   marketCapUsd: number;
-  /**
-   * True when the figure above is fully diluted value rather than market cap.
-   *
-   * The live indexer derives it from `totalSupply()`, which includes locked,
-   * vested and treasury-held tokens — none of which is distinguishable on
-   * chain. That is FDV, and §7 does not allow it to be presented as market
-   * cap: for a token with a vesting schedule the two differ by a lot, always
-   * in the flattering direction.
-   */
-  marketCapIsFdv: boolean;
+  /** Fully diluted: total supply × price. Zero when the supply has not been read. */
+  fdvUsd: number;
   tvlUsd: number;
   /**
    * Null when there is no price 24h ago to compare with — a pool younger

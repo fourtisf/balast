@@ -43,6 +43,13 @@ model Token {
   /// When the supply was last read. Mintable tokens change, so it is
   /// refreshed on a cadence rather than once at discovery.
   supplyReadAt DateTime? @map("supply_read_at")
+  /// Tokens that cannot circulate, read alongside the supply: the balances
+  /// of the burn addresses (0x0, 0xdEaD) and of the token contract itself.
+  /// Total supply less this is the circulating figure the market cap is
+  /// built from. Vesting and treasury holdings are not distinguishable on
+  /// chain, so that figure can still overstate, never understate. Null
+  /// until read.
+  nonCirculating Decimal? @map("non_circulating") @db.Decimal(78, 0)
   logoUrl      String?   @map("logo_url")
   /// When the external logo sources were last asked about this token. Null
   /// means never; set even when nothing was found, so a token nobody lists
@@ -251,7 +258,11 @@ model PoolState {
   poolId    String   @id @map("pool_id")
   tvlUsd    Decimal  @map("tvl_usd") @db.Decimal(38, 18)
   priceUsd  Decimal  @map("price_usd") @db.Decimal(38, 18)
+  /// Fully diluted: total supply × price.
   mcUsd     Decimal  @map("mc_usd") @db.Decimal(38, 18)
+  /// Market cap: circulating supply × price. Zero until the token's
+  /// non-circulating holdings have been read.
+  circMcUsd Decimal  @default(0) @map("circ_mc_usd") @db.Decimal(38, 18)
   /// sqrtPriceX96 at the last swap: the input to every derived price (§4.3).
   sqrtPrice Decimal  @map("sqrt_price_x96") @db.Decimal(78, 0)
   tick      Int

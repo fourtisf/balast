@@ -155,24 +155,34 @@ function Row({
   const yieldText = feeYieldValue(pool.feeYield);
   const insufficient = pool.feeYield.basis === 'insufficient';
 
-  // An FDV is marked, because calling it market cap overstates every token
-  // with a vesting schedule (§7). Ether has no contract and no supply to
-  // read (§18), which is a fact about ether, not a gap; any other token
-  // with no supply read is a dash, not a guess (§15).
+  // Market cap first, from the supply less what the chain shows cannot
+  // circulate; the fully diluted figure beside it only when the two differ,
+  // because for a token with nothing burned they are one number. A token
+  // whose holdings have not been read yet shows the FDV alone, labelled
+  // (§7). Ether has no contract and no supply to read (§18), which is a fact
+  // about ether, not a gap; any other token with nothing read is a dash.
   const ether = isEther(pool.token.address);
+  const mc = pool.marketCapUsd;
+  const fdv = pool.fdvUsd;
+  const fdvDiffers = mc > 0 && fdv > mc * 1.01;
   const capText = ether
     ? 'native asset'
-    : pool.marketCapUsd > 0
-      ? `${pool.marketCapIsFdv ? 'FDV' : 'MC'} ${usd(pool.marketCapUsd)}`
-      : 'FDV —';
+    : mc > 0
+      ? `MC ${usd(mc)}${fdvDiffers ? ` · FDV ${usd(fdv)}` : ''}`
+      : fdv > 0
+        ? `FDV ${usd(fdv)}`
+        : 'MC —';
   const capTitle = ether
-    ? "Ether is the chain's native asset: no token contract, no supply to read, so no FDV."
-    : pool.marketCapUsd <= 0
-      ? 'The token has not answered a supply read, so there is no figure to show.'
-      : pool.marketCapIsFdv
-        ? 'Fully diluted: total supply × price. Circulating supply is not ' +
-          'distinguishable on chain, so locked and vested tokens are included.'
-        : undefined;
+    ? "Ether is the chain's native asset: no token contract, no supply to read, so no market cap."
+    : mc > 0
+      ? 'Market cap: circulating supply on this chain × price. Circulating is total supply less ' +
+        "burned tokens and the token contract's own balance; vesting and treasury holdings " +
+        'cannot be told apart on chain, so this can overstate, never understate.' +
+        (fdvDiffers ? ' FDV counts the whole supply.' : '')
+      : fdv > 0
+        ? 'Fully diluted: total supply × price. The holdings that cannot circulate have not been ' +
+          'read yet, so there is no market cap figure.'
+        : 'The token has not answered a supply read, so there is no figure to show.';
 
   return (
     <li ref={registerRef} className={`lb-row${leader ? ' lead' : ''}`} onClick={onOpen}>
