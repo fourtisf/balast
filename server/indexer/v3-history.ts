@@ -22,6 +22,7 @@
  */
 
 import { CHAIN } from '../../lib/chain';
+import { V3_POOL_TOPICS } from '../chain/abi';
 import { prisma } from '../db';
 import { ensureTokens, type TokenReader } from './discovery';
 import { decodeV3FactoryLog, decodeV3PoolLog, sortEvents, type ChainEvent } from './events';
@@ -83,7 +84,7 @@ export async function backfillV3History(args: {
   if (from <= args.toBlock) {
     log(`  v3 history: reading the factory from block ${from} to ${args.toBlock}`);
     const known = await loadKnownPools();
-    await withWork('v3 history: factory', (note) => walk(args.source, [factory], from, args.toBlock, args.window, args.maxWindow, async (logs, w) => {
+    await withWork('v3 history: factory', (note) => walk(args.source, { address: [factory] }, from, args.toBlock, args.window, args.maxWindow, async (logs, w) => {
       windows++;
       note(`block ${w.to.toLocaleString()} of ${args.toBlock.toLocaleString()}, ${found.length} pool(s) so far`);
       if (logs.length > 0) {
@@ -140,14 +141,19 @@ export async function backfillV3History(args: {
       log(`  v3 history: reading ${addresses.length} pool(s) from block ${pfrom} to ${pto}`);
       const feePips = await loadFeeTiers();
       const ids = addresses.map((a) => `v3:${a}`);
+      // By signature, with the pools' addresses checked here: a request
+      // naming twelve thousand contracts was answered in seventeen seconds
+      // when it was answered at all (poller.ts).
+      const wanted = new Set(addresses.map((a) => a.toLowerCase()));
       let walked = 0;
-      await withWork('v3 history: pools', (note) => walk(args.source, addresses, pfrom, pto, args.window, args.maxWindow, async (logs, w) => {
+      await withWork('v3 history: pools', (note) => walk(args.source, { topics: V3_POOL_TOPICS }, pfrom, pto, args.window, args.maxWindow, async (logs, w) => {
         walked++;
         note(`${addresses.length} pool(s), block ${w.to.toLocaleString()} of ${pto.toLocaleString()}, ${events} event(s) so far`);
-        if (logs.length > 0) {
+        const ours = logs.filter((raw) => wanted.has(raw.address.toLowerCase()));
+        if (ours.length > 0) {
           const times = await args.source.getBlockTimes(w.from, w.to);
           const decoded: ChainEvent[] = [];
-          for (const raw of logs) {
+          for (const raw of ours) {
             const time = times.get(raw.blockNumber);
             if (!time) continue;
             const event = decodeV3PoolLog(asLog(raw), time);
@@ -175,7 +181,7 @@ export async function backfillV3History(args: {
 /** Sequential windows over a range, adapting the width the way the poller does. */
 async function walk(
   source: LogSource,
-  addresses: string[],
+  filter: { address?: string[]; topics?: string[] },
   from: bigint,
   to: bigint,
   window: bigint,
@@ -188,7 +194,7 @@ async function walk(
     const end = min(to, cursor + width - 1n);
     let logs: RawLog[];
     try {
-      logs = await source.getLogs({ address: addresses, fromBlock: cursor, toBlock: end });
+      logs = await source.getLogs({ ...filter, fromBlock: cursor, toBlock: end });
     } catch (error) {
       // A refused width, as in the poller: halve and ask again for the same
       // range. At the hard minimum there is nothing left to try.

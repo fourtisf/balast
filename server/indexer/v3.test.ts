@@ -19,7 +19,9 @@ import {
   V3_POOL_ID,
   buildV3Chain,
   fixtureTokenReader,
+  v3SwapLog,
 } from '../test/fixture';
+import { FOLLOWED_TOPICS } from '../chain/abi';
 import { Poller } from './poller';
 
 const chain = buildV3Chain();
@@ -188,6 +190,52 @@ describe('the v3 factory', () => {
     `;
     expect(backfilled.length).toBeGreaterThan(0);
     expect(backfilled).toEqual(throughout);
+  });
+
+  it('fetches by signature, not by address, and drops a pool it does not follow', async () => {
+    // The factory on the live chain has named 12,893 pools. A request that
+    // listed them all took seventeen seconds when it was answered at all,
+    // and the list only grows; the seven signatures never do. So the pass
+    // asks by topic, and a log of a followed signature from a contract it
+    // does not follow — another DEX's v3 pool, here — is fetched and dropped
+    // rather than written against a pool that is not in the tables.
+    await resetDatabase();
+    const foreignPool = '0x00000000000000000000000000000000000f0e0d';
+    const foreignChain = {
+      ...chain,
+      logs: [
+        ...chain.logs,
+        ...[0, 1, 2].map((i) =>
+          v3SwapLog({
+            pool: foreignPool,
+            amount0: 1_000n * 10n ** 18n,
+            amount1: -(900n * 10n ** 18n),
+            tick: -25_920,
+            block: 45 + i * 5,
+            logIndex: 3,
+          }),
+        ),
+      ].sort((a, b) =>
+        a.blockNumber === b.blockNumber ? a.logIndex - b.logIndex : a.blockNumber < b.blockNumber ? -1 : 1,
+      ),
+    };
+    const source = new FixtureLogSource(foreignChain);
+    const passes = await poller(source, 400).syncToHead();
+
+    // Every request of the pass named no contract and every followed signature.
+    expect(source.calls.length).toBeGreaterThan(0);
+    for (const call of source.calls) {
+      expect(call.address).toBeUndefined();
+      expect(call.topics).toEqual(FOLLOWED_TOPICS);
+    }
+    // The pool we follow is whole: the same-range Mint and swaps came with
+    // the factory's log, no second fetch needed.
+    expect(await prisma.swapEvent.count({ where: { poolId: V3_POOL_ID } })).toBe(8);
+    expect(await prisma.liquidityEvent.count({ where: { poolId: V3_POOL_ID } })).toBe(1);
+    // The foreign one left nothing, and the pass counted what it dropped.
+    expect(await prisma.swapEvent.count({ where: { poolId: `v3:${foreignPool}` } })).toBe(0);
+    expect(await prisma.pool.count()).toBe(2);
+    expect(passes.reduce((n, p) => n + p.foreign, 0)).toBe(3);
   });
 
   it('finds nothing v3 at all when the factory is not configured', async () => {

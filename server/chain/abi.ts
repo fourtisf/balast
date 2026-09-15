@@ -15,7 +15,7 @@
  *   amounts are computed at ingest. See indexer/amounts.ts.
  */
 
-import { parseAbi } from 'viem';
+import { parseAbi, toEventSelector, type AbiEvent } from 'viem';
 
 /** Uniswap v4 PoolManager (§2). One contract, every pool. */
 export const POOL_MANAGER_ABI = parseAbi([
@@ -35,6 +35,27 @@ export const V3_POOL_ABI = parseAbi([
 export const V3_FACTORY_ABI = parseAbi([
   'event PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, address pool)',
 ]);
+
+/** topic0 of every event in an ABI. */
+function selectors(abi: readonly { type: string }[]): string[] {
+  return abi.filter((item) => item.type === 'event').map((item) => toEventSelector(item as AbiEvent).toLowerCase());
+}
+
+/**
+ * The event signatures the indexer decodes, for filtering a fetch by topic
+ * rather than by address.
+ *
+ * v3 has one contract per pool, and the factory on this chain has named
+ * nearly thirteen thousand of them. An `eth_getLogs` that lists every pool
+ * address is a request the size of a small file, and the endpoints answered
+ * it in seventeen seconds when they answered at all. The signatures are
+ * seven, and they never grow; the poller asks by signature and keeps the
+ * logs whose address it follows (indexer/poller.ts).
+ */
+export const POOL_MANAGER_TOPICS = selectors(POOL_MANAGER_ABI);
+export const V3_POOL_TOPICS = selectors(V3_POOL_ABI);
+export const V3_FACTORY_TOPICS = selectors(V3_FACTORY_ABI);
+export const FOLLOWED_TOPICS = [...new Set([...POOL_MANAGER_TOPICS, ...V3_FACTORY_TOPICS, ...V3_POOL_TOPICS])];
 
 /** Read-only v3 pool state, for the reserves half of a TVL figure. */
 export const V3_POOL_READ_ABI = parseAbi([

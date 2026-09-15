@@ -109,15 +109,23 @@ async function main(): Promise<void> {
             `${behind.toLocaleString()} behind, window ${windowLine(result)}): ` +
             `${result.events} events, +${result.swapsWritten} swaps, ` +
             `+${result.liquidityWritten} liquidity, +${result.poolsFound} pools, ` +
-            `+${result.tokensFound} tokens · ${timingLine(result)}`,
+            `+${result.tokensFound} tokens` +
+            (result.foreign > 0 ? `, ${result.foreign} foreign dropped` : '') +
+            ` · ${timingLine(result)}`,
         );
         await rememberPass(result);
         // Tell the API something changed; it debounces before pushing (§4.4).
         await publishTick({ toBlock: result.toBlock.toString(), lagSeconds: result.lagSeconds });
       }
-      if (result.caughtUp || result.refused) {
-        // Refused too: the endpoint said no to every window, and asking again
-        // in the same breath is how a rate limit becomes a ban.
+      if (result.refused) {
+        // The endpoint said no to every window. Asking again in the same
+        // breath is how a rate limit becomes a ban, and asking every second
+        // for hours is what the box did: the wait doubles with the streak,
+        // to a minute.
+        const wait = Math.min(60_000, env.pollIntervalMs * 2 ** Math.min(result.refusedInARow - 1, 6));
+        if (result.refusedInARow > 1) log(`  refused ${result.refusedInARow} passes in a row — waiting ${(wait / 1000).toFixed(0)}s`);
+        await sleep(wait);
+      } else if (result.caughtUp) {
         await sleep(env.pollIntervalMs);
       }
     } catch (error) {
@@ -146,9 +154,8 @@ function timingLine(result: PassResult): string {
   const s = (ms: number) => (ms / 1000).toFixed(1);
   const blocks = Number(result.toBlock - result.fromBlock + 1n);
   const rate = t.totalMs > 0 ? Math.round((blocks * 1000) / t.totalMs) : 0;
-  const backfill = t.backfillMs > 0 ? `, backfill ${s(t.backfillMs)}` : '';
   return (
-    `${s(t.totalMs)}s (logs ${s(t.logsMs)}, times ${s(t.timesMs)}, tokens ${s(t.tokensMs)}${backfill}, ` +
+    `${s(t.totalMs)}s (logs ${s(t.logsMs)}, times ${s(t.timesMs)}, tokens ${s(t.tokensMs)}, ` +
     `ingest ${s(t.ingestMs)}, rebuild ${s(t.rebuildMs)}) · ${rate.toLocaleString()} blocks/s`
   );
 }

@@ -35,7 +35,7 @@ class SparseSource extends FixtureLogSource {
     this.cap = cap;
   }
 
-  override async getLogs(args: { address: string | string[]; fromBlock: bigint; toBlock: bigint }) {
+  override async getLogs(args: Parameters<FixtureLogSource['getLogs']>[0]) {
     const width = args.toBlock - args.fromBlock + 1n;
     this.widths.push(width);
     if (this.cap !== null && width > this.cap) {
@@ -62,7 +62,7 @@ class BurstSource extends FixtureLogSource {
     super(chainData, head);
   }
 
-  override async getLogs(args: { address: string | string[]; fromBlock: bigint; toBlock: bigint }) {
+  override async getLogs(args: Parameters<FixtureLogSource['getLogs']>[0]) {
     this.widths.push(args.toBlock - args.fromBlock + 1n);
     this.inFlight++;
     try {
@@ -259,6 +259,65 @@ describe('backfilling an empty chain', () => {
 
     expect(adaptive.length).toBeGreaterThan(50);
     expect(adaptive).toEqual(fixed);
+  });
+});
+
+/**
+ * A source that answers 429 to any single request wider than its cap — as
+ * an endpoint does that rate-limits by the weight of a query rather than by
+ * the count of them. The label says "rate limit"; the fact is the width.
+ */
+class StubbornSource extends FixtureLogSource {
+  readonly widths: bigint[] = [];
+  constructor(
+    chainData: ReturnType<typeof buildFixtureChain>,
+    head: number,
+    readonly cap: bigint,
+  ) {
+    super(chainData, head);
+  }
+
+  override async getLogs(args: Parameters<FixtureLogSource['getLogs']>[0]) {
+    const width = args.toBlock - args.fromBlock + 1n;
+    this.widths.push(width);
+    if (width > this.cap) throw new Error('HTTP request failed. Status: 429 Too Many Requests');
+    return super.getLogs(args);
+  }
+}
+
+describe('a single window that keeps being refused', () => {
+  it('narrows whatever the endpoint called it, and counts the streak for the main loop to back off on', async () => {
+    // The box: one window in flight, a 429 on every pass, and the old rule
+    // — "a rate limit on a single window changes nothing" — asked for the
+    // same thousand blocks every second for hours. A refused single window
+    // is the width, and the sync has to finish.
+    await resetDatabase();
+    // Short of the forty clean passes after which the poller probes for a
+    // wider window again (that refusal is the probe's, and its own test).
+    const source = new StubbornSource(chain, 15_000, 500n);
+    const lines: string[] = [];
+    const passes = await new Poller({
+      source,
+      usdgAddress: USDG,
+      startBlock: 0n,
+      blockRange: 4_000,
+      maxBlockRange: 4_000,
+      fetchConcurrency: 1,
+      tokenReader: fixtureTokenReader,
+      log: (line) => lines.push(line),
+    }).syncToHead();
+
+    expect(passes[passes.length - 1].caughtUp).toBe(true);
+    expect(await prisma.swapEvent.count()).toBeGreaterThan(500);
+    // 4000 refused, 2000 refused, 1000 refused, 500 accepted: three in a
+    // row, said so, then the streak is over.
+    const refused = passes.filter((p) => p.refused);
+    expect(refused.map((p) => p.refusedInARow)).toEqual([1, 2, 3]);
+    expect(passes.find((p) => !p.refused)!.refusedInARow).toBe(0);
+    expect(lines.filter((l) => l.includes('range now')).length).toBe(3);
+    expect(lines.some((l) => l.includes('a single window'))).toBe(true);
+    // And it stayed under the cap from then on.
+    expect(source.widths.slice(3).every((w) => w <= 500n)).toBe(true);
   });
 });
 

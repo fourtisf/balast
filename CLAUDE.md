@@ -2572,3 +2572,53 @@ the only evidence; `pm2 logs balast-indexer --lines 100` from before the
 restart says whether it was refused by every endpoint on every pass (the
 one case that neither writes nor touches the cursor and is not a stage),
 mid-rebuild, or something new.
+
+### Twelve thousand nine hundred addresses in every request
+
+The first log with the heartbeat in it said where the time went. Phase
+one of the factory's history found **12,893 v3 pools**; phase two, their
+own logs from block 9,490 to the cursor, had reached block 23,489 after
+ten minutes — fourteen blocks a second, ninety hours to the cursor — and
+the last remembered pass before the deploy had taken seventeen seconds to
+be refused for a thousand-block window. One cause: every `eth_getLogs`
+listed every followed pool's address, twelve thousand nine hundred of
+them, a request the size of a small file that the endpoints answered
+slowly when they answered at all. And the list only grows; on a chain
+where a launchpad creates a v3 pool per token it would have reached the
+main loop next and stayed there.
+
+**The fetch is by signature now.** The indexer decodes seven events —
+v4 `Initialize`, `Swap`, `ModifyLiquidity`; v3 `Swap`, `Mint`, `Burn`;
+the factory's `PoolCreated` — and `FOLLOWED_TOPICS` in `server/chain/abi.ts`
+is their selectors, checked in a test against the canonical Uniswap values
+so a typo in an ABI string cannot pass every fixture and decode nothing on
+the real chain. A pass asks for those topics and no address, and keeps
+the logs whose contract it follows: the PoolManager, the factory, and
+the v3 pools it knows — including one the factory names in the same
+batch, since the logs are in chain order and a pool is created before it
+is used. Anything else of the same signature, another DEX's v3 pool say,
+is counted as `foreign` on the pass line and dropped. The history walk's
+second phase does the same with the pending pools' addresses.
+
+Two consequences. The per-pass **backfill** of a newly discovered v3
+pool's own logs (§15) is gone: it existed because the pool's address was
+not in the filter when its range was fetched, and there is no address in
+the filter now. `server/indexer/v3.test.ts` builds a chain with a foreign
+v3 pool beside the followed one and asserts the followed pool is whole in
+one pass, the foreign one leaves no row, and every request named no
+contract. And a response can now carry logs the poller does not want; a
+chain with a busy v3 fork on it would narrow the window through the same
+result caps as before, which is the trade for a request that stays small.
+
+**A refused single window narrows, whatever the endpoint called it.** The
+previous rule kept the width on a lone 429 — the endpoint asking for a
+moment — and the box showed the other reading: a thousand-block window
+refused every second for hours, the cursor never moving. Some endpoints
+answer 429 to a heavy query, and from one window there is no telling
+which. So a single refused window halves the width to the minimum, and
+the main loop waits longer each time a whole pass is refused — doubling
+from the poll interval to a minute (`refusedInARow` on the pass) — rather
+than asking again in the same breath. The burst rule is unchanged: a 429
+with several windows in flight still halves the concurrency and keeps the
+width. A test refuses every window over 500 blocks with a 429 and
+asserts the sync finishes, three refusals in a row and then none.

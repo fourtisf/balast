@@ -485,8 +485,8 @@ export function buildFixtureChain(
  */
 export class FixtureLogSource implements LogSource {
   private head: number;
-  /** Every getLogs call, for asserting the re-scan actually happened. */
-  readonly calls: { from: bigint; to: bigint }[] = [];
+  /** Every getLogs call, for asserting the re-scan actually happened, and what each asked for. */
+  readonly calls: { from: bigint; to: bigint; address?: string | string[]; topics?: string[] }[] = [];
 
   constructor(
     private readonly chain: FixtureChain,
@@ -510,17 +510,23 @@ export class FixtureLogSource implements LogSource {
   }
 
   async getLogs(args: {
-    address: string | string[];
+    address?: string | string[];
+    topics?: string[];
     fromBlock: bigint;
     toBlock: bigint;
   }): Promise<RawLog[]> {
-    this.calls.push({ from: args.fromBlock, to: args.toBlock });
-    const wanted = new Set(
-      (Array.isArray(args.address) ? args.address : [args.address]).map((a) => a.toLowerCase()),
-    );
+    this.calls.push({ from: args.fromBlock, to: args.toBlock, address: args.address, topics: args.topics });
+    // The node's semantics: an address filter and a topic0 filter, each
+    // applied only when given.
+    const wanted =
+      args.address === undefined
+        ? null
+        : new Set((Array.isArray(args.address) ? args.address : [args.address]).map((a) => a.toLowerCase()));
+    const topics = args.topics === undefined ? null : new Set(args.topics.map((t) => t.toLowerCase()));
     return this.chain.logs.filter(
       (log) =>
-        wanted.has(log.address.toLowerCase()) &&
+        (wanted === null || wanted.has(log.address.toLowerCase())) &&
+        (topics === null || topics.has((log.topics[0] ?? '').toLowerCase())) &&
         log.blockNumber >= args.fromBlock &&
         log.blockNumber <= args.toBlock,
     );
@@ -699,12 +705,14 @@ function poolCreatedLog(args: {
   };
 }
 
-function v3SwapLog(args: {
+export function v3SwapLog(args: {
   amount0: bigint;
   amount1: bigint;
   tick: number;
   block: number;
   logIndex: number;
+  /** The emitting pool; the fixture's v3 pool unless a test wants a foreign one. */
+  pool?: string;
 }): RawLog {
   const topics = encodeEventTopics({
     abi: V3_POOL_ABI,
@@ -718,7 +726,7 @@ function v3SwapLog(args: {
     [args.amount0, args.amount1, getSqrtRatioAtTick(args.tick), 10n ** 22n, args.tick],
   );
   return {
-    address: V3_POOL.toLowerCase(),
+    address: (args.pool ?? V3_POOL).toLowerCase(),
     topics: topics as string[],
     data,
     blockNumber: BigInt(args.block),

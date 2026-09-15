@@ -13,7 +13,7 @@
  */
 
 import { CHAIN, CONTRACTS } from '../../lib/chain';
-import { POOL_MANAGER_ABI, V3_POOL_ABI } from '../chain/abi';
+import { FOLLOWED_TOPICS, POOL_MANAGER_ABI, V3_POOL_ABI } from '../chain/abi';
 import { env } from '../env';
 import type { PriceAnchors } from './aggregate';
 import { rebuildAggregates, rebuildFlowHours, rebuildPoolState } from './aggregate';
@@ -88,7 +88,10 @@ export interface LogSource {
   /** Block timestamps for a range, so an event carries chain time not wall time. */
   getBlockTimes(from: bigint, to: bigint): Promise<Map<bigint, Date>>;
   getLogs(args: {
-    address: string | string[];
+    /** Contract(s) to ask for. Omitted, any contract — the pass asks by `topics` and keeps what it follows. */
+    address?: string | string[];
+    /** topic0 alternatives: only logs of these event signatures. */
+    topics?: string[];
     fromBlock: bigint;
     toBlock: bigint;
   }): Promise<
@@ -108,8 +111,6 @@ export interface PassTimings {
   logsMs: number;
   timesMs: number;
   tokensMs: number;
-  /** Re-reading a newly discovered v3 pool's own logs from its creation block. */
-  backfillMs: number;
   ingestMs: number;
   rebuildMs: number;
   totalMs: number;
@@ -119,7 +120,6 @@ const NO_TIMINGS: PassTimings = {
   logsMs: 0,
   timesMs: 0,
   tokensMs: 0,
-  backfillMs: 0,
   ingestMs: 0,
   rebuildMs: 0,
   totalMs: 0,
@@ -162,6 +162,10 @@ export interface PassResult {
   concurrency: number;
   /** Every window was refused: nothing was ingested and the cursor did not move. */
   refused: boolean;
+  /** Fully refused passes in a row, this one included; the main loop backs off on it. Zero when something arrived. */
+  refusedInARow: number;
+  /** Logs of a followed signature from a contract that is not followed — another DEX's v3 pool, say. Fetched and dropped. */
+  foreign: number;
   /** Seconds between the last indexed block's time and head's. Shown in the top bar (§7). */
   lagSeconds: number;
   caughtUp: boolean;
@@ -279,6 +283,8 @@ export class Poller {
   private passes = 0;
   /** Every pool is classified once per run; after that, only the pools a pass discovers. */
   private classifiedAll = false;
+  /** Fully refused passes in a row. */
+  private refusedInARow = 0;
 
   constructor(options: PollerOptions) {
     this.source = options.source;
@@ -410,20 +416,23 @@ export class Poller {
         windows: 0,
         concurrency,
         refused: false,
+        refusedInARow: 0,
+        foreign: 0,
         timings: { ...NO_TIMINGS, totalMs: Date.now() - startedAt },
       };
     }
 
     const managerAddress = CONTRACTS.poolManager.toLowerCase();
-    const addresses = [
-      managerAddress,
-      ...(this.v3Factory ? [this.v3Factory] : []),
-      ...this.v3Pools,
-    ];
+    // By signature, not by address. v3 is one contract per pool and the
+    // factory on this chain has named nearly thirteen thousand; a request
+    // listing them all was answered in seventeen seconds when it was
+    // answered at all, and the list only grows. The seven signatures never
+    // do. What comes back from a contract this poller does not follow —
+    // another DEX's v3 pool emits the same Swap — is dropped below.
     const windows = splitWindows(from, to, windowBlocks);
     const logsStarted = Date.now();
     const fetched = await Promise.allSettled(
-      windows.map((w) => this.source.getLogs({ address: addresses, fromBlock: w.from, toBlock: w.to })),
+      windows.map((w) => this.source.getLogs({ topics: FOLLOWED_TOPICS, fromBlock: w.from, toBlock: w.to })),
     );
     // The windows are contiguous, so the ones that succeeded up to the first
     // that did not are a range this pass can still ingest. A later window
@@ -448,7 +457,9 @@ export class Poller {
       this.adaptToRefusal(failure, windows[failedAt], failed, windows.length);
       if (failedAt === 0) {
         // Nothing usable. The cursor does not move, so nothing is skipped;
-        // the next pass asks again, narrower or fewer at a time.
+        // the next pass asks again, narrower or fewer at a time — and after
+        // a wait that grows with the streak (main.ts).
+        this.refusedInARow++;
         return {
           fromBlock: from,
           toBlock: cursor ?? from,
@@ -466,17 +477,26 @@ export class Poller {
           windows: 0,
           concurrency,
           refused: true,
+          refusedInARow: this.refusedInARow,
+          foreign: 0,
           timings: { ...NO_TIMINGS, logsMs: Date.now() - logsStarted, totalMs: Date.now() - startedAt },
         };
       }
       to = windows[failedAt - 1].to;
     }
+    this.refusedInARow = 0;
     const ingestedWindows = failedAt >= 0 ? failedAt : windows.length;
     const logsMs = Date.now() - logsStarted;
     const timesStarted = Date.now();
     const blockTimes = await this.source.getBlockTimes(from, to);
     const timesMs = Date.now() - timesStarted;
 
+    // The v3 pools this pass keeps: the ones followed before it, plus any
+    // the factory names in these very logs. The logs are in chain order and
+    // a pool is created before it is used, so its first Mint — its entire
+    // starting liquidity — is kept without a second fetch.
+    const followed = new Set(this.v3Pools);
+    let foreign = 0;
     const events: ChainEvent[] = [];
     for (const raw of logs) {
       const blockTime = blockTimes.get(raw.blockNumber);
@@ -489,12 +509,18 @@ export class Poller {
         transactionHash: raw.transactionHash as `0x${string}`,
       };
       const source = raw.address.toLowerCase();
-      const decoded =
-        source === managerAddress
-          ? decodePoolManagerLog(log as never, blockTime)
-          : source === this.v3Factory
-            ? decodeV3FactoryLog(log as never, blockTime)
-            : decodeV3PoolLog(log as never, blockTime);
+      let decoded: ChainEvent | null;
+      if (source === managerAddress) {
+        decoded = decodePoolManagerLog(log as never, blockTime);
+      } else if (source === this.v3Factory) {
+        decoded = decodeV3FactoryLog(log as never, blockTime);
+        if (decoded?.kind === 'initialize') followed.add(decoded.contract.toLowerCase());
+      } else if (followed.has(source)) {
+        decoded = decodeV3PoolLog(log as never, blockTime);
+      } else {
+        foreign++;
+        continue;
+      }
       if (decoded) events.push(decoded);
     }
 
@@ -512,46 +538,23 @@ export class Poller {
     const tokensMs = Date.now() - tokensStarted;
     await writePools(initializePlan);
 
-    // A v3 pool announced by the factory in THIS range emits everything else
-    // from its own address, which we were not watching when the logs above
-    // were fetched — so its first mint and its early swaps are in blocks we
-    // have already read past.
-    //
-    // The 32-block re-scan does NOT cover this. A pool created at block 20
-    // whose Mint lands at block 30 is behind the next pass's window, and that
-    // mint is a pool's entire starting liquidity: miss it and the pool's
-    // reserves are negative and its depth unknown for good. So the range is
-    // re-fetched for exactly those addresses, from each pool's own creation
-    // block, in this same pass.
+    // A v3 pool the factory named in THIS range emits everything else from
+    // its own address. Its logs in this range were kept above — the fetch is
+    // by signature, so they arrived with the factory's — and from here on the
+    // pool is followed by name, across passes and, through the database, across
+    // restarts.
     const newV3 = initializePlan.pools.filter((p) => p.protocol === 'v3');
-    let backfilled: ChainEvent[] = [];
-    const backfillStarted = Date.now();
     if (newV3.length > 0) {
       this.followV3Pools(newV3.map((p) => p.address));
-      const earliest = newV3.reduce(
-        (acc, p) => (p.createdBlock < acc ? p.createdBlock : acc),
-        newV3[0].createdBlock,
-      );
-      backfilled = await this.backfillV3(
-        newV3.map((p) => p.address),
-        earliest,
-        to,
-        blockTimes,
-      );
-      this.log(
-        `  discovered ${newV3.length} v3 pool(s); backfilled ${backfilled.length} ` +
-          `event(s) from block ${earliest}`,
-      );
+      this.log(`  discovered ${newV3.length} v3 pool(s); following ${this.v3Pools.length}`);
     }
-    const backfillMs = Date.now() - backfillStarted;
 
     // Then the rest, with the carried price state loaded from the database so
     // a restart mid-chain resumes exactly where a full replay would be.
     const ingestStarted = Date.now();
     const known = await loadKnownPools();
-    const withBackfill = backfilled.length > 0 ? sortEvents([...ordered, ...backfilled]) : ordered;
-    const usable = withBackfill.filter((e) => known.has(e.poolId));
-    const skipped = withBackfill.length - usable.length;
+    const usable = ordered.filter((e) => known.has(e.poolId));
+    const skipped = ordered.length - usable.length;
     if (skipped > 0) {
       // Events for a pool whose Initialize predates our start block. Counting
       // their fees would attribute them to a pool that does not exist in our
@@ -702,7 +705,7 @@ export class Poller {
       fromBlock: from,
       toBlock: to,
       headBlock: head.number,
-      events: withBackfill.length,
+      events: ordered.length,
       swapsWritten,
       liquidityWritten,
       poolsFound: initializePlan.pools.length,
@@ -715,11 +718,12 @@ export class Poller {
       windows: ingestedWindows,
       concurrency,
       refused: false,
+      refusedInARow: 0,
+      foreign,
       timings: {
         logsMs,
         timesMs,
         tokensMs,
-        backfillMs,
         ingestMs,
         rebuildMs,
         totalMs: Date.now() - startedAt,
@@ -731,13 +735,16 @@ export class Poller {
    * What a refused window teaches.
    *
    * A rate limit or a timeout with several windows in flight is the burst
-   * being too much: halve the concurrency and keep the window. A rate limit
-   * with one window in flight is the endpoint asking for a moment: change
-   * nothing, and the main loop waits a beat. Anything else — "more than N
-   * results", "range too large", or a timeout on a single window — is the
-   * width: halve it, record the ceiling, and let the next pass retry the
-   * same range narrower. Endpoints differ and none announce their cap, so it
-   * is found by hitting it once.
+   * being too much: halve the concurrency and keep the window. A refused
+   * single window is the width, whatever the endpoint called it — "more
+   * than N results", "range too large", a timeout, or a 429 that some
+   * endpoints answer to a heavy query: halve it, record the ceiling, and
+   * let the next pass retry the same range narrower, after a wait that
+   * grows with the streak (main.ts). A single 429 used to change nothing,
+   * on the theory that the endpoint wanted a moment; on the box that was a
+   * thousand-block window asked for every second for hours, refused every
+   * time, and the cursor not moving once. Endpoints differ and none
+   * announce their cap, so it is found by hitting it.
    */
   private adaptToRefusal(
     error: unknown,
@@ -758,14 +765,17 @@ export class Poller {
         `  endpoint refused ${failed} of ${asked} windows in flight (${reason}) — ` +
           `${this.concurrency} at a time from here`,
       );
-    } else if (rateLimited) {
-      this.log(`  endpoint rate-limited a single window (${reason}) — waiting a moment`);
+    } else if (width <= HARD_MIN_RANGE) {
+      // Nothing narrower to try. The main loop waits longer each time.
+      this.maxRange = HARD_MIN_RANGE;
+      this.blockRange = HARD_MIN_RANGE;
+      this.log(`  endpoint refused ${width} blocks (${reason}) — already at the minimum, backing off`);
     } else {
       // Below the configured floor if it must: the floor is for following
       // head, and a refused width is a fact about the endpoint.
       this.maxRange = max(HARD_MIN_RANGE, width / 2n);
       this.blockRange = this.maxRange;
-      this.log(`  endpoint refused ${width} blocks (${reason}) — range now ${this.blockRange}`);
+      this.log(`  endpoint refused ${width} blocks (${reason}${rateLimited ? ', a single window' : ''}) — range now ${this.blockRange}`);
     }
   }
 
@@ -792,52 +802,6 @@ export class Poller {
     } else {
       this.probing = false;
     }
-  }
-
-  /**
-   * Re-read a newly discovered v3 pool's own logs from its creation block.
-   *
-   * Block times are reused from the pass where possible and fetched for the
-   * rest, because an event has to carry chain time rather than the time we
-   * happened to read it (§7).
-   */
-  private async backfillV3(
-    addresses: string[],
-    fromBlock: bigint,
-    toBlock: bigint,
-    known: Map<bigint, Date>,
-  ): Promise<ChainEvent[]> {
-    if (addresses.length === 0 || fromBlock > toBlock) return [];
-    const logs = await this.source.getLogs({ address: addresses, fromBlock, toBlock });
-    if (logs.length === 0) return [];
-
-    const times = new Map(known);
-    const missing = [...new Set(logs.map((l) => l.blockNumber))].filter((b) => !times.has(b));
-    if (missing.length > 0) {
-      const lo = missing.reduce((a, b) => (b < a ? b : a), missing[0]);
-      const hi = missing.reduce((a, b) => (b > a ? b : a), missing[0]);
-      for (const [block, time] of await this.source.getBlockTimes(lo, hi)) {
-        times.set(block, time);
-      }
-    }
-
-    const events: ChainEvent[] = [];
-    for (const raw of logs) {
-      const blockTime = times.get(raw.blockNumber);
-      if (!blockTime) continue;
-      const decoded = decodeV3PoolLog(
-        {
-          ...raw,
-          address: raw.address as `0x${string}`,
-          topics: raw.topics as [] | [`0x${string}`, ...`0x${string}`[]],
-          data: raw.data as `0x${string}`,
-          transactionHash: raw.transactionHash as `0x${string}`,
-        } as never,
-        blockTime,
-      );
-      if (decoded) events.push(decoded);
-    }
-    return events;
   }
 
   /** Run passes until caught up to head. Returns the passes it took. */

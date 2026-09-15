@@ -49,20 +49,25 @@ export class ViemLogSource implements LogSource {
   }
 
   async getLogs(args: {
-    address: string | string[];
+    /** Contract(s) to ask for. Omitted, any contract — used with `topics`. */
+    address?: string | string[];
+    /** topic0 alternatives: only logs of these signatures. */
+    topics?: string[];
     fromBlock: bigint;
     toBlock: bigint;
   }) {
-    const addresses = (Array.isArray(args.address) ? args.address : [args.address]).map(
-      (a) => a as `0x${string}`,
-    );
+    const addresses =
+      args.address === undefined
+        ? null
+        : (Array.isArray(args.address) ? args.address : [args.address]).map((a) => a as `0x${string}`);
     const logs = await rpc(
       (c) =>
         c.request({
           method: 'eth_getLogs',
           params: [
             {
-              address: addresses.length === 1 ? addresses[0] : addresses,
+              ...(addresses === null ? {} : { address: addresses.length === 1 ? addresses[0] : addresses }),
+              ...(args.topics ? { topics: [args.topics as `0x${string}`[]] } : {}),
               fromBlock: `0x${args.fromBlock.toString(16)}`,
               toBlock: `0x${args.toBlock.toString(16)}`,
             },
