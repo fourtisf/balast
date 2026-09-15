@@ -124,17 +124,26 @@ export const env = {
   snapshotMinRebuildMs: int('SNAPSHOT_MIN_REBUILD_MS', 5_000),
 
   /**
-   * Live volume from DexScreener (api/market.ts), the owner's exception to
-   * §4. On by default; `DEXSCREENER_MARKET=false` shows the chain's figures
-   * alone. `DEXSCREENER_CHAIN` is DexScreener's id for this chain: `robinhood`,
+   * Live market figures (api/market.ts), the owner's exception to §4. On by
+   * default; `DEXSCREENER_MARKET=false` shows the chain's figures alone.
+   *
+   * `DEXSCREENER_CHAIN` is DexScreener's id for this chain: `robinhood`,
    * read off the first probe on the box; an empty value accepts every
    * chain's pairs and /api/health lists the ids seen.
+   *
+   * GeckoTerminal is asked second, for the tokens DexScreener does not list
+   * — on the box that was 44 of the board's 76 rows, every one of them
+   * falling back to a figure two months old. Its id for this chain is
+   * discovered from its own network list; `GECKOTERMINAL_NETWORK` pins it,
+   * which is worth doing once the probe has printed it.
    */
   dexscreenerMarket: (process.env.DEXSCREENER_MARKET ?? 'true').toLowerCase() !== 'false',
   dexscreenerChain:
     process.env.DEXSCREENER_CHAIN === undefined ? 'robinhood' : process.env.DEXSCREENER_CHAIN.trim() || null,
   dexscreenerUrl: process.env.DEXSCREENER_URL?.trim() || 'https://api.dexscreener.com',
   dexscreenerRefreshMs: Math.max(5_000, int('DEXSCREENER_REFRESH_MS', 30_000)),
+  geckoterminalNetwork: process.env.GECKOTERMINAL_NETWORK?.trim() || null,
+  geckoterminalUrl: process.env.GECKOTERMINAL_URL?.trim() || 'https://api.geckoterminal.com/api/v2',
 
   /**
    * Requests per window per client, for the public API.

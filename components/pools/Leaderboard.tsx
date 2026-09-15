@@ -9,9 +9,19 @@ import { AreaSpark } from '@/components/ui/Sparkline';
 import { TokenBadge } from '@/components/ui/TokenBadge';
 import { useFlip } from '@/hooks/useFlip';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
-import { isEther } from '@/lib/chain';
 import type { Pool, Quote } from '@/lib/data/types';
 import { ageLabel, usd } from '@/lib/format';
+import {
+  ago,
+  buyShare,
+  capKey,
+  shownCap,
+  shownChange,
+  shownLiquidity,
+  shownSplit,
+  shownVolume,
+  sourceName,
+} from '@/lib/market-figures';
 import {
   YIELD_WINDOW_HOURS,
   feeYieldQualifier,
@@ -19,39 +29,6 @@ import {
   feeYieldValue,
   yieldPct,
 } from '@/lib/yield';
-
-/** The day's volume as the row shows it: the aggregator's when it has a fresh quote, else the chain's. */
-function shownVolume(pool: Pool): number {
-  return pool.market ? pool.market.volume24hUsd : pool.volume24hUsd;
-}
-
-/** The 24h change as the row shows it, from the same source as the volume beside it. */
-function shownChange(pool: Pool): number | null {
-  return pool.market ? pool.market.priceChange24hPct : pool.change24hPct;
-}
-
-/** `12s ago`, `4m ago` — how old a live quote is. */
-function ago(iso: string): string {
-  const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
-  return s < 60 ? `${s}s ago` : `${Math.round(s / 60)}m ago`;
-}
-
-/** The buy side's share of the day's volume, for the split bar. Empty when there was none. */
-function buyShare(buy: number, sell: number): number {
-  const total = buy + sell;
-  return total > 0 ? Math.round((buy / total) * 100) : 0;
-}
-
-/**
- * Whether the day's buys and sells are known. The split is derived from the
- * same swaps as the volume and always sums to it — so a volume with a split
- * of zero is a split that has not been computed for those hours yet (the
- * columns arrived by migration and are filled by the next rebuild), and it
- * is drawn as a dash rather than as $0 beside a volume that says otherwise.
- */
-function splitKnown(pool: { volume24hUsd: number; buyVolume24hUsd: number; sellVolume24hUsd: number }): boolean {
-  return pool.volume24hUsd <= 0 || pool.buyVolume24hUsd + pool.sellVolume24hUsd > 0;
-}
 
 /**
  * Three rankings as one list with a facet. Market cap is the default, by the
@@ -67,17 +44,6 @@ const FACETS: { id: Facet; label: string }[] = [
   { id: 'volume', label: 'By volume' },
   { id: 'yield', label: 'By fee yield' },
 ];
-
-/**
- * The figure a market-cap ranking sorts on: the market cap, or the fully
- * diluted figure while the token's holdings are still unread — the same
- * magnitude, and the row says which it is. Zero for a token with neither,
- * ether included: its market cap is not a figure this site can derive (§18),
- * so those rows follow the ranked ones, deepest first.
- */
-function capKey(pool: Pool): number {
-  return pool.marketCapUsd > 0 ? pool.marketCapUsd : pool.fdvUsd;
-}
 
 const FILTERS: { id: 'all' | Quote; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -110,7 +76,7 @@ export function Leaderboard() {
         .sort((a, b) => capKey(b) - capKey(a) || b.tvlUsd - a.tvlUsd);
     }
     if (facet === 'volume') {
-      return matching.slice().sort((a, b) => shownVolume(b) - shownVolume(a));
+      return matching.slice().sort((a, b) => shownVolume(b).value - shownVolume(a).value);
     }
     return matching
       .filter((p) => p.ageHours >= YIELD_WINDOW_HOURS)
@@ -208,34 +174,59 @@ function Row({
   const yieldText = feeYieldValue(pool.feeYield);
   const insufficient = pool.feeYield.basis === 'insufficient';
 
-  // Market cap first, from the supply less what the chain shows cannot
-  // circulate; the fully diluted figure beside it only when the two differ,
-  // because for a token with nothing burned they are one number. A token
-  // whose holdings have not been read yet shows the FDV alone, labelled
-  // (§7). Ether has no contract and no supply to read (§18), which is a fact
-  // about ether, not a gap; any other token with nothing read is a dash.
-  const ether = isEther(pool.token.address);
-  const mc = pool.marketCapUsd;
-  const fdv = pool.fdvUsd;
-  const fdvDiffers = mc > 0 && fdv > mc * 1.01;
-  const capText = ether
-    ? 'native asset'
-    : mc > 0
-      ? `MC ${usd(mc)}${fdvDiffers ? ` · FDV ${usd(fdv)}` : ''}`
-      : fdv > 0
-        ? `FDV ${usd(fdv)}`
-        : 'MC —';
-  const capTitle = ether
-    ? "Ether is the chain's native asset: no token contract, no supply to read, so no market cap."
-    : mc > 0
-      ? 'Market cap: circulating supply on this chain × price. Circulating is total supply less ' +
-        "burned tokens and the token contract's own balance; vesting and treasury holdings " +
-        'cannot be told apart on chain, so this can overstate, never understate.' +
-        (fdvDiffers ? ' FDV counts the whole supply.' : '')
-      : fdv > 0
-        ? 'Fully diluted: total supply × price. The holdings that cannot circulate have not been ' +
-          'read yet, so there is no market cap figure.'
-        : 'The token has not answered a supply read, so there is no figure to show.';
+  // Market cap, liquidity and the day's figures: which source each comes
+  // from is decided once in lib/market-figures.ts, so the row, the drawer
+  // and the ranking cannot disagree about it. What the row adds is the
+  // words — every figure says, in its tooltip, which source answered and
+  // how old the answer is (§7).
+  const cap = shownCap(pool);
+  const liquidity = shownLiquidity(pool);
+  const volume = shownVolume(pool);
+  const change = shownChange(pool);
+  const split = shownSplit(pool);
+  const source = sourceName(pool);
+  const quoted = pool.market ? `${source}, ${ago(pool.market.at)}` : 'indexed swaps';
+  const across =
+    pool.market && pool.market.pairs > 1
+      ? ` across the token's ${pool.market.pairs} pairs on this chain`
+      : pool.market
+        ? " across the token's pools on this chain"
+        : '';
+
+  const capText =
+    cap.kind === 'native'
+      ? 'native asset'
+      : cap.kind === 'mc'
+        ? `MC ${usd(cap.value as number)}${cap.fdvBeside ? ` · FDV ${usd(cap.fdvBeside)}` : ''}`
+        : cap.kind === 'fdv'
+          ? `FDV ${usd(cap.value as number)}`
+          : 'MC —';
+  const capTitle =
+    cap.kind === 'native'
+      ? "Ether is the chain's native asset: no token contract, no supply to read, so no market cap."
+      : cap.kind === 'mc'
+        ? (cap.basis === 'live'
+            ? `Market cap from ${quoted}: circulating supply × today's price.`
+            : 'Market cap from the chain: circulating supply × the price at the last indexed block. ' +
+              'Circulating is total supply less burned tokens and the token contract\'s own balance; ' +
+              'vesting and treasury holdings cannot be told apart on chain, so this can overstate, never understate.') +
+          (cap.fdvBeside ? ' FDV counts the whole supply.' : '')
+        : cap.kind === 'fdv'
+          ? `Fully diluted: total supply × price, from ${quoted}. There is no circulating figure for this token, ` +
+            'and the whole supply presented as a market cap would overstate it.'
+          : 'No source has a supply for this token, so there is no figure to show.';
+
+  const liquidityText = liquidity.value === null ? '—' : usd(liquidity.value);
+  const liquidityTitle =
+    liquidity.value === null
+      ? "This pool's own events do not reconcile to a positive reserve — usually a hook keeping its own " +
+        'accounting — so its liquidity is unknown rather than zero, and no source has it either.'
+      : liquidity.basis === 'chain'
+        ? "This pool's liquidity, both sides, from its own indexed events."
+        : liquidity.scope === 'pool'
+          ? `This pool's liquidity from ${quoted}. The chain's own events do not reconcile to a positive reserve.`
+          : `The token's liquidity across its pools, from ${quoted} — not this pool's, which the chain's ` +
+            'own events do not reconcile to a positive reserve.';
 
   return (
     <li ref={registerRef} className={`lb-row${leader ? ' lead' : ''}`} onClick={onOpen}>
@@ -259,71 +250,89 @@ function Row({
               column is narrow, and the name is the one part the symbol above
               it already says. Unknown liquidity is a dash, not a zero (§14). */}
           <span className="s" title={pool.token.name}>
-            <span title={capTitle}>{capText}</span> · liquidity{' '}
-            {pool.tvlUsd > 0 ? usd(pool.tvlUsd) : '—'} · {pool.token.name}
+            <span title={capTitle}>{capText}</span> ·{' '}
+            <span title={liquidityTitle}>liquidity {liquidityText}</span> · {pool.token.name}
           </span>
         </span>
       </button>
 
       {/* Volume is on the row whatever the ranking, and beside it the buys
-          and sells it is made of — the same swaps, split by which side paid.
-          The fee figure left the row at the owner's request; fees remain the
-          yield's basis, the masthead's headline and the drawer's line. */}
+          and sells it is made of. Live, both are the token's across its
+          pairs — a token here has several pools, and reading the day off
+          one of them was what put $17.9K on NVDA. The fee figure left the
+          row at the owner's request; fees remain the yield's basis, the
+          masthead's headline and the drawer's line. */}
       <div
         className="lb-fig lb-vol"
         title={
-          pool.market
-            ? `Volume over the last 24 hours, from DexScreener (${pool.market.dexId || 'pair'} ${pool.market.pairAddress.slice(0, 10)}…), updated ${ago(pool.market.at)}`
+          volume.basis === 'live'
+            ? `Volume over the last 24 hours from ${quoted}${across}` +
+              (pool.market && pool.market.pairs > 0
+                ? ` (deepest: ${pool.market.dexId || 'pair'} ${pool.market.pairAddress.slice(0, 10)}…)`
+                : '')
             : pool.market === null
-              ? 'Volume over the last 24 hours of chain time, from indexed swaps. DexScreener has no fresh quote for this token.'
-              : 'Volume over the last 24 hours of chain time, from indexed swaps.'
+              ? "Volume over the last 24 hours of chain time in this pool, from indexed swaps. No aggregator has a fresh quote for this token."
+              : 'Volume over the last 24 hours of chain time in this pool, from indexed swaps.'
         }
       >
-        <Flash as="div" className="big num" text={usd(shownVolume(pool))} />
-        <span className="cap">vol · 24h{pool.market ? ' · live' : pool.market === null ? ' · chain' : ''}</span>
+        <Flash as="div" className="big num" text={usd(volume.value)} />
+        <span className="cap">
+          vol · 24h{volume.basis === 'live' ? ' · live' : pool.market === null ? ' · chain' : ''}
+        </span>
       </div>
 
       {facet !== 'yield' ? (
-        pool.market ? (
-          // Trades, not dollars: DexScreener's feed splits the day's trades
-          // by side and its volume as one figure. Labelled as counts.
+        split === null ? (
+          // The chain's split is derived from the same swaps as its volume
+          // and always sums to it, so a volume with no split is a split not
+          // yet computed for those hours — a dash, not a $0 that disagrees
+          // with the figure beside it.
           <div
             className="lb-fig lb-split"
-            title={`${pool.market.buys24h.toLocaleString()} buys and ${pool.market.sells24h.toLocaleString()} sells over 24h, from DexScreener, updated ${ago(pool.market.at)}`}
+            title="Buys and sells are not split for these hours yet; the next rebuild fills them in."
           >
             <span className="lb-side">
-              <Flash as="span" className="num" text={pool.market.buys24h.toLocaleString()} />
-              <span className="cap">buys</span>
+              <span className="num">—</span>
+              <span className="cap">buy</span>
             </span>
             <span className="lb-side">
-              <Flash as="span" className="num" text={pool.market.sells24h.toLocaleString()} />
-              <span className="cap">sells</span>
+              <span className="num">—</span>
+              <span className="cap">sell</span>
             </span>
             <span className="lb-bar" role="presentation">
-              <i style={{ width: `${buyShare(pool.market.buys24h, pool.market.sells24h)}%` }} />
+              <i style={{ width: '0%' }} />
             </span>
           </div>
         ) : (
-        <div
-          className="lb-fig lb-split"
-          title={
-            splitKnown(pool)
-              ? `${pool.buys24h.toLocaleString()} buys, ${pool.sells24h.toLocaleString()} sells over 24h, from indexed swaps`
-              : 'Buys and sells are not split for these hours yet; the next rebuild fills them in.'
-          }
-        >
-          <span className="lb-side">
-            <Flash as="span" className="num" text={splitKnown(pool) ? usd(pool.buyVolume24hUsd) : '—'} />
-            <span className="cap">buy</span>
-          </span>
-          <span className="lb-side">
-            <Flash as="span" className="num" text={splitKnown(pool) ? usd(pool.sellVolume24hUsd) : '—'} />
-            <span className="cap">sell</span>
-          </span>
-          <span className="lb-bar" role="presentation">
-            <i style={{ width: `${splitKnown(pool) ? buyShare(pool.buyVolume24hUsd, pool.sellVolume24hUsd) : 0}%` }} />
-          </span>
-        </div>
+          <div
+            className="lb-fig lb-split"
+            title={
+              split.unit === 'trades'
+                ? `${split.buys.toLocaleString()} buys and ${split.sells.toLocaleString()} sells over 24h ` +
+                  `from ${quoted}${across}. The feed splits the day into trades, not dollars.`
+                : `${usd(split.buys)} bought and ${usd(split.sells)} sold over 24h in this pool, from indexed swaps`
+            }
+          >
+            <span className="lb-side">
+              <Flash
+                as="span"
+                className="num"
+                text={split.unit === 'trades' ? split.buys.toLocaleString() : usd(split.buys)}
+              />
+              <span className="cap">{split.unit === 'trades' ? 'buys' : 'buy'}</span>
+            </span>
+            <span className="lb-side">
+              <Flash
+                as="span"
+                className="num"
+                text={split.unit === 'trades' ? split.sells.toLocaleString() : usd(split.sells)}
+              />
+              <span className="cap">{split.unit === 'trades' ? 'sells' : 'sell'}</span>
+            </span>
+            <span className="lb-bar" role="presentation">
+              <i style={{ width: `${buyShare(split.buys, split.sells)}%` }} />
+            </span>
+          </div>
         )
       ) : (
         <div className="lb-fig">
@@ -343,14 +352,18 @@ function Row({
       <Flash
         as="div"
         className="lb-chg"
-        text={shownChange(pool) === null ? '—' : (shownChange(pool) as number).toFixed(1)}
-        title={pool.market ? `24h price change, from DexScreener` : '24h price change, from indexed swaps'}
+        text={change.value === null ? '—' : change.value.toFixed(1)}
+        title={
+          change.basis === 'live'
+            ? `24h price change from ${quoted}, on the deepest pair`
+            : '24h price change from indexed swaps, in this pool'
+        }
       >
-        <Change pct={shownChange(pool)} />
+        <Change pct={change.value} />
       </Flash>
 
       <div className="lb-spark" title="Volume by 12-hour bucket over the trailing week, from indexed swaps">
-        <AreaSpark values={pool.volumeHistory} negative={(shownChange(pool) ?? 0) < 0} />
+        <AreaSpark values={pool.volumeHistory} negative={(change.value ?? 0) < 0} />
         <button
           className="stake-btn"
           onClick={(e) => {

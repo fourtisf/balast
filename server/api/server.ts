@@ -201,15 +201,17 @@ export async function buildServer(options: { logoFetch?: LogoFetch } = {}): Prom
   let building: Promise<MarketSnapshot | null> | null = null;
 
   /**
-   * Live volume from DexScreener (market.ts). A refresh that changed a
-   * quote rebuilds the snapshot and wakes every socket, so the row moves on
-   * the aggregator's cadence even while the indexer is in a long stage and
-   * publishes no tick.
+   * Live market figures (market.ts): DexScreener, then GeckoTerminal for what
+   * it does not list. A refresh that changed a quote rebuilds the snapshot
+   * and wakes every socket, so the row moves on the aggregator's cadence even
+   * while the indexer is in a long stage and publishes no tick.
    */
   const marketListeners = new Set<() => void>();
   const market = new MarketFeed({
     base: env.dexscreenerUrl,
     chain: env.dexscreenerChain,
+    geckoBase: env.geckoterminalUrl,
+    geckoNetwork: env.geckoterminalNetwork,
     refreshMs: env.dexscreenerRefreshMs,
     enabled: env.dexscreenerMarket,
     log: (line) => app.log.info(line.trim()),

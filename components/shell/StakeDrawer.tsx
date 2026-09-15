@@ -7,6 +7,7 @@ import { useUi } from '@/components/providers/UiProvider';
 import { TokenBadge } from '@/components/ui/TokenBadge';
 import { EXPLORER_URL, NATIVE_ETH, isEther } from '@/lib/chain';
 import { ageLabel, usd } from '@/lib/format';
+import { buyShare, shownLiquidity, shownSplit, shownVolume, sourceName } from '@/lib/market-figures';
 import { FEE_YIELD_LABEL, feeYieldQualifier, feeYieldTitle, feeYieldValue } from '@/lib/yield';
 
 const FOCUSABLE =
@@ -61,6 +62,12 @@ export function StakeDrawer() {
 
   const ether = pool ? isEther(pool.token.address) : false;
   const hook = pool?.key?.hooks && pool.key.hooks.toLowerCase() !== NATIVE_ETH ? pool.key.hooks : null;
+  // The same source choice the row makes (lib/market-figures.ts), so the
+  // drawer a person opens off a row cannot show a different day.
+  const liquidity = pool ? shownLiquidity(pool) : null;
+  const volume = pool ? shownVolume(pool) : null;
+  const split = pool ? shownSplit(pool) : null;
+  const source = pool ? sourceName(pool) : '';
   const copyAddress = async () => {
     if (!pool) return;
     try {
@@ -86,7 +93,7 @@ export function StakeDrawer() {
         aria-label={pool ? `Stake ${pool.token.symbol}` : 'Stake'}
         aria-hidden={!open}
       >
-        {pool && (
+        {pool && liquidity && volume && (
           <>
             <div className="dr-h">
               <TokenBadge token={pool.token} />
@@ -128,49 +135,55 @@ export function StakeDrawer() {
                   </div>
                 </div>
                 <div>
-                  <div className="k">Pool liquidity</div>
-                  <div className="v num">{pool.tvlUsd > 0 ? usd(pool.tvlUsd) : '—'}</div>
+                  <div className="k">
+                    {liquidity.scope === 'token' ? 'Token liquidity' : 'Pool liquidity'}
+                  </div>
+                  <div className="v num">{liquidity.value === null ? '—' : usd(liquidity.value)}</div>
+                  <div className="k" style={{ marginTop: 6 }}>
+                    {liquidity.value === null
+                      ? "this pool's events do not reconcile"
+                      : liquidity.basis === 'chain'
+                        ? 'both sides, from the chain'
+                        : liquidity.scope === 'pool'
+                          ? `both sides · via ${source}`
+                          : `across its pools · via ${source}`}
+                  </div>
                 </div>
                 <div>
                   <div className="k">Volume 24h</div>
-                  <div className="v num">{usd(pool.market ? pool.market.volume24hUsd : pool.volume24hUsd)}</div>
+                  <div className="v num">{usd(volume.value)}</div>
                   <div className="k" style={{ marginTop: 6 }}>
-                    {pool.market
-                      ? `${(pool.market.buys24h + pool.market.sells24h).toLocaleString()} trades · via DexScreener`
-                      : `${pool.trades24h} trade${pool.trades24h === 1 ? '' : 's'}` +
-                        (pool.market === null ? ' · from the chain' : '')}
+                    {volume.basis === 'live'
+                      ? (split && split.unit === 'trades'
+                          ? `${(split.buys + split.sells).toLocaleString()} trades · `
+                          : '') + `the token, via ${source}`
+                      : `${pool.trades24h} trade${pool.trades24h === 1 ? '' : 's'} · this pool` +
+                        (pool.market === null ? ', from the chain' : '')}
                   </div>
                 </div>
               </div>
 
-              {/* The split a trader reads. Live from DexScreener when it has
-                  a fresh quote — trades by side, since its feed does not
-                  split the dollars — else from the indexed swaps, where a buy
-                  pays the quote for the token and a sell the reverse. */}
-              {pool.market ? (
-                <div className="split" aria-label="Buys and sells in the last 24 hours, from DexScreener">
+              {/* The split a trader reads. Live when an aggregator has a
+                  fresh quote — trades by side, since its feed splits trades
+                  and not dollars — else from the indexed swaps, where a buy
+                  pays the quote for the token and a sell the reverse. The
+                  choice is lib/market-figures.ts's, the same one the row
+                  makes, so the two cannot disagree. */}
+              {split === null ? (
+                <div className="split" aria-label="Buys and sells in the last 24 hours">
                   <div className="split-row">
                     <span>
-                      <span className="k">Buys</span>{' '}
-                      <b className="num">{pool.market.buys24h.toLocaleString()}</b>{' '}
-                      <span className="muted">trades</span>
+                      <span className="k">Buys</span> <b className="num">—</b>
                     </span>
                     <span style={{ textAlign: 'right' }}>
-                      <span className="k">Sells</span>{' '}
-                      <b className="num">{pool.market.sells24h.toLocaleString()}</b>{' '}
-                      <span className="muted">trades</span>
+                      <span className="k">Sells</span> <b className="num">—</b>
                     </span>
                   </div>
                   <div className="split-bar" aria-hidden="true">
-                    <i
-                      style={{
-                        width: `${pool.market.buys24h + pool.market.sells24h > 0 ? (100 * pool.market.buys24h) / (pool.market.buys24h + pool.market.sells24h) : 0}%`,
-                      }}
-                    />
+                    <i style={{ width: '0%' }} />
                   </div>
                   <p className="hint" style={{ marginTop: 8 }}>
-                    Volume, trades and the 24h change here are DexScreener&rsquo;s live figures.
-                    Liquidity, fees and yield are from the chain.
+                    The day is not split into buys and sells for these hours yet.
                   </p>
                 </div>
               ) : (
@@ -178,22 +191,33 @@ export function StakeDrawer() {
                   <div className="split-row">
                     <span>
                       <span className="k">Buys</span>{' '}
-                      <b className="num">{pool.buyVolume24hUsd + pool.sellVolume24hUsd > 0 || pool.volume24hUsd <= 0 ? usd(pool.buyVolume24hUsd) : '—'}</b>{' '}
-                      <span className="muted num">· {pool.buys24h}</span>
+                      <b className="num">
+                        {split.unit === 'trades' ? split.buys.toLocaleString() : usd(split.buys)}
+                      </b>{' '}
+                      <span className="muted num">
+                        {split.unit === 'trades' ? 'trades' : `· ${pool.buys24h}`}
+                      </span>
                     </span>
                     <span style={{ textAlign: 'right' }}>
                       <span className="k">Sells</span>{' '}
-                      <b className="num">{pool.buyVolume24hUsd + pool.sellVolume24hUsd > 0 || pool.volume24hUsd <= 0 ? usd(pool.sellVolume24hUsd) : '—'}</b>{' '}
-                      <span className="muted num">· {pool.sells24h}</span>
+                      <b className="num">
+                        {split.unit === 'trades' ? split.sells.toLocaleString() : usd(split.sells)}
+                      </b>{' '}
+                      <span className="muted num">
+                        {split.unit === 'trades' ? 'trades' : `· ${pool.sells24h}`}
+                      </span>
                     </span>
                   </div>
                   <div className="split-bar" aria-hidden="true">
-                    <i
-                      style={{
-                        width: `${pool.buyVolume24hUsd + pool.sellVolume24hUsd > 0 ? (100 * pool.buyVolume24hUsd) / (pool.buyVolume24hUsd + pool.sellVolume24hUsd) : 0}%`,
-                      }}
-                    />
+                    <i style={{ width: `${buyShare(split.buys, split.sells)}%` }} />
                   </div>
+                  {split.basis === 'live' && (
+                    <p className="hint" style={{ marginTop: 8 }}>
+                      Volume, trades and the 24h change here are {source}&rsquo;s live figures for the
+                      token, summed over its pools. Fees, yield and the chain figures beside them are
+                      derived from this pool&rsquo;s own swaps.
+                    </p>
+                  )}
                 </div>
               )}
 

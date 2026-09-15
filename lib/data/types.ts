@@ -60,32 +60,50 @@ export interface PoolKeyInfo {
 }
 
 /**
- * A live market figure from an aggregator, beside the chain's own.
+ * A live market figure for a TOKEN, beside the chain's own figures.
  *
- * The owner's exception to §4 (CLAUDE.md §20): during a first sync the
- * chain's volume is weeks old, and the board shows today's from DexScreener
- * instead, labelled. Only what is named here is taken from it; nothing that
- * prices the site. Absent (undefined) on simulated data; null when the
- * aggregator has no fresh quote for the token, in which case the chain's
+ * The owner's exception to §4 (CLAUDE.md §20, §21): during a first sync the
+ * chain's figures are weeks old, and the board shows today's from an
+ * aggregator instead, labelled. Only what is named here is taken from one;
+ * nothing that prices the site — not the anchor, not the reserves, not the
+ * fees, not the yield. Absent (undefined) on simulated data; null when no
+ * aggregator has a fresh quote for the token, in which case the chain's
  * figure shows, labelled as the chain's.
+ *
+ * The figures are the token's across every pair the source lists on this
+ * chain, not one pool's. A token here routinely has several pools, and a
+ * quote taken from one of them was the defect this shape replaced: NVDA read
+ * $17.9K of volume off a shallow v4 pair while its own page summed several.
  */
 export interface MarketQuote {
-  source: 'dexscreener';
+  /** Which aggregator answered. The row and the drawer name it. */
+  source: MarketSourceName;
   chainId: string;
+  /** How many pairs on this chain the summed figures cover. */
+  pairs: number;
+  /** The deepest pair: what the price, the change and the cap are read from. */
   dexId: string;
   pairAddress: string;
   url: string;
   priceUsd: number | null;
+  /** The token's day, summed over its pairs on this chain. */
   volume24hUsd: number;
-  buys24h: number;
-  sells24h: number;
+  /** Trade counts over 24h, summed. Null from a source that does not split them. */
+  buys24h: number | null;
+  sells24h: number | null;
+  /** From the deepest pair — the one whose price is worth reading. */
   priceChange24hPct: number | null;
+  /** The token's liquidity on this chain: summed over its pairs. */
   liquidityUsd: number | null;
+  /** The row's own pool, when the source lists that pair. Null when it does not. */
+  poolLiquidityUsd: number | null;
   fdvUsd: number | null;
   marketCapUsd: number | null;
   /** When it was fetched, ISO. */
   at: string;
 }
+
+export type MarketSourceName = 'dexscreener' | 'geckoterminal';
 
 export interface Pool {
   id: string;

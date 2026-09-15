@@ -2732,3 +2732,137 @@ was NVDA/WETH at $25K because the v3 NVDA/USDG pool the history walk
 found — the one DexScreener shows, with $7.1M in it — had not been
 rebuilt into `pool_state` yet; the deepest-pool rule moves the row there
 once it has.
+
+---
+
+## 21. Where the volume and the market cap come from
+
+ALFA looked at the first board with the live feed on it — NVDA at `$17.9K`
+of volume beside a DexScreener tab reading millions, WIF, BRODIE and
+COOKWARE at `liquidity —`, half the rows labelled `FDV` — and asked the
+right question: *vol sama market cap ini ambil dari sumber mana masih
+banyak yg tidak valid perbaiki cari data api yang valid*. Which source are
+these from, and find a valid one.
+
+The answer is in three parts, and two of the three were my own defects
+rather than a bad source.
+
+### A row is a token; the quote was a pool's
+
+§19 made the board a token listing — one row per token, its deepest pool —
+and §20's feed then read the day off **one** pair: the row's pool when
+DexScreener listed it, else the deepest. A token on this chain routinely has
+several pools (fee tiers, hooked variants, a v3 pool beside a v4 one), so
+NVDA's row showed the day of a shallow v4 pair while the token's own page
+summed several. The figure was not wrong about that pair; it was answering a
+question nobody had asked.
+
+`aggregate` in `server/api/market-sources.ts` sums the token's pairs now, and
+what it sums is exactly what a quantity is:
+
+- **Summed** — the day's volume, its buys and sells, liquidity. A token's day
+  is all of its pairs' days.
+- **Read off the deepest pair** — price, 24h change, market cap, FDV. None of
+  those is a quantity to add up; a market cap summed over three pools is three
+  times the token's.
+- **Never across chains.** A token address exists elsewhere too, and a sum
+  over two chains belongs to no market. With no chain configured the deepest
+  pair's chain decides and the rest are dropped; `/api/health` lists every id
+  seen so the right one can be pinned.
+
+### The market cap was a live supply at a two-month-old price
+
+§15 derives the market cap on chain — circulating supply × price — and that
+price is `pool_state`'s, which is the price **at the last indexed block**.
+With the sync sixty-eight days behind, a correct supply was being multiplied
+by July's price on every row. Nothing about it looked stale.
+
+So the live figure is preferred when there is one, and the chain's is the
+fallback, and both are labelled. Liquidity goes the other way round on
+purpose: the chain's figure is the pool's own reserves, it is the pool the
+Stake button opens and the one the yield is computed against, so a live
+figure never displaces it. It fills the **dash** instead — unknown depth
+(§14), which is what half that board was — from the aggregator's figure for
+that same pair, or failing that the token's across its pools, which is a
+different question and says so.
+
+`lib/market-figures.ts` makes each of these choices **once**. The row, the
+drawer and the ranking all read it, because the previous arrangement had the
+ranking sorting on the chain's market cap while the row displayed the live
+one: a board ordered by a number nobody could see. §12's rule that the header
+cannot disagree with the table is the same rule one level down.
+
+### A second source, because the first knew 32 of 76
+
+DexScreener quoted 32 of the board's 76 tokens on the box. The other 44 rows
+fell back to chain figures two months old — correct, labelled, and not what
+anybody wanted to read. **GeckoTerminal** is asked for what DexScreener does
+not answer: keyless, CoinGecko's DEX side, and the aggregator that reads what
+launchpads publish, which is most of this chain. Its id for this chain is
+discovered from its own network list by name (`GECKOTERMINAL_NETWORK` pins
+it), exactly as the logo source already did.
+
+It answers token-level totals directly — volume, reserve, FDV, market cap —
+and the deepest of its included top pools gives the 24h change. It does not
+split a day into buys and sells, and a partial count summed over its top
+pools beside a whole-token volume would be a figure that does not add up, so
+those rows show the **chain's** dollar split instead. The unit travels with
+the figure rather than being assumed: one source splits trades, the other
+dollars, and the row says which.
+
+A refusal now backs off **the source that refused**, not the feed. One 429
+used to freeze every row on the board.
+
+### Two bugs found while writing the tests
+
+- **The second source went unasked for fifteen minutes at a time.** After
+  each source the feed dropped tokens that "have a quote" — and a token last
+  answered by GeckoTerminal still held a fresh one when DexScreener's turn
+  came round again, so GeckoTerminal was skipped until that quote went stale.
+  A row updating every fifteen minutes on a feed that refreshes every thirty
+  seconds. It is per-refresh now, and there is a test that fails against the
+  old line.
+- **A missing `txns` block read as zero trades.** DexScreener omitting the
+  split is "this source did not say", not "nobody traded". It is null, and
+  the row falls through to the chain's.
+
+### What is still the chain's, and why that matters
+
+Everything that prices the site: the anchor, the reserves, the fees, the
+yield, the sparkline, and the listing bar's own thresholds. §4 bars a
+third-party number from the critical path and this does not change that —
+the exception is the owner's and it is bounded to the figures a person
+compares against an aggregator. Every figure Balast makes a claim on is
+still derived from logs and still checkable against the chain.
+
+The deeper cause of the disagreement ALFA saw is unchanged and not a source
+problem: **the sync is sixty-eight days behind**, and until it reaches head
+every chain figure on the board is a day in July. The live feed is a patch
+over that window, not a replacement for it.
+
+### Unverified from here
+
+The sandbox that wrote this reaches neither DexScreener nor GeckoTerminal —
+the egress policy refuses both, as it refused every aggregator in §19. Both
+parsers follow the documented response shapes and read anything else as "no
+quote", which is the same discipline the logo sources were written under and
+the same one that made them work on the first real run.
+
+Two things say what is true on the box:
+
+- `npm run market:probe -- 0xTOKEN …` asks **both** sources, prints every
+  request and status, every pair behind the sum, and the quote each would
+  build — so a figure on a row can be traced to the pairs it came from.
+- `/api/health` carries `market.sources`: per source, how many of the
+  board's tokens it quotes, its last error and its backoff.
+
+If GeckoTerminal does not list this chain it disables itself, once and
+audibly, and the board is exactly as it was.
+
+### Still open
+
+Unchanged: the §12 questions (the simulator's six-hours-per-tick clock,
+`/positions`'s forward-looking *Est. fee yield*), `LAUNCHPAD_HOOKS` and
+`STAKEABLE_HOOKS` (§14, §20), the listing bar's two numbers
+(`LISTING_MIN_FDV_USD`, `LISTING_MIN_LIQUIDITY_USD` — still ALFA's guesses,
+not measurements), and the protocol fee's immutable cap before P2 deploys.
