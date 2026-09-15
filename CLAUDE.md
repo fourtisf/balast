@@ -2007,3 +2007,35 @@ decodes what it knows. `LAUNCHPAD_HOOKS` (§14) still needs the hook
 addresses; post-graduation pools appear on their own once the backfill
 reaches them.
 
+### The original logos: the issuer's own icon outranks the ticker repository
+
+The board showed SPCX in Robinhood's own style — the SpaceX mark on the
+issuer's lime — beside AMD and TSLA wearing white-on-ink icons from the
+ticker repository. The owner asked for the originals. The history: the
+explorer once answered one feather for every stock token, so the ticker
+icon was made to outrank it (§19); the explorer has since begun serving
+real per-stock icons, and the override was now hiding them.
+
+Three changes, all in `logo-sources.ts` and the logo process's start:
+
+- **The explorer refuses a generic icon.** `isGenericLogo` says an icon
+  is the issuer's, not the token's, when it is on a remembered list or
+  already on record for two other tokens. A picture shared by many tokens
+  describes none of them. The explorer is asked first again
+  (`LOGO_SOURCES` default), and the process logs a line if a box's `.env`
+  still pins the old order.
+- **Shared icons are forgotten on start.** `forgetSharedLogos` clears any
+  URL three or more tokens carry (own-site marks exempt: ether and its
+  wrapper share one file), remembers it under `generic_logo_urls` in
+  `indexer_state`, and lets the tokens be asked again under the new rule.
+- **Stocks are reconciled, not upgraded.** `reconcileStockLogos` replaces
+  `upgradeStockLogos`: for every "Robinhood Token", the explorer's own
+  specific icon if it has one, else the ticker icon, else this site's mark
+  — whatever is on record, so a ticker icon gives way to an original that
+  has since appeared. Tested for all three outcomes and for the no-change
+  second run.
+
+Unchanged: a token no source knows (GUH on that board) keeps its derived
+mark, and `npm run logos:probe -- GUH` is how to see which sources were
+asked and what they answered.
+

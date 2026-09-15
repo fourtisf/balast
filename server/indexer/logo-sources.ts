@@ -148,21 +148,108 @@ function image(value: unknown): string | null {
  * it, so it is asked first. The base URL is the registry's (lib/chain.ts);
  * `EXPLORER_API_URL` overrides it for another explorer of the same shape.
  */
-export function blockscout(options: { base?: string } = {}): LogoSource {
+/**
+ * `indexer_state` key holding the image URLs known to be an issuer's mark
+ * rather than a token's — the same picture served for many tokens.
+ */
+export const GENERIC_LOGOS_KEY = 'generic_logo_urls';
+let genericCache: { at: number; urls: Set<string> } | null = null;
+
+/** The URLs on record as generic, cached a minute: the explorer source asks on every lookup. */
+export async function loadGenericLogos(): Promise<Set<string>> {
+  if (genericCache && Date.now() - genericCache.at < 60_000) return genericCache.urls;
+  let urls = new Set<string>();
+  try {
+    const row = await prisma.indexerState.findUnique({ where: { key: GENERIC_LOGOS_KEY } });
+    const parsed = row ? (JSON.parse(row.value) as unknown) : [];
+    if (Array.isArray(parsed)) urls = new Set(parsed.filter((u): u is string => typeof u === 'string'));
+  } catch {
+    /* no record yet, or an unreadable one: nothing is generic until proven */
+  }
+  genericCache = { at: Date.now(), urls };
+  return urls;
+}
+
+async function rememberGenericLogos(add: Iterable<string>): Promise<void> {
+  const urls = new Set([...(await loadGenericLogos()), ...add]);
+  const value = JSON.stringify([...urls]);
+  await prisma.indexerState.upsert({
+    where: { key: GENERIC_LOGOS_KEY },
+    create: { key: GENERIC_LOGOS_KEY, value, updatedAt: new Date() },
+    update: { value, updatedAt: new Date() },
+  });
+  genericCache = { at: Date.now(), urls };
+}
+
+/**
+ * Whether an explorer icon is the issuer's generic mark rather than this
+ * token's own: on the generic list, or already on record for two other
+ * tokens. Robinhood's explorer answered one feather for every stock token
+ * it had no picture for, and a picture shared by many tokens describes
+ * none of them.
+ */
+export async function isGenericLogo(url: string, address: string): Promise<boolean> {
+  if ((await loadGenericLogos()).has(url)) return true;
+  const others = await prisma.token.count({
+    where: { logoUrl: url, address: { not: address.toLowerCase() } },
+  });
+  return others >= 2;
+}
+
+export function blockscout(
+  options: { base?: string; isGeneric?: (url: string, address: string) => Promise<boolean> } = {},
+): LogoSource {
   const base = (options.base ?? EXPLORER_URL).replace(/\/+$/, '');
+  const generic = options.isGeneric ?? isGenericLogo;
   return {
     name: 'explorer',
-    async lookup(address, { fetch }) {
+    async lookup(address, { fetch, log }) {
       // Ether has no token contract for the explorer to hold an entry for.
       if (address.toLowerCase() === NATIVE_ETH) return null;
       try {
         const token = asRecord(await getJson(fetch, `${base}/api/v2/tokens/${address.toLowerCase()}`, {}));
-        return image(token?.icon_url);
+        const url = image(token?.icon_url);
+        if (url && (await generic(url, address))) {
+          log(`  explorer: ${address} carries the issuer's generic icon, not its own — skipped`);
+          return null;
+        }
+        return url;
       } catch {
         return null;
       }
     },
   };
+}
+
+/**
+ * Forget any logo that several tokens share, and remember the URL as
+ * generic so no source records it again.
+ *
+ * Run on the logo process's start. The tokens are asked about again, and
+ * the explorer now refuses the shared picture, so a stock token falls to
+ * its ticker icon or this site's own mark. Own-site marks are exempt: ether
+ * and its wrapper legitimately share one file.
+ */
+export async function forgetSharedLogos(options: { minShared?: number; log?: Log } = {}): Promise<number> {
+  const minShared = options.minShared ?? 3;
+  const log = options.log ?? (() => {});
+  const shared = await prisma.$queryRaw<{ logo_url: string; n: number }[]>`
+    SELECT logo_url, COUNT(*)::int AS n FROM tokens
+    WHERE logo_url IS NOT NULL AND logo_url NOT LIKE ${`${SITE_URL}/%`}
+    GROUP BY logo_url HAVING COUNT(*) >= ${minShared}
+  `;
+  if (shared.length === 0) return 0;
+  await rememberGenericLogos(shared.map((s) => s.logo_url));
+  let forgotten = 0;
+  for (const { logo_url, n } of shared) {
+    const result = await prisma.token.updateMany({
+      where: { logoUrl: logo_url },
+      data: { logoUrl: null, logoCheckedAt: null },
+    });
+    forgotten += result.count;
+    log(`  ${n} tokens shared one icon, which is nobody's logo: ${logo_url}`);
+  }
+  return forgotten;
 }
 
 // ------------------------------------------------- tokenised stocks --
@@ -686,45 +773,52 @@ export function createSources(names: readonly string[]): LogoSource[] {
 export const RETRY_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * Give every tokenised stock its ticker icon, even one that already has a
- * logo from somewhere else.
+ * Every tokenised stock wears the best logo available, in this order: the
+ * issuer's own icon for the token from the explorer, when it is specific
+ * to the token; else the ticker icon; else this site's own mark.
  *
- * The explorer answers with Robinhood's own feather for every one of its
- * stock tokens — the issuer's mark, not the company's — and it was asked
- * first, so NVDA, TSLA and AMD all wore the same bird. The ticker icon
- * outranks any other source for a stock, so on start the logo process
- * replaces whatever is on record for a "Robinhood Token" with the ticker
- * icon when one exists and loads. Returns how many changed.
+ * The order changed once. The explorer answered one feather for every
+ * stock token, so the ticker icon was made to outrank it — and then the
+ * explorer began serving real per-stock icons in Robinhood's own style,
+ * which are the tokens' original logos, and the ticker icons were
+ * overriding them. The explorer source now refuses the shared feather
+ * (`isGenericLogo`), which is what lets it be asked first again. Runs on
+ * the logo process's start over every stock token; returns how many changed.
  */
-export async function upgradeStockLogos(options: {
-  source?: LogoSource;
-  /** Where ticker icons live; a token already carrying one is left alone. */
-  base?: string;
+export async function reconcileStockLogos(options: {
+  explorer?: LogoSource | null;
+  tickers?: LogoSource | null;
   fetch?: Fetch;
   log?: Log;
 }): Promise<number> {
-  const source = options.source ?? tickers();
-  const base = (options.base ?? TICKER_ICON_BASE).replace(/\/+$/, '');
   const fetch = options.fetch ?? (globalThis.fetch as unknown as Fetch);
   const log = options.log ?? (() => {});
   const stocks = await prisma.$queryRaw<{ address: string; symbol: string; logo_url: string | null }[]>`
     SELECT address, symbol, logo_url FROM tokens
     WHERE name ~* 'robinhood\\s+token'
-      AND (logo_url IS NULL OR logo_url NOT LIKE ${`${base}/%`})
     ORDER BY first_seen ASC
   `;
+  const ranked: [string, LogoSource | null | undefined][] = [
+    ['explorer', options.explorer],
+    ['ticker', options.tickers],
+  ];
   let changed = 0;
   for (const stock of stocks) {
-    const url = await source.lookup(stock.address, { fetch, log });
-    // A mark served by this site is not under `base`, so the query selects
-    // it every start; it is already on record, and nothing has changed.
-    if (!url || url === stock.logo_url || !(await imageLoads(fetch, url))) continue;
-    await prisma.token.update({
-      where: { address: stock.address },
-      data: { logoUrl: url, logoCheckedAt: new Date() },
-    });
-    changed++;
-    log(`  ${stock.symbol}: ticker icon replaces ${stock.logo_url ?? 'nothing'}`);
+    for (const [label, source] of ranked) {
+      if (!source) continue;
+      const url = await source.lookup(stock.address, { fetch, log });
+      if (!url) continue;
+      // The best available answer is already on record.
+      if (url === stock.logo_url) break;
+      if (!(await imageLoads(fetch, url))) continue;
+      await prisma.token.update({
+        where: { address: stock.address },
+        data: { logoUrl: url, logoCheckedAt: new Date() },
+      });
+      changed++;
+      log(`  ${stock.symbol}: ${label} icon replaces ${stock.logo_url ?? 'nothing'}`);
+      break;
+    }
   }
   return changed;
 }

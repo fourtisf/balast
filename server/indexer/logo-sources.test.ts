@@ -24,7 +24,9 @@ import {
   geckoterminal,
   onchain,
   tickers,
-  upgradeStockLogos,
+  forgetSharedLogos,
+  reconcileStockLogos,
+  GENERIC_LOGOS_KEY,
   lookupLogos,
   type Fetch,
   type LogoSource,
@@ -46,11 +48,13 @@ function service(routes: Record<string, unknown>): { fetch: Fetch; calls: string
 }
 
 const quiet = () => {};
+/** An explorer icon that is nobody's generic mark, for the tests that are not about that. */
+const never = async () => false;
 
 describe('blockscout', () => {
   it('reads icon_url from the explorer\'s token endpoint, at the configured base', async () => {
     const api = service({ '/api/v2/tokens/': { name: 'A1', symbol: 'A1', icon_url: LOGO } });
-    const src = blockscout({ base: 'https://explorer.example/' });
+    const src = blockscout({ base: 'https://explorer.example/', isGeneric: never });
     expect(await src.lookup(TOKEN, { fetch: api.fetch, log: quiet })).toBe(LOGO);
     // One call, lowercased address, no double slash from a trailing one.
     expect(api.calls).toEqual([`https://explorer.example/api/v2/tokens/${TOKEN}`]);
@@ -58,26 +62,36 @@ describe('blockscout', () => {
 
   it('defaults to the registry explorer for this chain', async () => {
     const api = service({ '/api/v2/tokens/': { icon_url: LOGO } });
-    await blockscout().lookup(TOKEN, { fetch: api.fetch, log: quiet });
+    await blockscout({ isGeneric: never }).lookup(TOKEN, { fetch: api.fetch, log: quiet });
     expect(api.calls[0].startsWith('https://robinhoodchain.blockscout.com/api/v2/tokens/')).toBe(true);
   });
 
   it('is null for a token with no icon, an unsafe icon, an unknown token, or a dead explorer', async () => {
     const none = service({ '/api/v2/tokens/': { icon_url: null } });
-    expect(await blockscout().lookup(TOKEN, { fetch: none.fetch, log: quiet })).toBeNull();
+    expect(await blockscout({ isGeneric: never }).lookup(TOKEN, { fetch: none.fetch, log: quiet })).toBeNull();
     const unsafe = service({ '/api/v2/tokens/': { icon_url: 'data:image/png;base64,AAAA' } });
-    expect(await blockscout().lookup(TOKEN, { fetch: unsafe.fetch, log: quiet })).toBeNull();
-    expect(await blockscout().lookup(TOKEN, { fetch: service({}).fetch, log: quiet })).toBeNull();
+    expect(await blockscout({ isGeneric: never }).lookup(TOKEN, { fetch: unsafe.fetch, log: quiet })).toBeNull();
+    expect(await blockscout({ isGeneric: never }).lookup(TOKEN, { fetch: service({}).fetch, log: quiet })).toBeNull();
     const down: Fetch = async () => {
       throw new Error('ECONNRESET');
     };
-    expect(await blockscout().lookup(TOKEN, { fetch: down, log: quiet })).toBeNull();
+    expect(await blockscout({ isGeneric: never }).lookup(TOKEN, { fetch: down, log: quiet })).toBeNull();
   });
 
   it('never asks about ether, which has no token contract', async () => {
     const api = service({ '/api/v2/tokens/': { icon_url: LOGO } });
-    expect(await blockscout().lookup(NATIVE_ETH, { fetch: api.fetch, log: quiet })).toBeNull();
+    expect(await blockscout({ isGeneric: never }).lookup(NATIVE_ETH, { fetch: api.fetch, log: quiet })).toBeNull();
     expect(api.calls).toHaveLength(0);
+  });
+
+  it('refuses an icon the issuer serves for many tokens: a shared picture is nobody\'s logo', async () => {
+    const api = service({ '/api/v2/tokens/': { icon_url: LOGO } });
+    const shared = async (url: string) => url === LOGO;
+    expect(await blockscout({ isGeneric: shared }).lookup(TOKEN, { fetch: api.fetch, log: quiet })).toBeNull();
+    const specific = service({ '/api/v2/tokens/': { icon_url: 'https://cdn.example/spcx-own.png' } });
+    expect(await blockscout({ isGeneric: shared }).lookup(TOKEN, { fetch: specific.fetch, log: quiet })).toBe(
+      'https://cdn.example/spcx-own.png',
+    );
   });
 });
 
@@ -91,7 +105,7 @@ describe('every source', () => {
       seen.push(init?.headers ?? {});
       return { ok: true, status: 200, json: async () => ({}) };
     };
-    await blockscout().lookup(TOKEN, { fetch, log: quiet });
+    await blockscout({ isGeneric: never }).lookup(TOKEN, { fetch, log: quiet });
     await dexscreener().lookup(TOKEN, { fetch, log: quiet });
     await coingecko().lookup(TOKEN, { fetch, log: quiet });
     await coinmarketcap({ apiKey: 'k' }).lookup(TOKEN, { fetch, log: quiet });
@@ -480,48 +494,74 @@ describe('lookupLogos', () => {
     expect(await lookupLogos({ sources: [sourceAnswering({ [TOKEN]: LOGO })], fetch: html })).toBe(0);
   });
 
-  it('replaces a stock token\'s recorded logo with its ticker icon, and leaves other tokens alone', async () => {
+  const stock = (address: string, symbol: string, name: string, logoUrl: string | null) =>
+    prisma.token.create({ data: { address, symbol, name, decimals: 18, firstSeen: new Date('2026-07-01'), logoUrl } });
+  const answering = (answers: Record<string, string | null>): LogoSource => ({
+    name: 'fake',
+    async lookup(address) {
+      return answers[address] ?? null;
+    },
+  });
+
+  it('gives a stock the ticker icon when the explorer has nothing of its own, and leaves other tokens alone', async () => {
     await resetDatabase();
     const feather = 'https://explorer.example/robinhood-feather.png';
-    await prisma.token.create({
-      data: { address: TOKEN, symbol: 'NVDA', name: 'NVIDIA \u2022 Robinhood Token', decimals: 18, firstSeen: new Date('2026-07-01'), logoUrl: feather },
-    });
-    await prisma.token.create({
-      data: { address: '0x00000000000000000000000000000000000000a2', symbol: 'GME', name: 'GME', decimals: 18, firstSeen: new Date('2026-07-01'), logoUrl: feather },
-    });
+    await stock(TOKEN, 'NVDA', 'NVIDIA \u2022 Robinhood Token', feather);
+    await stock('0x00000000000000000000000000000000000000a2', 'GME', 'GME', feather);
     const facts = async (address: string) =>
       address === TOKEN ? { symbol: 'NVDA', name: 'NVIDIA \u2022 Robinhood Token' } : { symbol: 'GME', name: 'GME' };
-    const base = 'https://icons.example/ticker_icons/';
-    const source = tickers({ facts, base });
-    // The icon exists and loads; the fake answers ok for the icons host.
     const fetch = service({ 'icons.example': {} }).fetch;
-    expect(await upgradeStockLogos({ source, base, fetch })).toBe(1);
+    const tickerSource = tickers({ facts, base: 'https://icons.example/ticker_icons/' });
+    expect(await reconcileStockLogos({ explorer: answering({}), tickers: tickerSource, fetch })).toBe(1);
     expect((await prisma.token.findUniqueOrThrow({ where: { address: TOKEN } })).logoUrl).toBe(
       'https://icons.example/ticker_icons/NVDA.png',
     );
     // Not a stock token: untouched.
     expect((await prisma.token.findUniqueOrThrow({ where: { address: '0x00000000000000000000000000000000000000a2' } })).logoUrl).toBe(feather);
-    // Already carrying a ticker icon: not asked again.
-    expect(await upgradeStockLogos({ source, base, fetch })).toBe(0);
+    // Already the best answer on record: nothing changes on the next start.
+    expect(await reconcileStockLogos({ explorer: answering({}), tickers: tickerSource, fetch })).toBe(0);
   });
 
-  it('replaces the feather on a private company\'s stock with this site\'s own mark, once', async () => {
+  it('prefers the issuer\'s own per-stock icon over a ticker icon already on record', async () => {
+    await resetDatabase();
+    await stock(TOKEN, 'AMD', 'AMD \u2022 Robinhood Token', 'https://icons.example/ticker_icons/AMD.png');
+    const own = 'https://explorer.example/images/amd-robinhood.png';
+    const fetch = service({ 'explorer.example': {}, 'icons.example': {} }).fetch;
+    const facts = async () => ({ symbol: 'AMD', name: 'AMD \u2022 Robinhood Token' });
+    const tickerSource = tickers({ facts, base: 'https://icons.example/ticker_icons/' });
+    expect(await reconcileStockLogos({ explorer: answering({ [TOKEN]: own }), tickers: tickerSource, fetch })).toBe(1);
+    expect((await prisma.token.findUniqueOrThrow({ where: { address: TOKEN } })).logoUrl).toBe(own);
+    expect(await reconcileStockLogos({ explorer: answering({ [TOKEN]: own }), tickers: tickerSource, fetch })).toBe(0);
+  });
+
+  it('falls to this site\'s own mark for a private company the explorer and the repository both lack', async () => {
+    await resetDatabase();
+    await stock(TOKEN, 'SPCX', 'Space Exploration \u2022 Robinhood Token', 'https://explorer.example/robinhood-feather.png');
+    const facts = async () => ({ symbol: 'SPCX', name: 'Space Exploration \u2022 Robinhood Token' });
+    const tickerSource = tickers({ facts, base: 'https://icons.example/ticker_icons/', site: 'https://site.example' });
+    const fetch = service({ 'site.example': {} }).fetch;
+    expect(await reconcileStockLogos({ explorer: answering({}), tickers: tickerSource, fetch })).toBe(1);
+    expect((await prisma.token.findUniqueOrThrow({ where: { address: TOKEN } })).logoUrl).toBe('https://site.example/tokens/spcx.svg');
+    expect(await reconcileStockLogos({ explorer: answering({}), tickers: tickerSource, fetch })).toBe(0);
+  });
+
+  it('forgets an icon that three tokens share, remembers it as generic, and leaves a pair alone', async () => {
     await resetDatabase();
     const feather = 'https://explorer.example/robinhood-feather.png';
-    await prisma.token.create({
-      data: { address: TOKEN, symbol: 'SPCX', name: 'Space Exploration \u2022 Robinhood Token', decimals: 18, firstSeen: new Date('2026-07-01'), logoUrl: feather },
-    });
-    const facts = async () => ({ symbol: 'SPCX', name: 'Space Exploration \u2022 Robinhood Token' });
-    const base = 'https://icons.example/ticker_icons/';
-    const source = tickers({ facts, base, site: 'https://site.example' });
-    const fetch = service({ 'site.example': {} }).fetch;
-    expect(await upgradeStockLogos({ source, base, fetch })).toBe(1);
-    expect((await prisma.token.findUniqueOrThrow({ where: { address: TOKEN } })).logoUrl).toBe(
-      'https://site.example/tokens/spcx.svg',
-    );
-    // Not under `base`, so the query selects it every start — and it is
-    // already on record, so nothing is rewritten or counted.
-    expect(await upgradeStockLogos({ source, base, fetch })).toBe(0);
+    const pair = 'https://cdn.example/pair.png';
+    await stock(TOKEN, 'GLD', 'GLD \u2022 Robinhood Token', feather);
+    await stock('0x00000000000000000000000000000000000000a2', 'SLV', 'SLV \u2022 Robinhood Token', feather);
+    await stock('0x00000000000000000000000000000000000000a3', 'SPY', 'SPY \u2022 Robinhood Token', feather);
+    await stock('0x00000000000000000000000000000000000000a4', 'X1', 'X1', pair);
+    await stock('0x00000000000000000000000000000000000000a5', 'X2', 'X2', pair);
+    expect(await forgetSharedLogos()).toBe(3);
+    const rows = await prisma.token.findMany({ orderBy: { address: 'asc' }, select: { logoUrl: true } });
+    expect(rows.map((r) => r.logoUrl)).toEqual([null, null, null, pair, pair]);
+    const state = await prisma.indexerState.findUniqueOrThrow({ where: { key: GENERIC_LOGOS_KEY } });
+    expect(JSON.parse(state.value)).toEqual([feather]);
+    // And the explorer, asked about a fourth token with the same picture, now refuses it.
+    const api = service({ '/api/v2/tokens/': { icon_url: feather } });
+    expect(await blockscout().lookup('0x00000000000000000000000000000000000000a6', { fetch: api.fetch, log: quiet })).toBeNull();
   });
 
   it('does nothing with no sources', async () => {

@@ -22,7 +22,7 @@ import { CHAIN } from '../../lib/chain';
 import { publishTick } from '../api/bus';
 import { prisma } from '../db';
 import { env } from '../env';
-import { createSources, imageLoads, lookupLogos, upgradeStockLogos, type Fetch } from '../indexer/logo-sources';
+import { createSources, forgetSharedLogos, imageLoads, lookupLogos, reconcileStockLogos, type Fetch } from '../indexer/logo-sources';
 import { refreshLogos } from '../indexer/logos';
 
 /** How often the token list is re-read. It is a file or a URL; an hour is plenty. */
@@ -54,6 +54,20 @@ async function main(): Promise<void> {
     `logo sources: ${sources.map((s) => s.name).join(', ') || 'none'} · ` +
       `one token every ${env.logoLookupMs}ms · explorer ${env.explorerApiUrl}`,
   );
+
+  const order = sources.map((s) => s.name);
+  if (order.includes('tickers') && order.includes('explorer') && order.indexOf('tickers') < order.indexOf('explorer')) {
+    log(
+      'LOGO_SOURCES lists tickers before explorer. The explorer now refuses the issuer\'s generic icon ' +
+        'and answers with a token\'s own, so it should come first: deploy/set-env.sh LOGO_SOURCES ' +
+        'explorer,tickers,onchain,geckoterminal,dexscreener,coingecko,coinmarketcap',
+    );
+  }
+
+  // A picture shared by several tokens is nobody's logo. Forget it, remember
+  // the URL as generic, and let the tokens be asked about again below.
+  const shared = await forgetSharedLogos({ log });
+  if (shared > 0) log(`${shared} token(s) forgot a shared icon`);
 
   // A start is when the sources change — a deploy — so every token still
   // without a logo is asked about again, board first. A miss then goes quiet
@@ -97,11 +111,16 @@ async function main(): Promise<void> {
     if (dropped > 0) await nudge();
   }
 
-  // Tokenised stocks wear their ticker icon, whatever another source said.
-  if (!shuttingDown && sources.some((s) => s.name === 'tickers')) {
-    const upgraded = await upgradeStockLogos({ log });
-    if (upgraded > 0) {
-      log(`${upgraded} stock token(s) now carry their ticker icon`);
+  // Tokenised stocks: the issuer's own per-stock icon when the explorer has
+  // one, else the ticker icon, else this site's mark — whatever is on record.
+  if (!shuttingDown) {
+    const changed = await reconcileStockLogos({
+      explorer: sources.find((s) => s.name === 'explorer') ?? null,
+      tickers: sources.find((s) => s.name === 'tickers') ?? null,
+      log,
+    });
+    if (changed > 0) {
+      log(`${changed} stock token(s) changed logo`);
       await nudge();
     }
   }

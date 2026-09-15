@@ -122,8 +122,8 @@ export const env = {
    * Each reads one image URL and nothing else (§4); see logo-sources.ts.
    */
   logoSources: list('LOGO_SOURCES', [
-    'tickers',
     'explorer',
+    'tickers',
     'onchain',
     'geckoterminal',
     'dexscreener',
