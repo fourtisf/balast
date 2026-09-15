@@ -167,9 +167,12 @@ export function StakeDrawer() {
                   </div>
                   <p className="hint">
                     One full-range position in this pool, minted through Uniswap&rsquo;s
-                    PositionManager straight to your wallet. It earns this pool&rsquo;s fee on every
-                    trade, it is never out of range, and only your wallet can withdraw it. You deposit
-                    both sides at today&rsquo;s ratio — the builder shows exactly how much of each.
+                    PositionManager straight to your wallet. Uniswap represents every liquidity
+                    position as an NFT: the NFT <em>is</em> the position — its range, its liquidity
+                    and the fees it has earned — and whoever holds it is the only one who can
+                    withdraw. It earns this pool&rsquo;s fee on every trade and is never out of
+                    range. You deposit both sides at today&rsquo;s ratio — the builder shows exactly
+                    how much of each.
                   </p>
                   <div className="note">
                     {/* §7: the protocol fee is disclosed here, before signing. There is none:
@@ -181,6 +184,10 @@ export function StakeDrawer() {
                     <div className="disclose">
                       <span className="muted">Custody</span>
                       <b>Your wallet, as an NFT</b>
+                    </div>
+                    <div className="disclose">
+                      <span className="muted">Balast holds</span>
+                      <b>Nothing</b>
                     </div>
                     <div className="disclose">
                       <span className="muted">Lockup</span>

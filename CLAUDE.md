@@ -2453,3 +2453,49 @@ URL inside a Suspense boundary. Tested: one position from −887,220 to
 **The contract address** is in the drawer under the header, in full,
 with Copy and an explorer link; ether says it has no contract. A site
 that asks people to trust a token should show them which token.
+
+### The NFT, and where the volume comes from
+
+ALFA asked two things off the drawer and the board: what *your wallet, as
+an NFT* means, and why NVDA's and WIF's volume is tiny against their
+market caps when DexScreener shows something else — where does the
+volume come from.
+
+**The NFT.** Uniswap represents every liquidity position as an ERC-721
+token minted by the PositionManager: the NFT *is* the position — its
+range, its liquidity, the fees it has earned — and whoever holds it is
+the only one who can withdraw. Staking here mints that NFT to the
+person's wallet; Balast holds nothing. The drawer says so in those words
+now, with a *Balast holds: nothing* line beside custody.
+
+**The volume** is the sum of the swaps in that pool over the 24 hours of
+chain time before the last block indexed, valued in dollars, from the
+chain and nothing else (§4). Three reasons it disagreed with DexScreener:
+
+- **Sixty-eight days.** The last block indexed was July's; DexScreener
+  shows today. Until the sync reaches head, every figure on the board is
+  a day in July, and the top bar says so.
+- **The v4 sign fault** (above) shrank every v4 pool's volume to the
+  trader's output side. Fixed, awaiting its deploy.
+- **The wrong pool.** DexScreener's WIF is a Uniswap **v3** pool with
+  $111K in it. Balast's WIF row was a hooked v4 pool with $44 of trades,
+  because the v3 pool was not in the tables at all: the factory was
+  configured with the cursor millions of blocks in (§20), and every
+  `PoolCreated` before that block was never read, so every older v3 pool
+  — the pools §4 said existed — was invisible. The token's row is its
+  deepest pool, and the deepest pool was missing.
+
+**The factory's history is read now.** On its first pass a poller with a
+factory walks the factory's `PoolCreated` logs from the start block to
+the block the factory has been followed from (`v3_history_block` in
+`indexer_state`, advanced by every pass since), writes the pools it
+names, then walks those pools' own logs from creation to the cursor, all
+of them in one adaptive window at a time; progress is remembered so a
+restart resumes; the cursor is touched between windows so liveness stays
+honest; and the priced tables are rebuilt in full once it has read
+anything. On the box this is one long first pass — the factory's four
+and a half million blocks, then the pools' — and the log says where it
+is every twenty windows. The test gives a poller the factory late,
+after another has synced without it, and asserts the pool appears, its
+swaps and state with it, nothing is read twice on the next start, and
+the fee rows equal a poller's that followed the factory throughout.

@@ -34,6 +34,7 @@ import {
 } from './events';
 import { resolveUsdg } from './anchor';
 import { planIngest } from './ingest';
+import { V3_HISTORY_KEY, backfillV3History, writeState } from './v3-history';
 import { prisma } from '../db';
 import {
   loadFeeTiers,
@@ -335,6 +336,34 @@ export class Poller {
     // restart, or the process would stop indexing them without saying so.
     if (!this.v3Loaded) {
       this.followV3Pools(await loadV3PoolAddresses());
+      // And the pools the factory named before it was followed at all: the
+      // factory was configured with the cursor millions of blocks in, so
+      // every PoolCreated before that block was never read (v3-history.ts).
+      const cursorNow = await readCursor(POOL_MANAGER_CURSOR);
+      if (this.v3Factory && cursorNow !== null) {
+        const history = await backfillV3History({
+          source: this.source,
+          factory: this.v3Factory,
+          startBlock: this.startBlock,
+          toBlock: cursorNow,
+          window: this.minRange,
+          maxWindow: this.maxRange,
+          cursorKey: POOL_MANAGER_CURSOR,
+          tokenReader: this.tokenReader,
+          log: this.log,
+        });
+        if (history.addresses.length > 0) this.followV3Pools(history.addresses);
+        if (history.pools > 0 || history.events > 0) {
+          // Their fees and reserves are history, so the priced tables are
+          // rebuilt in full below rather than for this pass's hours.
+          await prisma.indexerState.deleteMany({ where: { key: REBUILT_ANCHOR_KEY } });
+          this.lastAnchorAddress = undefined;
+          this.log(
+            `  v3 history: ${history.pools} pool(s) and ${history.events} event(s) the factory ` +
+              'had named before it was followed — rebuilding the priced tables',
+          );
+        }
+      }
       this.v3Loaded = true;
     }
 
@@ -632,6 +661,8 @@ export class Poller {
 
     const lastBlockTime = blockTimes.get(to) ?? head.timestamp;
     await writeCursor(POOL_MANAGER_CURSOR, to, lastBlockTime, head.number);
+    // The factory's PoolCreated logs have been read to here (v3-history.ts).
+    if (this.v3Factory) await writeState(V3_HISTORY_KEY, to.toString());
 
     // Adapt for the next pass. Only while backfilling: once the indexer is
     // following head there is nothing to gain from a wider window and a

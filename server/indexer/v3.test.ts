@@ -124,6 +124,58 @@ describe('the v3 factory', () => {
     expect(await prisma.swapEvent.count({ where: { poolId: V3_POOL_ID } })).toBe(before);
   });
 
+  it('backfills a v3 pool the factory named before the factory was followed', async () => {
+    // The live box: the factory was configured with the cursor millions of
+    // blocks in, so every PoolCreated before that was never read and WIF's
+    // real market — a v3 pool — was absent while a hooked v4 pool stood for
+    // the token. A poller that gains the factory late has to read the
+    // factory's history and the pools' own, and end up where a poller that
+    // followed it from the start would have.
+    await resetDatabase();
+    await poller(new FixtureLogSource(chain), 400, false).syncToHead();
+    expect(await prisma.pool.findUnique({ where: { id: V3_POOL_ID } })).toBeNull();
+
+    const lines: string[] = [];
+    const late = new Poller({
+      source: new FixtureLogSource(chain),
+      usdgAddress: USDG,
+      startBlock: 0n,
+      blockRange: 400,
+      v3Factory: V3_FACTORY,
+      tokenReader: fixtureTokenReader,
+      log: (line) => lines.push(line),
+    });
+    await late.syncToHead();
+
+    const pool = await prisma.pool.findUnique({ where: { id: V3_POOL_ID } });
+    expect(pool).not.toBeNull();
+    expect(await prisma.swapEvent.count({ where: { poolId: V3_POOL_ID } })).toBeGreaterThan(0);
+    expect(lines.some((l) => l.includes('v3 history') && l.includes('rebuilding'))).toBe(true);
+    const state = await prisma.poolState.findUnique({ where: { poolId: V3_POOL_ID } });
+    expect(Number(state!.tvlUsd)).toBeGreaterThan(0);
+    const backfilled = await prisma.$queryRaw<Record<string, string>[]>`
+      SELECT pool_id, to_char(hour, 'YYYY-MM-DD HH24:MI') AS hour,
+             fees_token0::text AS f0, fees_token1::text AS f1, fees_usd::text AS usd, swaps::text AS n
+      FROM pool_fee_hourly ORDER BY pool_id, hour
+    `;
+
+    // Nothing left to read on the next start, and nothing read twice.
+    const swapsBefore = await prisma.swapEvent.count();
+    await poller(new FixtureLogSource(chain), 400).runPass();
+    expect(await prisma.swapEvent.count()).toBe(swapsBefore);
+
+    // The same rows as a poller that followed the factory from the start.
+    await resetDatabase();
+    await poller(new FixtureLogSource(chain), 400).syncToHead();
+    const throughout = await prisma.$queryRaw<Record<string, string>[]>`
+      SELECT pool_id, to_char(hour, 'YYYY-MM-DD HH24:MI') AS hour,
+             fees_token0::text AS f0, fees_token1::text AS f1, fees_usd::text AS usd, swaps::text AS n
+      FROM pool_fee_hourly ORDER BY pool_id, hour
+    `;
+    expect(backfilled.length).toBeGreaterThan(0);
+    expect(backfilled).toEqual(throughout);
+  });
+
   it('finds nothing v3 at all when the factory is not configured', async () => {
     // The gap this whole feature closes: without V3_FACTORY the only v3 pools
     // are the ones hand-listed in V3_POOLS.
