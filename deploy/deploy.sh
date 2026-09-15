@@ -34,6 +34,19 @@ as_app() { runuser -u "$APP_USER" -- "$@"; }
 # which skips this block and runs start to finish from one file.
 # ---------------------------------------------------------------------------
 if [[ "${BALAST_DEPLOY_STAGE:-}" != "run" ]]; then
+  # Everything under the tree belongs to $APP_USER, and a single git command
+  # run as root in this directory — the manual checkout a new branch needs
+  # the first time — leaves object directories under .git owned by root.
+  # The next fetch as $APP_USER then fails with "insufficient permission for
+  # adding an object to repository database", and the deploy stops before
+  # it has pulled anything. Repair what is wrong rather than everything:
+  # node_modules is large, and chowning a tree that is already right is a
+  # slow no-op.
+  STRAY=$(find "$APP_DIR" -not -user "$APP_USER" | wc -l)
+  if [[ "$STRAY" -gt 0 ]]; then
+    find "$APP_DIR" -not -user "$APP_USER" -exec chown "$APP_USER:$APP_USER" {} +
+    echo "==> $STRAY path(s) under $APP_DIR were not owned by $APP_USER (a git command run as root?) — fixed"
+  fi
   as_app git fetch origin "$BRANCH"
   as_app git checkout -B "$BRANCH" "origin/$BRANCH"
   export BALAST_DEPLOY_STAGE=run

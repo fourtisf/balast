@@ -2162,3 +2162,24 @@ swap count, which changes every pass while syncing; it is compared on the
 address now. And the v3 backfill — a newly discovered pool's own logs
 from its creation block — was time the pass line did not account for; it
 is a stage of its own in the line when it happened.
+
+### The deploy that could not fetch
+
+The deploy after the change above stopped on its first line: `error:
+insufficient permission for adding an object to repository database
+.git/objects`, then `fatal: unpack-objects failed`, and the box stayed on
+the previous commit while the operator read a log that looked like
+nothing had changed. The cause is §18's own instruction: the first deploy
+of a new branch is a manual `git checkout`, and it was run as root, so the
+object directories git wrote are root's — and every later fetch runs as
+the app user, which cannot write into them.
+
+`deploy.sh` now repairs ownership before it fetches: anything under the
+tree not owned by the app user is chowned, and the count is printed with
+the likely reason. Only what is wrong, not the whole tree, because
+`node_modules` is large and chowning a tree that is already right is a
+slow no-op. `doctor.sh` names the same fault ahead of its own fetch, which
+had been swallowing it. The repair only helps once the new script is on
+disk, so this one time the operator runs the chown by hand first — the
+same shape as the wrong-branch deploy in §18, and the same lesson: a fix
+in `deploy.sh` reaches the box one deploy after the fault.

@@ -73,6 +73,16 @@ if [[ -d "$APP_DIR/.git" ]]; then
     first "ls -ld $APP_DIR/.git   # who owns it?"
   fi
   ok "$APP_DIR on ${BRANCH:-?} at ${HEAD_SHA:-?}"
+  # One git command run as root in the tree leaves root-owned object
+  # directories under .git, and the next fetch as $APP_USER fails with
+  # "insufficient permission for adding an object to repository database" —
+  # which is what the deploy stopped on, before pulling anything. Name it
+  # here, because the fetch below would only swallow it.
+  STRAY=$(find "$APP_DIR" -not -user "$APP_USER" 2>/dev/null | wc -l)
+  if [[ "$STRAY" -gt 0 ]]; then
+    bad "$STRAY path(s) under $APP_DIR not owned by $APP_USER — a git command run as root? the deploy's fetch fails on these"
+    first "chown -R $APP_USER:$APP_USER $APP_DIR && bash $APP_DIR/deploy/deploy.sh"
+  fi
   git_app fetch --quiet origin "$BRANCH" || true
   BEHIND=$(git_app rev-list --count "HEAD..origin/$BRANCH" || echo 0)
   if [[ "${BEHIND:-0}" -gt 0 ]]; then
