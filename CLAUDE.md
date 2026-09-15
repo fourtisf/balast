@@ -2232,3 +2232,31 @@ was third by volume with fees of $54, under a row with sixteen times the
 fees; §1 says fee yield is the headline and volume is trivially washed.
 `By fees · 24h` as the default facet is one line, offered and not
 changed.
+
+### "Liquidity", by ALFA's word, and the refresh in the board's order
+
+ALFA looked at the first board with market caps on it and asked two
+things: for the rows still reading `FDV` to read `MC`, and whether depth
+meant liquidity — and if so, to call it that.
+
+**Liquidity.** Yes: the figure is the pool's liquidity in dollars, both
+sides. §13 kept "depth" as the domain term when the brand moved; the
+owner has now chosen the plainer word for the page, so every user-facing
+line says *liquidity* — the row, the drawer, the router's copy and
+projection, the two mastheads. Identifiers are unchanged (`tvlUsd`,
+`*DepthUsd`, `reorgDepth`, `design/depth.html`), and so are the banners
+under `brand/social/`, which are rendered images and carry the old word
+until they are rendered again.
+
+**The rows that still read FDV** were the tokens whose non-circulating
+holdings had not been read yet — the migration's backlog, drained fifty
+tokens a refresh. VIRTUAL had flipped and world had not, and the reason
+was the order: the backlog was worked largest-FDV-first, which on a
+launchpad chain is dust with absurd supplies (§19 found the same for
+logos). The refresh now takes the board's own order — the pools' 24h
+volume, the same ranking `logoCandidates()` uses — so the listed rows
+are the first fifty read, and the label flips on the board within a
+refresh of the deploy. The `FDV` state remains for a token whose
+holdings are genuinely unread, because labelling the whole supply as
+market cap is the overstatement §15 refused; it is now a state that
+lasts a minute rather than an hour.

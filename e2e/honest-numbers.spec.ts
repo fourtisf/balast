@@ -84,7 +84,7 @@ test.describe('honest numbers', () => {
     const money = (m: RegExpExecArray | null) =>
       m ? Number(m[1].replace(/,/g, '')) * scale[m[2] ?? ''] : NaN;
     const top = money(/\$([\d.,]+)([KMB])?/.exec(locked));
-    const rows = depths.reduce((sum, t) => sum + money(/depth \$([\d.]+)([KMB])?/.exec(t)), 0);
+    const rows = depths.reduce((sum, t) => sum + money(/liquidity \$([\d.]+)([KMB])?/.exec(t)), 0);
     expect(depths.length).toBeGreaterThan(1);
     // $15.11M in the masthead, eleven rounded depths beneath it — the same
     // number, to within the rounding of the row figures.

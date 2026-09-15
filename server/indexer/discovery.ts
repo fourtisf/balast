@@ -364,19 +364,36 @@ export async function refreshSupplies(
   // Order: tokens whose supply is known but whose non-circulating holdings
   // are not — the backlog a fresh migration leaves — come first, so the
   // board gains a market cap before the rest of the table does; within
-  // that, the largest pools' tokens first, which is the board's own order;
-  // then the most stale.
+  // that, by the pools' 24h volume, which is the board's own order (the
+  // same ranking the logo lookup uses, and for the same reason: on a
+  // launchpad chain the largest FDVs are dust with absurd supplies); then
+  // the most stale.
   const stale = await prisma.$queryRaw<{ address: string }[]>`
+    WITH latest AS (SELECT MAX(hour) AS newest FROM pool_fee_hourly),
+    volume AS (
+      SELECT f.pool_id, SUM(f.volume_usd) AS volume
+      FROM pool_fee_hourly f, latest
+      WHERE f.hour > latest.newest - interval '24 hours'
+      GROUP BY f.pool_id
+    ),
+    by_token AS (
+      SELECT lower(side.token) AS token, MAX(COALESCE(v.volume, 0)) AS volume
+      FROM pools p
+      CROSS JOIN LATERAL (VALUES (p.token0), (p.token1)) AS side(token)
+      LEFT JOIN volume v ON v.pool_id = p.id
+      GROUP BY lower(side.token)
+    )
     SELECT t.address
     FROM tokens t
+    LEFT JOIN by_token m ON m.token = lower(t.address)
     WHERE t.address <> ${NATIVE_ETH}
       AND (t.supply_read_at IS NULL OR t.supply_read_at < ${cutoff}
            OR (t.total_supply IS NOT NULL AND t.non_circulating IS NULL))
     ORDER BY
       (t.total_supply IS NOT NULL AND t.non_circulating IS NULL) DESC,
-      (SELECT MAX(ps.mc_usd) FROM pools p JOIN pool_state ps ON ps.pool_id = p.id
-        WHERE lower(p.token0) = t.address OR lower(p.token1) = t.address) DESC NULLS LAST,
-      t.supply_read_at ASC NULLS FIRST
+      m.volume DESC NULLS LAST,
+      t.supply_read_at ASC NULLS FIRST,
+      t.address ASC
     LIMIT ${limit}
   `;
   if (stale.length === 0) return 0;

@@ -122,7 +122,7 @@ export function StakeDrawer() {
                   <div className="v num">{usd(pool.fees24hUsd)}</div>
                 </div>
                 <div>
-                  <div className="k">Pool depth</div>
+                  <div className="k">Pool liquidity</div>
                   <div className="v num">{usd(pool.tvlUsd)}</div>
                 </div>
                 <div>

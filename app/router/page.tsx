@@ -11,7 +11,7 @@ export default function RouterPage() {
         eyebrow="Router · for token teams"
         title={
           <>
-            Turn creator fees into <em>permanent depth</em>.
+            Turn creator fees into <em>permanent liquidity</em>.
           </>
         }
         lede="For token teams. Point your fee wallet at the router and it buys back liquidity on a schedule or when you hit a market-cap milestone. TWAP priced, keeper triggered, funds never leave the contract."

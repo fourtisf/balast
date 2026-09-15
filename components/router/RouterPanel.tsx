@@ -180,8 +180,8 @@ export function RouterPanel() {
             </button>
           </div>
           <p className="hint">
-            Full range never goes out of position. Narrow adds more depth where traders actually
-            are.
+            Full range never goes out of position. Narrow adds more liquidity where traders
+            actually are.
           </p>
         </div>
 
@@ -219,7 +219,7 @@ export function RouterPanel() {
                 {router.firstRouteWeth > 0
                   ? `Est. first route: ${router.firstRouteWeth.toFixed(2)} WETH → +${usd(
                       router.firstRouteDepthUsd,
-                    )} depth`
+                    )} liquidity`
                   : 'The first route is sized from whatever has accrued by then.'}
               </div>
             </div>
@@ -228,12 +228,12 @@ export function RouterPanel() {
             <div className="w">Ongoing</div>
             <div>
               {hasProjection
-                ? `Pool depth compounds. Slippage on a $5K buy drops from ${router.slippageNowPct.toFixed(
+                ? `Pool liquidity compounds. Slippage on a $5K buy drops from ${router.slippageNowPct.toFixed(
                     1,
                   )}% to an estimated ${router.slippageLaterPct.toFixed(
                     1,
                   )}% after 30 days at current fee rate.`
-                : 'Pool depth compounds with every route, and slippage on a buy falls with it.'}
+                : 'Pool liquidity compounds with every route, and slippage on a buy falls with it.'}
             </div>
           </div>
           <div className="tl">
@@ -249,7 +249,7 @@ export function RouterPanel() {
         <div className="note" style={{ marginTop: 8 }}>
           <b>Routed liquidity is permanent.</b>
           <p className="hint">
-            Once fees become pool depth they cannot be withdrawn — not by you, not by Balast, not by
+            Once fees become pool liquidity they cannot be withdrawn — not by you, not by Balast, not by
             anyone. Pausing stops future routes and releases only fees that have not been routed
             yet. The keeper can trigger a route but never receives funds, and the destination pool
             cannot be changed.
@@ -259,13 +259,13 @@ export function RouterPanel() {
         {hasProjection ? (
         <div className="note" style={{ marginTop: 12 }}>
           <div className="muted" style={{ fontSize: 12.5 }}>
-            Projected depth · 90 days
+            Projected liquidity · 90 days
           </div>
           <svg
             viewBox="0 0 400 110"
             style={{ width: '100%', height: 110, marginTop: 6 }}
             role="img"
-            aria-label={`Projected pool depth rising from ${usd(
+            aria-label={`Projected pool liquidity rising from ${usd(
               router.currentDepthUsd,
             )} to about ${usd(router.projectedDepthUsd)} over 90 days`}
           >
@@ -293,13 +293,13 @@ export function RouterPanel() {
             </text>
           </svg>
           <p className="hint">
-            Projection at the current fee rate. If volume slows, depth grows slower.
+            Projection at the current fee rate. If volume slows, liquidity grows slower.
           </p>
         </div>
         ) : (
           <div className="note" style={{ marginTop: 12 }}>
             <div className="muted" style={{ fontSize: 12.5 }}>
-              Projected depth · 90 days
+              Projected liquidity · 90 days
             </div>
             <p className="hint">
               Drawn from the fee rate once a fee source is accruing. Nothing is projected

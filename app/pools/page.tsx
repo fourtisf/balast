@@ -19,7 +19,7 @@ export default function PoolsPage() {
         <div className="card panel cta">
           <div>
             <h2>
-              Own a share of the <em>depth</em>.
+              Own a share of the <em>liquidity</em>.
             </h2>
             <p className="lede">
               Deposit into any token on Robinhood Chain and collect swap fees in WETH, streamed to

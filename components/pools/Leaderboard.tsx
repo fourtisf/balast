@@ -204,9 +204,9 @@ function Row({
           <span className="n">{pool.token.symbol}</span>
           {/* Figures first, name last: the line clips at the end when the
               column is narrow, and the name is the one part the symbol above
-              it already says. Unknown depth is a dash, not a zero (§14). */}
+              it already says. Unknown liquidity is a dash, not a zero (§14). */}
           <span className="s" title={pool.token.name}>
-            <span title={capTitle}>{capText}</span> · depth{' '}
+            <span title={capTitle}>{capText}</span> · liquidity{' '}
             {pool.tvlUsd > 0 ? usd(pool.tvlUsd) : '—'} · {pool.token.name}
           </span>
         </span>
