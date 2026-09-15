@@ -448,6 +448,72 @@ describe('the feed', () => {
     feed.stop();
   });
 
+  it('settles: a board whose answers do not change costs the same few requests every refresh', async () => {
+    /**
+     * The invariant behind the fault above, stated once for every future
+     * change to the loop: a feed that learns nothing new must not ask for
+     * more. Whatever the mixture of tokens — some the first source lists,
+     * some only the second, some nobody does — the second and every later
+     * refresh costs the batch requests and nothing else, until the ten-minute
+     * retry window reopens.
+     *
+     * A regression here is not cosmetic. The board is eighty tokens; the
+     * shipped version re-asked forty of them individually every thirty
+     * seconds, which is a 429, a ten-minute backoff, and no live figure
+     * anywhere on the site.
+     */
+    let clock = 1_000_000;
+    const board = Array.from({ length: 30 }, (_, i) => ({
+      address: `0x${(i + 1).toString(16).padStart(40, '0')}`,
+      pool: '',
+    }));
+    // Ten DexScreener knows, ten only GeckoTerminal, ten nobody does.
+    const onDex = new Set(board.slice(0, 10).map((t) => t.address));
+    const onGecko = new Set(board.slice(10, 20).map((t) => t.address));
+
+    const fetch = fakeFetch((url) => {
+      const asked = (url.split('/').pop() ?? '').split('?')[0].split(',');
+      if (url.includes('/latest/dex/tokens/')) {
+        return {
+          status: 200,
+          body: { pairs: asked.filter((a) => onDex.has(a)).map((a) => pair({ baseToken: { address: a }, pairAddress: `0xp${a.slice(-6)}` })) },
+        };
+      }
+      if (url.includes('/networks?page=')) {
+        return { status: 200, body: { data: [{ id: 'robinhood', attributes: { name: 'Robinhood Chain' } }] } };
+      }
+      return {
+        status: 200,
+        body: {
+          data: asked
+            .filter((a) => onGecko.has(a))
+            .map((address) => ({ attributes: { address, price_usd: '1', volume_usd: { h24: '99' } } })),
+        },
+      };
+    });
+
+    const feed = new MarketFeed({ fetch, now: () => clock });
+    feed.follow(board);
+    await feed.refresh();
+    expect(feed.status().quoted).toBe(20);
+    expect(feed.status().unknown).toBe(10);
+
+    // Refreshes two through six: the same cost, every time.
+    const costs: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      const before = fetch.calls.length;
+      clock += 30_000;
+      await feed.refresh();
+      costs.push(fetch.calls.length - before);
+    }
+    expect(new Set(costs).size).toBe(1);
+    // Three DexScreener batches of ten and one GeckoTerminal batch of the
+    // twenty it did not place. No singles: nothing new has been learnt.
+    expect(costs[0]).toBe(4);
+    expect(feed.status().quoted).toBe(20);
+    feed.stop();
+  });
+
   it('backs off the source that refused, not the board', async () => {
     let clock = 1_000_000;
     const fetch = fakeFetch((url) => {
