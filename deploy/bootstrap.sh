@@ -16,7 +16,7 @@ REPO=https://github.com/fourtisf/depth.git
 # Overridable, and kept in step with deploy.sh: a default naming whichever
 # session last touched this file will otherwise install an old version of the
 # site on a fresh box and look like it worked.
-BRANCH="${BRANCH:-claude/jolly-knuth-fyykbh}"
+BRANCH="${BRANCH:-main}"
 NODE_MAJOR=20
 
 [[ $EUID -eq 0 ]] || { echo "run as root"; exit 1; }

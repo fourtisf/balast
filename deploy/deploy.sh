@@ -10,10 +10,15 @@ set -euo pipefail
 
 APP_USER=balast
 APP_DIR=/var/www/balast
-# The branch this deploys. Overridable — `BRANCH=... bash deploy.sh` — because
-# the default here is a fact about the last session that touched it, and a
-# stale default silently deploys the previous version while reporting success.
-BRANCH="${BRANCH:-claude/jolly-knuth-fyykbh}"
+# The branch this deploys. Overridable — `BRANCH=... bash deploy.sh`.
+#
+# It is `main` and it should stay `main`. It was once a session branch name,
+# and that is the §18 fault in its purest form: work moved to `main`, this
+# line did not, and a bare `bash deploy.sh` fetched, built and reloaded a
+# months-old branch while printing every line of a successful deploy. A
+# default that has to be remembered is a default that will be forgotten, so
+# the tracking branch is the default and the override is for the exception.
+BRANCH="${BRANCH:-main}"
 
 [[ $EUID -eq 0 ]] || { echo "run as root"; exit 1; }
 cd "$APP_DIR"
