@@ -9,7 +9,7 @@
 // evaluation order would otherwise decide whether they saw the file.
 import './load-env';
 import { RPC_URLS } from './chain/endpoints';
-import { EXPLORER_URL } from '../lib/chain';
+import { EXPLORER_URL, GECKOTERMINAL_NETWORK } from '../lib/chain';
 
 function required(name: string): string {
   const value = process.env[name];
@@ -142,7 +142,10 @@ export const env = {
     process.env.DEXSCREENER_CHAIN === undefined ? 'robinhood' : process.env.DEXSCREENER_CHAIN.trim() || null,
   dexscreenerUrl: process.env.DEXSCREENER_URL?.trim() || 'https://api.dexscreener.com',
   dexscreenerRefreshMs: Math.max(5_000, int('DEXSCREENER_REFRESH_MS', 30_000)),
-  geckoterminalNetwork: process.env.GECKOTERMINAL_NETWORK?.trim() || null,
+  geckoterminalNetwork:
+    process.env.GECKOTERMINAL_NETWORK === undefined
+      ? GECKOTERMINAL_NETWORK
+      : process.env.GECKOTERMINAL_NETWORK.trim() || null,
   geckoterminalUrl: process.env.GECKOTERMINAL_URL?.trim() || 'https://api.geckoterminal.com/api/v2',
 
   /**

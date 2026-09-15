@@ -2999,3 +2999,48 @@ that board and is working as designed (§19). Which sources were asked and what
 they answered is `npm run logos:probe -- <address>`; that is the only thing
 that can tell the difference between "nobody lists it" and "a source is
 refusing us".
+
+### What the probe said about BRODIE, and the 429 it exposed
+
+`npm run logos:probe -- BRODIE` on the box, for
+`0x7Ec3F8DD0837310Ebb6ec4d7dc478090249Ee399`:
+
+| source | answer |
+|---|---|
+| explorer | 200, knows the token — `"name":"Robinhood Dog"`, `"icon_url":null` |
+| tickers | no request: the name is not a "Robinhood Token", so not a stock |
+| onchain | the contract publishes no metadata URI |
+| pons | 200, an app shell with no image in it |
+| geckoterminal | **429, rate limited** |
+| dexscreener | 200, `"pairs":null` — it does not list the token |
+| coingecko | **429, rate limited** |
+| coinmarketcap | disabled, no `CMC_API_KEY` |
+
+So BRODIE's monogram is honest — six sources were asked and none has a
+picture. But **two of the eight never got to answer**, and that is a fault,
+not a fact about the token.
+
+Both 429s were on a *discovery* call: GeckoTerminal's `/networks` list and
+CoinGecko's `/asset_platforms`. `GECKOTERMINAL_NETWORK` was unset, so every
+process using the source walks that list — up to twenty requests — to learn an
+id that does not change. Since §21 there are **two** such processes: the logo
+process and the API's market feed. On a keyless tier of a few dozen calls a
+minute, the two of them walking it is the 429.
+
+The id is `robinhood`, and the box proved it rather than anyone guessing: the
+market feed quoted twenty-six tokens through GeckoTerminal and reported that
+id under `market.chains`. It is the default in `lib/chain.ts` now, for exactly
+the reason DexScreener's is (§20). An empty `GECKOTERMINAL_NETWORK` still
+restores discovery, and `.env.example` says so, because "unset in the file"
+and "absent" are not the same thing here.
+
+Worth re-probing after that lands: GeckoTerminal may well have BRODIE and was
+never able to say. If it does not either, the honest answer is the one §20
+already gave — the address and an image URL in `config/tokens.json`.
+
+One other thing the explorer's answer shows: BRODIE has **13 holders** and no
+trades today, at rank 05 with an FDV of $17.79M. It is listed because it
+traded inside the yield window, which on a sync 68 days behind means it traded
+in July. That is the listing bar working on data that is two months old, not a
+bug — but it is what the bar will need revisiting for once the sync reaches
+head.

@@ -35,7 +35,7 @@
 
 import { createHash } from 'node:crypto';
 import { ContractFunctionExecutionError, getAddress } from 'viem';
-import { CHAIN, CONTRACTS, EXPLORER_URL, NATIVE_ETH } from '../../lib/chain';
+import { CHAIN, CONTRACTS, EXPLORER_URL, GECKOTERMINAL_NETWORK, NATIVE_ETH } from '../../lib/chain';
 import { SITE_URL } from '../../lib/site';
 import { rpc } from '../chain/client';
 import { prisma } from '../db';
@@ -931,7 +931,14 @@ export function createSources(names: readonly string[]): LogoSource[] {
         sources.push(onchain());
         break;
       case 'geckoterminal':
-        sources.push(geckoterminal({ network: process.env.GECKOTERMINAL_NETWORK?.trim() || null }));
+        sources.push(
+          geckoterminal({
+            network:
+              process.env.GECKOTERMINAL_NETWORK === undefined
+                ? GECKOTERMINAL_NETWORK
+                : process.env.GECKOTERMINAL_NETWORK.trim() || null,
+          }),
+        );
         break;
       case 'coingecko':
         sources.push(coingecko({ apiKey: process.env.COINGECKO_API_KEY }));

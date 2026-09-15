@@ -64,6 +64,22 @@ export type ContractName = keyof typeof CONTRACTS;
 export const EXPLORER_URL = 'https://robinhoodchain.blockscout.com';
 
 /**
+ * GeckoTerminal's id for this chain.
+ *
+ * Read off the box rather than guessed: the market feed quoted twenty-six
+ * tokens through GeckoTerminal and reported this id. It is the default for
+ * the same reason DexScreener's is (§20) — because leaving it unset makes
+ * every process that uses the source DISCOVER it, by walking GeckoTerminal's
+ * network list up to twenty requests at a time, on a keyless tier of a few
+ * dozen calls a minute. Two processes doing that is what earned the 429 that
+ * made GeckoTerminal answer nothing for BRODIE, a token it may well know.
+ *
+ * `GECKOTERMINAL_NETWORK` still overrides it, and an empty value restores the
+ * discovery.
+ */
+export const GECKOTERMINAL_NETWORK = 'robinhood';
+
+/**
  * The chain's public RPC, for a wallet that does not know the chain yet.
  * The first of the registry's endpoints (server/chain/endpoints.ts carries
  * the full list, with failover, for the indexer).
