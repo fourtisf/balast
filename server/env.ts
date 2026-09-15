@@ -125,6 +125,7 @@ export const env = {
     'explorer',
     'tickers',
     'onchain',
+    'pons',
     'geckoterminal',
     'dexscreener',
     'coingecko',

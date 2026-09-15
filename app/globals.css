@@ -145,7 +145,7 @@ h1 em{font-style:italic;color:var(--ac)}
 .lb-title{font-family:var(--serif);font-weight:400;font-size:30px;line-height:1;margin:0 0 6px;letter-spacing:-.01em}
 .lb-sub{margin:0;font-size:13px;color:var(--fg-3)}
 .lb-rows{list-style:none;margin:0;padding:0;border-top:1px solid var(--bd-n)}
-.lb-row{position:relative;display:grid;grid-template-columns:64px minmax(0,1fr) 150px 100px 240px;align-items:center;gap:20px;min-height:76px;padding:10px 0;border-bottom:1px solid var(--bd-n);cursor:pointer;transition:background var(--t-hover),transform var(--t-reorder)}
+.lb-row{position:relative;display:grid;grid-template-columns:64px minmax(0,1fr) 130px 150px 100px 240px;align-items:center;gap:20px;min-height:76px;padding:10px 0;border-bottom:1px solid var(--bd-n);cursor:pointer;transition:background var(--t-hover),transform var(--t-reorder)}
 .lb-row::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:2px;background:var(--ac);opacity:0;transition:var(--t-hover)}
 .lb-row:hover{background:var(--panel-2)}
 .lb-row:hover::before,.lb-row:focus-within::before,.lb-row.lead::before{opacity:1}
@@ -362,7 +362,7 @@ h1 em{font-style:italic;color:var(--ac)}
 
 /* ---------- responsive: columns drop by priority (§5) ---------- */
 @media (max-width:1180px){
-  .lb-row{grid-template-columns:56px minmax(0,1fr) 140px 110px 200px;gap:16px}
+  .lb-row{grid-template-columns:56px minmax(0,1fr) 120px 140px 110px 200px;gap:16px}
 }
 @media (max-width:1100px){
   .search{width:190px}
@@ -383,7 +383,7 @@ h1 em{font-style:italic;color:var(--ac)}
   .nav-links::-webkit-scrollbar{display:none}
   .search{flex:1 1 150px;width:auto}
   .mast{grid-template-columns:1fr;gap:24px;align-items:start}
-  .lb-row{grid-template-columns:48px minmax(0,1fr) 130px 100px}
+  .lb-row{grid-template-columns:48px minmax(0,1fr) 110px 130px 100px}
   .lb-spark{display:none}                          /* the sparkline goes first */
   .g4{grid-template-columns:1fr 1fr}
 }
@@ -393,6 +393,7 @@ h1 em{font-style:italic;color:var(--ac)}
   .sum .v{white-space:normal}
   .tl{grid-template-columns:1fr;gap:6px}
   .lb-row{grid-template-columns:40px minmax(0,1fr) 104px 80px;gap:10px;min-height:66px}
+  .lb-vol{display:none}                            /* then the volume: fees are what an LP earns */
   .rk{font-size:26px;padding-left:8px}
   .logo.lg{width:32px;height:32px;font-size:10.5px}
   .lb-row .tok .n{font-size:15px}

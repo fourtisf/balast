@@ -50,6 +50,8 @@ export type Fetch = (
   ok: boolean;
   status: number;
   json(): Promise<unknown>;
+  /** The body as text, for a source that reads a page rather than an API. */
+  text?(): Promise<string>;
   /** Present on a real Response; a fake may omit it. */
   headers?: { get(name: string): string | null };
 }>;
@@ -81,6 +83,12 @@ export async function imageLoads(fetch: Fetch, url: string): Promise<boolean> {
 
 export interface LogoSource {
   readonly name: string;
+  /**
+   * Set on a source that is a launchpad's own site: a token it answers for
+   * was launched there, and the token row records it (§4 lists launchpad as
+   * token metadata, which may come from outside).
+   */
+  readonly launchpad?: string;
   /**
    * An https image URL for the token, or null: not found, not supported, or
    * the source is unavailable. Never throws — a logo must never take a pass
@@ -123,6 +131,22 @@ async function get(fetch: Fetch, url: string, headers: Record<string, string>): 
 
 async function getJson(fetch: Fetch, url: string, headers: Record<string, string>): Promise<unknown> {
   return (await get(fetch, url, headers)).body;
+}
+
+/** A page's text, or null for anything but a 2xx. */
+async function getText(fetch: Fetch, url: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      headers: { accept: 'text/html,*/*;q=0.5', 'user-agent': USER_AGENT },
+      signal: controller.signal,
+    });
+    if (!response.ok || !response.text) return null;
+    return await response.text();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -251,6 +275,69 @@ export async function forgetSharedLogos(options: { minShared?: number; log?: Log
   }
   return forgotten;
 }
+
+// ------------------------------------------------------- launchpads --
+
+/** Fields a launchpad's page data names an image by. */
+const PAGE_IMAGE_KEYS = 'image|imageUrl|image_url|imageURI|logo|logoUrl|logo_url|logoURI|icon|iconUrl|icon_url';
+/** A generated share card is not a logo. */
+const SHARE_CARD = /\/(api\/)?og(-image)?(\/|\?|$)|opengraph/i;
+
+/**
+ * The image a launchpad's own token page carries, from the page's data.
+ *
+ * A launchpad publishes a page per token, and that page holds the token's
+ * image in its embedded data — a `"image":"https://…"` field, escaped or
+ * not, in the JSON the app ships with the page — and often in `og:image`.
+ * The data field is read first, because `og:image` on such sites is as
+ * often a generated share card as the logo; a card route is refused, and
+ * `og:image` is taken only when it names an image file outright.
+ */
+export function imageFromPage(html: string): string | null {
+  const field = new RegExp(`\\\\?"(?:${PAGE_IMAGE_KEYS})\\\\?"\\s*:\\s*\\\\?"(https:[^"\\\\]+)`, 'g');
+  for (const match of html.matchAll(field)) {
+    const url = match[1];
+    if (SHARE_CARD.test(url)) continue;
+    if (isSafeLogoUrl(url)) return url;
+  }
+  const og =
+    /<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image)["'][^>]+content=["']([^"']+)["']/i.exec(html) ??
+    /<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:og:image|twitter:image)["']/i.exec(html);
+  if (og) {
+    const url = og[1];
+    if (!SHARE_CARD.test(url) && IMAGE_EXTENSION.test(url) && isSafeLogoUrl(url)) return url;
+  }
+  return null;
+}
+
+/**
+ * A launchpad's own site as a source: `{base}/{address}` is the token's
+ * page, and a page that exists says the token was launched there.
+ *
+ * Pons (ponsfamily.com/launchpad) is the first. None of this could be
+ * verified from the session that wrote it — the sandbox reaches no
+ * launchpad — so the parser accepts the common shapes and the probe says
+ * what the real page answers.
+ */
+export function launchpadPage(options: { name: string; launchpad: string; base: string }): LogoSource {
+  const base = options.base.replace(/\/+$/, '');
+  return {
+    name: options.name,
+    launchpad: options.launchpad,
+    async lookup(address, { fetch }) {
+      if (address.toLowerCase() === NATIVE_ETH) return null;
+      try {
+        const html = await getText(fetch, `${base}/${address}`);
+        if (!html) return null;
+        return imageFromPage(html);
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
+export const PONS_LAUNCHPAD_URL = 'https://www.ponsfamily.com/launchpad';
 
 // ------------------------------------------------- tokenised stocks --
 
@@ -747,6 +834,11 @@ export function createSources(names: readonly string[]): LogoSource[] {
       case 'stocks':
         sources.push(tickers());
         break;
+      case 'pons':
+        sources.push(
+          launchpadPage({ name: 'pons', launchpad: 'Pons', base: process.env.PONS_LAUNCHPAD_URL?.trim() || PONS_LAUNCHPAD_URL }),
+        );
+        break;
       case 'onchain':
       case 'contract':
         sources.push(onchain());
@@ -897,6 +989,7 @@ export async function lookupLogos(options: LookupOptions): Promise<number> {
   for (const token of candidates) {
     let url: string | null = null;
     let via = '';
+    let launchpad: string | null = null;
     for (const source of sources) {
       const named = await source.lookup(token.address, { fetch, log });
       if (!named) continue;
@@ -907,12 +1000,17 @@ export async function lookupLogos(options: LookupOptions): Promise<number> {
       }
       url = named;
       via = source.name;
+      launchpad = source.launchpad ?? null;
       break;
     }
     await prisma.token.update({
       where: { address: token.address },
       data: { logoCheckedAt: now, ...(url ? { logoUrl: url } : {}) },
     });
+    // A launchpad's own page answered: that is where the token was launched.
+    if (launchpad) {
+      await prisma.token.updateMany({ where: { address: token.address, launchpad: null }, data: { launchpad } });
+    }
     if (url) {
       found++;
       log(`  logo for ${token.symbol} from ${via}`);

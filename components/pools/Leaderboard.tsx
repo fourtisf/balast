@@ -202,6 +202,13 @@ function Row({
         </span>
       </button>
 
+      {/* The board is ranked by volume, so the volume is on the row: fees are
+          what an LP earns, volume is what produced them. */}
+      <div className="lb-fig lb-vol">
+        <Flash as="div" className="big num" text={usd(pool.volume24hUsd)} />
+        <span className="cap">vol · 24h</span>
+      </div>
+
       {facet === 'volume' ? (
         <div className="lb-fig">
           <Flash as="div" className="big num" text={usd(pool.fees24hUsd)} />

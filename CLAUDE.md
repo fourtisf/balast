@@ -2039,3 +2039,33 @@ Unchanged: a token no source knows (GUH on that board) keeps its derived
 mark, and `npm run logos:probe -- GUH` is how to see which sources were
 asked and what they answered.
 
+### Volume on the row, and a launchpad's own page as a source
+
+**The board ranked by a number it did not show.** Every row now carries
+the day's volume beside the day's fees — `vol · 24h`, then `fees · 24h` —
+in both facets. Fees stay the headline (§1: they are what an LP earns;
+volume is what produced them), so below 640px it is the volume column
+that drops, after the sparkline. Verified at 1280, 800 and 390 with no
+horizontal overflow.
+
+**Pons.** The owner asked for the launchpad's tokens. Two facts first:
+PONS graduated 63 days ago and the indexer is 68 days behind, so nothing
+from that launchpad has been read yet — they arrive when the backfill
+does, and the throughput work above is what makes that hours rather than
+never. Graduated tokens trade in ordinary v4 pools and need nothing
+special; pre-graduation trading goes through the launchpad's hook, which
+still needs its address (`LAUNCHPAD_HOOKS`, §14).
+
+What could be built now is the launchpad as a source. `launchpadPage`
+asks a launchpad's own site for the token's page — `{base}/{address}`,
+Pons at `ponsfamily.com/launchpad` — and reads the token image out of the
+page's data: an `image`-like field in the JSON the app ships with the page,
+escaped or not, and `og:image` only when it names an image file, because
+on such sites `og:image` is as often a generated share card as the logo.
+A source that answers is the launchpad the token came from, so the token
+row records `launchpad` (metadata, which §4 allows from outside). `pons`
+sits in `LOGO_SOURCES` after `onchain`; `PONS_LAUNCHPAD_URL` moves it.
+Unverified from here, as every source was: the sandbox reaches no
+launchpad, the parser accepts the common shapes, and `npm run logos:probe`
+prints what the real page answers.
+

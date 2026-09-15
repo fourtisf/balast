@@ -25,6 +25,8 @@ import {
   onchain,
   tickers,
   forgetSharedLogos,
+  imageFromPage,
+  launchpadPage,
   reconcileStockLogos,
   GENERIC_LOGOS_KEY,
   lookupLogos,
@@ -111,6 +113,54 @@ describe('every source', () => {
     await coinmarketcap({ apiKey: 'k' }).lookup(TOKEN, { fetch, log: quiet });
     expect(seen.length).toBeGreaterThanOrEqual(4);
     for (const headers of seen) expect(headers['user-agent']).toMatch(/^Mozilla\/5\.0 \(compatible; Balast/);
+  });
+});
+
+describe('launchpad page', () => {
+  const page = (body: string) => {
+    const calls: string[] = [];
+    const fetch: Fetch = async (url) => {
+      calls.push(url);
+      return { ok: true, status: 200, json: async () => ({}), text: async () => body };
+    };
+    return { fetch, calls };
+  };
+
+  it('reads the token image out of the page data, escaped or not, and skips a share card', () => {
+    expect(imageFromPage('<script>self.__next_f.push(["{\\"image\\":\\"https://cdn.pons.example/t/abc.png\\"}"])</script>')).toBe(
+      'https://cdn.pons.example/t/abc.png',
+    );
+    expect(imageFromPage('{"imageUrl":"https://cdn.pons.example/t/abc.webp","name":"x"}')).toBe('https://cdn.pons.example/t/abc.webp');
+    expect(
+      imageFromPage('{"image":"https://www.pons.example/api/og?token=abc"}<meta property="og:image" content="https://cdn.pons.example/t/abc.png">'),
+    ).toBe('https://cdn.pons.example/t/abc.png');
+  });
+
+  it('takes og:image only when it names an image file, never a generated card, never http', () => {
+    expect(imageFromPage('<meta property="og:image" content="https://cdn.pons.example/t/abc.jpg">')).toBe('https://cdn.pons.example/t/abc.jpg');
+    expect(imageFromPage('<meta content="https://cdn.pons.example/t/abc.jpg" property="og:image">')).toBe('https://cdn.pons.example/t/abc.jpg');
+    expect(imageFromPage('<meta property="og:image" content="https://www.pons.example/api/og/abc">')).toBeNull();
+    expect(imageFromPage('<meta property="og:image" content="http://cdn.pons.example/t/abc.png">')).toBeNull();
+    expect(imageFromPage('<html>nothing here</html>')).toBeNull();
+  });
+
+  it('asks the launchpad for the token\'s own page and carries the launchpad\'s name', async () => {
+    const api = page('{"image":"https://cdn.pons.example/t/abc.png"}');
+    const src = launchpadPage({ name: 'pons', launchpad: 'Pons', base: 'https://pons.example/launchpad/' });
+    expect(src.launchpad).toBe('Pons');
+    expect(await src.lookup(TOKEN, { fetch: api.fetch, log: quiet })).toBe('https://cdn.pons.example/t/abc.png');
+    expect(api.calls).toEqual([`https://pons.example/launchpad/${TOKEN}`]);
+    expect(await src.lookup(NATIVE_ETH, { fetch: api.fetch, log: quiet })).toBeNull();
+  });
+
+  it('is null for a page that is missing or unreadable', async () => {
+    const missing: Fetch = async () => ({ ok: false, status: 404, json: async () => ({}) });
+    const src = launchpadPage({ name: 'pons', launchpad: 'Pons', base: 'https://pons.example/launchpad' });
+    expect(await src.lookup(TOKEN, { fetch: missing, log: quiet })).toBeNull();
+    const down: Fetch = async () => {
+      throw new Error('ECONNRESET');
+    };
+    expect(await src.lookup(TOKEN, { fetch: down, log: quiet })).toBeNull();
   });
 });
 
@@ -562,6 +612,22 @@ describe('lookupLogos', () => {
     // And the explorer, asked about a fourth token with the same picture, now refuses it.
     const api = service({ '/api/v2/tokens/': { icon_url: feather } });
     expect(await blockscout().lookup('0x00000000000000000000000000000000000000a6', { fetch: api.fetch, log: quiet })).toBeNull();
+  });
+
+  it('records which launchpad a token came from when the launchpad\'s own page answered', async () => {
+    await resetDatabase();
+    await seedToken(TOKEN, 'BUN');
+    const pons: LogoSource = {
+      name: 'pons',
+      launchpad: 'Pons',
+      async lookup(address) {
+        return address === TOKEN ? 'https://cdn.pons.example/t/bun.png' : null;
+      },
+    };
+    expect(await lookupLogos({ sources: [pons], fetch: service({ 'cdn.pons.example': {} }).fetch })).toBe(1);
+    const row = await prisma.token.findUniqueOrThrow({ where: { address: TOKEN } });
+    expect(row.logoUrl).toBe('https://cdn.pons.example/t/bun.png');
+    expect(row.launchpad).toBe('Pons');
   });
 
   it('does nothing with no sources', async () => {
