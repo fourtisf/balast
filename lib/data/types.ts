@@ -268,6 +268,16 @@ export interface GlobalStats {
   totalFeesUsd: number;
   tvlUsd: number;
   ethPriceUsd: number;
+  /**
+   * Where the ETH figure came from: an aggregator's quote for the wrapper,
+   * live, or the chain's anchor price at the last indexed block. Absent on
+   * simulated data. The masthead labels it, because during a sync the two
+   * are weeks apart (§7).
+   */
+  ethPriceBasis?: 'live' | 'chain';
+  ethPriceSource?: MarketSourceName;
+  /** When that price was read, ISO. */
+  ethPriceAt?: string;
 }
 
 export interface Payout {

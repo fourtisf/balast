@@ -21,7 +21,7 @@
  * no harvest payouts — the components already have empty states for that.
  */
 
-import { CONTRACTS, PROTOCOL_FEE_BPS, REWARD_WINDOW_SECONDS, NATIVE_ETH, isStablecoinSql } from '../../lib/chain';
+import { CONTRACTS, PROTOCOL_FEE_BPS, REWARD_WINDOW_SECONDS, NATIVE_ETH, isEther, isStablecoinSql } from '../../lib/chain';
 import type { MarketFeed } from './market';
 import type {
   FeeYield,
@@ -667,7 +667,14 @@ export async function buildSnapshot(
   const pools = onePoolPerToken(rows.map(toPool));
   if (options.market) {
     for (const pool of pools) pool.market = options.market.quote(pool.token.address);
-    options.market.follow(pools.map((p) => ({ address: p.token.address, pool: p.address })));
+    // And the wrapper, for the masthead's ETH price: with the ether market's
+    // own pool when it is on the board, so the feed reports that pool's
+    // liquidity beside the token's.
+    const etherRow = pools.find((p) => isEther(p.token.address));
+    options.market.follow([
+      ...pools.map((p) => ({ address: p.token.address, pool: p.address })),
+      { address: CONTRACTS.weth, pool: etherRow?.address ?? '' },
+    ]);
   }
   const router = await queryRouter(pools);
 
@@ -710,6 +717,13 @@ export async function buildSnapshot(
   // meaningless. It stays at zero until there is a figure to compare against.
   const featuredHistory = bucketSum(pools.map((p) => p.feeHistory));
 
+  // Live over chain for the masthead's ETH figure (the owner's exception to
+  // §4, §20): the anchor row is the price at the last indexed block, which
+  // during a sync is weeks old, and a headline price that is weeks old is
+  // wrong however honestly it was derived. The chain's figure still prices
+  // every dollar on the site; this only decides what the ETH row reads, and
+  // the row says which it is.
+  const liveEth = options.market?.ethPrice() ?? null;
   return {
     pools,
     vaults,
@@ -718,7 +732,10 @@ export async function buildSnapshot(
       totalPositions: totals?.positions ?? 0,
       totalFeesUsd: totals?.fees_usd ?? 0,
       tvlUsd,
-      ethPriceUsd: ethRow?.price_usd ?? 0,
+      ethPriceUsd: liveEth?.usd ?? ethRow?.price_usd ?? 0,
+      ethPriceBasis: liveEth ? 'live' : 'chain',
+      ethPriceSource: liveEth?.source,
+      ethPriceAt: liveEth?.at ?? asOf.toISOString(),
     },
     featured: {
       fees24hUsd,

@@ -3381,3 +3381,73 @@ On a fresh Postgres: `typecheck`, `lint`, the full suite — 38 files and
 375 tests, the positions, history-walk, fees, manage and tx-history
 suites among them — the production build, and the 34 Playwright
 end-to-end tests against that build. All green.
+
+---
+
+## 24. The ETH price, live; and a cursor stamped 1 January 1970
+
+ALFA's screenshot of the board: the masthead's ETH at `$1,784.27` beside a
+top bar reading `Indexer 20718d 7h behind` and a dateline of *Thursday 1
+January*. The ask was one line — *harga eth is wrong, fixkan, saya ingin
+harga mengikuti real time* — and the screenshot held a second fault the
+ask did not name.
+
+### The ETH price follows the market now
+
+The masthead's figure was the chain's anchor price at the last indexed
+block (§4.3), which during a sync is weeks old; an honestly derived price
+that is weeks old is still the wrong number to headline. Under the
+owner's exception to §4 (§20, §21) the market feed now asks for the
+wrapper — aeWETH, one token per ether (§18) — beside the board's tokens,
+and `global.ethPriceUsd` is the wrapper's live quote when there is a
+fresh one, the chain's anchor price otherwise. The masthead row says
+which, `live` or `chain`, with the source and the quote's age in the
+tooltip.
+
+Two things that came with it. The feed asks for ether **as** the wrapper
+— no aggregator can be asked about address(0), so the ether market's row
+had never had a live quote at all; it wears the wrapper's now. And what
+prices every dollar figure on the site is unchanged: the anchor series,
+from the chain. This decides what one row reads, and the row says so.
+
+### A timestamp that was not a time
+
+`20718d` is the distance from 1 January 1970 to the day of the
+screenshot: the cursor's chain time was the epoch. Some endpoint had
+answered a block with a zeroed timestamp, and the pass believed it — the
+cursor, and every row of that pass, was stamped 1970, so the hourly
+tables gained rows in an hour no trailing window would ever reach, and
+the top bar, the dateline and every "last 24 hours" on the site measured
+from the wrong end of time.
+
+`server/chain/block-time.ts` refuses such a stamp where it arrives:
+inside the RPC failover, so an endpoint that answers nonsense is an
+endpoint to move on from; a log's own `blockTimestamp` that is not a time
+is ignored and the block is timed by `getBlock` like an unstamped one;
+and the cursor write is the last line of defence, refusing to record a
+pass whose end block has no sane time. The floor is 2020 — generous on
+purpose.
+
+What was already written is repaired on the indexer's next start
+(`server/indexer/repair-times.ts`): rows before the floor are deleted,
+the aggregate hours before it with them, the cursor is moved back to the
+block before the earliest of them so the next pass reads that range
+again with real times, the cursor's own time is restored from the newest
+row still in the tables, and the full rebuild is forced. On a healthy
+box it finds nothing and changes nothing. The suite gives a synced
+database exactly the box's state and asserts one pass of a new process
+leaves the tables equal, as text, to a clean sync's (§9).
+
+**What this does not say** is which endpoint answered zero, or when. The
+refusal now names the block and the call in the indexer's log, so the
+next time it happens the log says.
+
+### Verified here
+
+`typecheck`, `lint`, the full suite (40 files, 382 tests, the
+block-time and repair suites among them), the production build and the
+34 Playwright tests. Unverified, as always from this sandbox: the
+aggregators' answer for the wrapper on this chain. `/api/health`'s
+`market` section says whether the wrapper is quoted, and
+`npm run market:probe -- 0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73`
+prints what each source answers for it.

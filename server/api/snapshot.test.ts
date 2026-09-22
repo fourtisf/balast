@@ -340,15 +340,18 @@ describe('the listing bar', () => {
     let known: string | null = null;
     const fetch = (async (url: string) => {
       const asked = url.split('/').pop()!.split(',');
-      if (known === null) known = asked[0];
-      const pairs = asked.filter((a) => a === known).map((address) => ({
+      // The first token asked about that is not the wrapper, which the
+      // board asks for separately and which the ether market wears.
+      if (known === null) known = asked.find((a) => a !== WETH.toLowerCase()) ?? asked[0];
+      // And the wrapper, so the masthead's ETH figure has a live price.
+      const pairs = asked.filter((a) => a === known || a === WETH.toLowerCase()).map((address) => ({
         chainId: 'robinhoodchain',
         dexId: 'uniswap',
         pairAddress: '0xpair',
         url: 'https://dexscreener.com/robinhoodchain/0xpair',
         baseToken: { address },
         quoteToken: { address: WETH },
-        priceUsd: '1.5',
+        priceUsd: address === WETH.toLowerCase() ? '4000' : '1.5',
         txns: { h24: { buys: 7, sells: 3 } },
         volume: { h24: 123_456 },
         priceChange: { h24: -2.5 },
@@ -364,22 +367,35 @@ describe('the listing bar', () => {
     expect(first).not.toBeNull();
     // Nothing quoted yet: the build told the feed what to follow.
     expect(first!.pools.every((p) => p.market === null)).toBe(true);
-    expect(feed.status().followed).toBe(first!.pools.filter((p) => p.token.address !== '0x0000000000000000000000000000000000000000').length);
+    // The board's tokens, ether asked as its wrapper, and the wrapper itself
+    // (followed for the ETH price whether or not ether is on the board).
+    const asked = new Set(first!.pools.map((p) => (p.token.address === '0x0000000000000000000000000000000000000000' ? WETH : p.token.address.toLowerCase())));
+    asked.add(WETH.toLowerCase());
+    expect(feed.status().followed).toBe(asked.size);
 
     await feed.refresh();
     const second = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0, market: feed });
+    // The known token, and the ether market — whose token is the wrapper.
     const quoted = second!.pools.filter((p) => p.market);
-    expect(quoted).toHaveLength(1);
+    expect(quoted).toHaveLength(2);
+    expect(quoted.map((p) => p.token.address.toLowerCase())).toContain(WETH.toLowerCase());
+    // The masthead's ETH figure is the wrapper's live price, and says so.
+    expect(second!.global.ethPriceUsd).toBe(4000);
+    expect(second!.global.ethPriceBasis).toBe('live');
+    expect(second!.global.ethPriceSource).toBe('dexscreener');
     expect(quoted[0].market!.volume24hUsd).toBe(123_456);
     expect(quoted[0].market!.buys24h).toBe(7);
     expect(quoted[0].market!.priceChange24hPct).toBe(-2.5);
     // The chain's own figure is still there, unchanged, beside it.
     expect(quoted[0].volume24hUsd).not.toBe(123_456);
-    expect(second!.pools.filter((p) => p.market === null).length).toBe(second!.pools.length - 1);
+    expect(second!.pools.filter((p) => p.market === null).length).toBe(second!.pools.length - 2);
     feed.stop();
 
     const bare = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0 });
     expect(bare!.pools.every((p) => p.market === null)).toBe(true);
+    // No feed: the ETH figure is the chain's anchor price, and says so.
+    expect(bare!.global.ethPriceBasis).toBe('chain');
+    expect(bare!.global.ethPriceUsd).toBeGreaterThan(0);
   });
 
   it('hides a token with no readable supply below the bar, and never the ether market', async () => {

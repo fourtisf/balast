@@ -507,6 +507,7 @@ h1 em{font-style:italic;color:var(--ac)}
 .community.foot .soc:hover{background:none;color:var(--fg)}
 .community.foot .soc svg{width:14px;height:14px}
 .facts .soon{color:var(--fg-3);font-weight:500}
+.facts .basis{margin-left:7px;font-family:var(--sans);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3)}
 .facts .ca{font:inherit;font-family:var(--mono);font-weight:600;color:var(--fg);text-decoration:underline dotted;text-underline-offset:3px;padding:0}
 .foot-ca{color:var(--fg-2)}
 @media (max-width:1400px){.search{width:220px}}

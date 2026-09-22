@@ -36,7 +36,8 @@
  * off. `/api/health` reports per source how many tokens it quotes.
  */
 
-import type { MarketQuote } from '../../lib/data/types';
+import { CONTRACTS, isEther } from '../../lib/chain';
+import type { MarketQuote, MarketSourceName } from '../../lib/data/types';
 import type { Fetch } from '../indexer/logo-sources';
 import {
   type MarketAsk,
@@ -105,6 +106,8 @@ export const MISS_RETRY_MS = 10 * 60_000;
 /** A quote older than this is not live; it is dropped rather than shown. */
 export const STALE_MS = 15 * 60_000;
 const MAX_BACKOFF_MS = 10 * 60_000;
+/** Ether's address for an aggregator: the wrapper's. */
+const WETH = CONTRACTS.weth.toLowerCase();
 
 interface SourceState {
   source: MarketSource;
@@ -169,22 +172,41 @@ export class MarketFeed {
     if (!this.enabled) return;
     let added = false;
     const next = new Map<string, MarketAsk>();
+    // Ether is asked for as its wrapper: no aggregator can be asked about
+    // address(0), and aeWETH is one token per ether (§18), so the wrapper's
+    // price is ether's. The board asks for the wrapper itself too, for the
+    // masthead's ETH price (ethPrice), whether or not ether is on it.
     for (const t of tokens) {
-      const address = t.address.toLowerCase();
-      if (!/^0x[0-9a-f]{40}$/.test(address) || address === '0x0000000000000000000000000000000000000000') continue;
-      next.set(address, { address, pool: t.pool.toLowerCase() });
+      const address = isEther(t.address) ? WETH : t.address.toLowerCase();
+      if (!/^0x[0-9a-f]{40}$/.test(address)) continue;
+      const pool = t.pool.toLowerCase();
+      const before = next.get(address);
+      next.set(address, { address, pool: pool || before?.pool || '' });
       if (!this.followed.has(address)) added = true;
     }
     this.followed = next;
     if (added && !this.refreshing) this.schedule(0);
   }
 
-  /** The live quote for a token, or null when there is none fresh enough. */
+  /** The live quote for a token, or null when there is none fresh enough. Ether answers as its wrapper. */
   quote(address: string): MarketQuote | null {
-    const q = this.quotes.get(address.toLowerCase());
+    const q = this.quotes.get(isEther(address) ? WETH : address.toLowerCase());
     if (!q) return null;
     if (this.now() - Date.parse(q.at) > STALE_MS) return null;
     return q;
+  }
+
+  /**
+   * Ether in dollars, live: the wrapper's quote, when there is a fresh one
+   * with a price on it. The masthead shows this over the chain's anchor
+   * price, which is the price at the last indexed block and during a sync
+   * is weeks old. Null when no source has answered, and the chain's figure
+   * shows, labelled as the chain's.
+   */
+  ethPrice(): { usd: number; at: string; source: MarketSourceName } | null {
+    const q = this.quote(WETH);
+    if (!q || q.priceUsd === null || !(q.priceUsd > 0)) return null;
+    return { usd: q.priceUsd, at: q.at, source: q.source };
   }
 
   status(): MarketStatus {

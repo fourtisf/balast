@@ -17,6 +17,7 @@
  */
 
 import { RPC_BATCH_SIZE, rpc, rpcBatched } from '../chain/client';
+import { blockDate, isSaneBlockTime } from '../chain/block-time';
 import type { LogSource } from './poller';
 
 interface RawLog {
@@ -42,10 +43,15 @@ export class ViemLogSource implements LogSource {
   constructor(private readonly log: (message: string) => void = () => {}) {}
 
   async getHeadBlock(): Promise<{ number: bigint; timestamp: Date }> {
-    const block = await rpc((c) => c.getBlock({ blockTag: 'latest' }), 'getBlock(latest)');
-    const timestamp = new Date(Number(block.timestamp) * 1000);
-    this.times.set(block.number, timestamp);
-    return { number: block.number, timestamp };
+    // The timestamp is checked INSIDE the failover: an endpoint that answers
+    // a block with a zeroed time is an endpoint to move on from, not a time
+    // to record (chain/block-time.ts).
+    const block = await rpc(async (c) => {
+      const b = await c.getBlock({ blockTag: 'latest' });
+      return { number: b.number, timestamp: blockDate(b.timestamp, `getBlock(latest=${b.number})`) };
+    }, 'getBlock(latest)');
+    this.times.set(block.number, block.timestamp);
+    return block;
   }
 
   async getLogs(args: {
@@ -85,8 +91,13 @@ export class ViemLogSource implements LogSource {
       }
       const blockNumber = BigInt(log.blockNumber);
       if (log.blockTimestamp && !this.times.has(blockNumber)) {
-        this.times.set(blockNumber, new Date(Number(BigInt(log.blockTimestamp)) * 1000));
-        this.timestampsFromLogs++;
+        // A stamp that is not a time (a zeroed field) is ignored, and the
+        // block is timed by getBlock like one the node did not stamp at all.
+        const stamped = new Date(Number(BigInt(log.blockTimestamp)) * 1000);
+        if (isSaneBlockTime(stamped)) {
+          this.times.set(blockNumber, stamped);
+          this.timestampsFromLogs++;
+        }
       }
       // Remember which blocks we will need a timestamp for.
       this.needed.add(blockNumber);
@@ -149,10 +160,16 @@ export class ViemLogSource implements LogSource {
     for (let i = 0; i < blocks.length; i += RPC_BATCH_SIZE) {
       const group = blocks.slice(i, i + RPC_BATCH_SIZE);
       const found = await rpcBatched(
-        (c) => Promise.all(group.map((number) => c.getBlock({ blockNumber: number }))),
+        (c) =>
+          Promise.all(
+            group.map(async (number) => {
+              const b = await c.getBlock({ blockNumber: number });
+              return { number: b.number, timestamp: blockDate(b.timestamp, `getBlock(${number})`) };
+            }),
+          ),
         `getBlock×${group.length}`,
       );
-      for (const block of found) this.times.set(block.number, new Date(Number(block.timestamp) * 1000));
+      for (const block of found) this.times.set(block.number, block.timestamp);
     }
   }
 
@@ -162,9 +179,14 @@ export class ViemLogSource implements LogSource {
     for (let i = 0; i < blocks.length; i += GROUP) {
       const group = blocks.slice(i, i + GROUP);
       const found = await Promise.all(
-        group.map((number) => rpc((c) => c.getBlock({ blockNumber: number }), `getBlock(${number})`)),
+        group.map((number) =>
+          rpc(async (c) => {
+            const b = await c.getBlock({ blockNumber: number });
+            return { number: b.number, timestamp: blockDate(b.timestamp, `getBlock(${number})`) };
+          }, `getBlock(${number})`),
+        ),
       );
-      for (const block of found) this.times.set(block.number, new Date(Number(block.timestamp) * 1000));
+      for (const block of found) this.times.set(block.number, block.timestamp);
     }
   }
 }

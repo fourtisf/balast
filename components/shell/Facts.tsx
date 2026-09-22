@@ -2,7 +2,7 @@
 
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
-import { count, shortWallet, usdExact, usdHeadline } from '@/lib/format';
+import { count, duration, shortWallet, usdExact, usdHeadline } from '@/lib/format';
 import { TOKEN_CA } from '@/lib/site';
 
 /**
@@ -18,6 +18,12 @@ import { TOKEN_CA } from '@/lib/site';
  * line is "coming soon". Any address circulating before it appears here is
  * not ours; the tooltip says so.
  */
+/** "4m" / "12s": how long ago an ISO time was, for a tooltip. */
+function ageOf(iso: string): string {
+  const seconds = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
+  return duration(seconds);
+}
+
 export function Facts() {
   const { global } = useMarket();
   const { showToast } = useUi();
@@ -62,8 +68,24 @@ export function Facts() {
       </div>
       <div>
         <dt>ETH</dt>
-        <dd className="num" data-fact="eth">
+        <dd
+          className="num"
+          data-fact="eth"
+          data-basis={global.ethPriceBasis}
+          title={
+            global.ethPriceBasis === 'live'
+              ? `Live, via ${global.ethPriceSource ?? 'an aggregator'}${global.ethPriceAt ? `, ${ageOf(global.ethPriceAt)} ago` : ''}. The chain's own anchor price still values every dollar figure on the site.`
+              : global.ethPriceBasis === 'chain'
+                ? 'The anchor price at the last indexed block: the chain\u2019s, and as old as the lag in the top bar. No aggregator has answered for ether yet.'
+                : undefined
+          }
+        >
           {usdExact(global.ethPriceUsd, 2)}
+          {global.ethPriceBasis && (
+            <span className="basis" aria-label={`${global.ethPriceBasis} price`}>
+              {global.ethPriceBasis}
+            </span>
+          )}
         </dd>
       </div>
       <div>

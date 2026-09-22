@@ -239,6 +239,51 @@ describe('parsing GeckoTerminal', () => {
   });
 });
 
+describe('ether, through its wrapper', () => {
+  const WETH = '0x0bd7d308f8e1639fab988df18a8011f41eacad73';
+  const ETHER = '0x0000000000000000000000000000000000000000';
+
+  it('always follows the wrapper, answers for ether with its quote, and reports the ETH price', async () => {
+    // No aggregator can be asked about address(0). The board's ether row
+    // asks as the wrapper, the wrapper is followed whether or not the board
+    // shows ether at all, and the masthead's ETH figure is the wrapper's
+    // price — one token per ether (§18), so the two are the same asset.
+    let clock = 1_000_000;
+    const fetch = fakeFetch((url) => {
+      const asked = url.split('/').pop()!.split(',');
+      return {
+        status: 200,
+        body: {
+          pairs: asked
+            .filter((a) => a === WETH)
+            .map(() => pair({ baseToken: { address: WETH, name: 'Wrapped Ether', symbol: 'WETH' }, priceUsd: '4123.45', fdv: 1, marketCap: 1 })),
+        },
+      };
+    });
+    const feed = feedWith(dexscreener(), { fetch, now: () => clock });
+    // The board asks for ether (its row) and for the wrapper (the masthead):
+    // one address to the feed, with the ether row's pool remembered.
+    feed.follow([{ address: TOKEN, pool: POOL }, { address: ETHER, pool: POOL }, { address: WETH, pool: '' }]);
+    expect(feed.status().followed).toBe(2);
+    expect(feed.ethPrice()).toBeNull();
+
+    await feed.refresh();
+    expect(fetch.calls[0]).toContain(WETH);
+    expect(feed.ethPrice()).toEqual({ usd: 4123.45, at: new Date(clock).toISOString(), source: 'dexscreener' });
+    expect(feed.quote(ETHER)?.priceUsd).toBe(4123.45);
+    expect(feed.quote(WETH)?.priceUsd).toBe(4123.45);
+
+    // Ether alone is the wrapper alone.
+    feed.follow([{ address: ETHER, pool: POOL }]);
+    expect(feed.status().followed).toBe(1);
+
+    // And a stale quote is no price at all.
+    clock += STALE_MS + 1;
+    expect(feed.ethPrice()).toBeNull();
+    feed.stop();
+  });
+});
+
 describe('the feed', () => {
   it('quotes the tokens it follows, ten to a request, re-asks the rest alone, and says what it did', async () => {
     let clock = 1_000_000;
@@ -581,7 +626,7 @@ describe('the feed', () => {
     feed.stop();
   });
 
-  it('does nothing when disabled, and ignores ether and malformed addresses', async () => {
+  it('does nothing when disabled, asks for ether as its wrapper, and ignores malformed addresses', async () => {
     const fetch = fakeFetch(() => ({ status: 200, body: { pairs: [pair()] } }));
     const off = new MarketFeed({ fetch, enabled: false });
     off.follow([{ address: TOKEN, pool: POOL }]);
@@ -590,12 +635,13 @@ describe('the feed', () => {
     expect(off.status().enabled).toBe(false);
 
     const on = new MarketFeed({ fetch });
-    on.follow([
-      { address: '0x0000000000000000000000000000000000000000', pool: '' },
-      { address: 'not-an-address', pool: '' },
-    ]);
+    on.follow([{ address: 'not-an-address', pool: '' }]);
     expect(await on.refresh()).toBe(0);
     expect(fetch.calls).toHaveLength(0);
+    on.follow([{ address: '0x0000000000000000000000000000000000000000', pool: '' }]);
+    await on.refresh();
+    expect(fetch.calls.some((call) => call.includes('0x0bd7d308f8e1639fab988df18a8011f41eacad73'))).toBe(true);
+    for (const call of fetch.calls) expect(call).not.toContain('0x0000000000000000000000000000000000000000');
     on.stop();
   });
 });

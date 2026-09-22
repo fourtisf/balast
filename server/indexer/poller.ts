@@ -36,7 +36,9 @@ import {
 } from './events';
 import { resolveUsdg } from './anchor';
 import { planIngest } from './ingest';
+import { isSaneBlockTime } from '../chain/block-time';
 import { POSITION_HISTORY_KEY, backfillPositionHistory } from './position-history';
+import { repairBlockTimes } from './repair-times';
 import { V3_HISTORY_KEY, backfillV3History, writeState } from './v3-history';
 import { clearWork, withWork } from './working';
 import { prisma } from '../db';
@@ -357,6 +359,10 @@ export class Poller {
       // A stage record left by a process that was killed mid-stage is not
       // this process's; its heartbeat is stale, but say so rather than rely on it.
       await clearWork();
+      // Rows and a cursor stamped with a time that is not a time, from
+      // before the source refused such stamps (repair-times.ts). Nothing
+      // to do on a healthy box.
+      await repairBlockTimes(this.log);
       this.followV3Pools(await loadV3PoolAddresses());
       // And the pools the factory named before it was followed at all: the
       // factory was configured with the cursor millions of blocks in, so
@@ -731,6 +737,11 @@ export class Poller {
     const rebuildMs = Date.now() - rebuildStarted;
 
     const lastBlockTime = blockTimes.get(to) ?? head.timestamp;
+    // The source refuses a zeroed timestamp at the endpoint; this is the
+    // last line of defence for the one figure the whole site measures from.
+    if (!isSaneBlockTime(lastBlockTime)) {
+      throw new Error(`block ${to} was timed at ${lastBlockTime.toISOString()}, which is not a time; the pass is not recorded`);
+    }
     await writeCursor(POOL_MANAGER_CURSOR, to, lastBlockTime, head.number);
     // The factory's PoolCreated logs have been read to here (v3-history.ts),
     // and so have PositionManager's transfers (position-history.ts).
