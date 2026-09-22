@@ -169,6 +169,55 @@ seven days of fees, so the screenshot shows real yields rather than dashes.
 > 
 > Staking and positions arrive with the contracts, after audit.
 
+## 6 · The leaderboard · a screenshot of /pools
+
+For the board as it stands now: live volume on every row, the buy/sell split
+beside it, and the ranking that puts traded markets first. The freshness chip
+is legible in a full-width screenshot — either crop above it, or use the
+third post below, which is about it.
+
+**Recommended**
+
+> Every market on Robinhood Chain, in one board.
+>
+> Market cap, liquidity, the day's volume and who was buying it — read from chain events, ranked so the markets people actually trade come first.
+>
+> Quiet tokens rank last rather than disappear.
+>
+> balast.xyz
+
+Reply to it, as 2/:
+
+> Three things it refuses to do:
+>
+> Print a token to make the yield look bigger.
+> Show you an APY it cannot keep.
+> Hold your position.
+>
+> Fee yield is trailing seven days. Positions are minted to your wallet. If our indexer falls behind, the lag is on screen.
+
+**Shorter**
+
+> The board is live.
+>
+> Every v4 pool on Robinhood Chain — tokenised stocks, launchpad coins, all of it — with today's volume, the buy and sell split and the 24h move on every row.
+>
+> balast.xyz
+
+**If the freshness chip is in frame**
+
+> Top right of this screenshot: our indexer is days behind, and the site says so.
+>
+> Every number on Balast is derived from chain events, including the one that tells you how stale the rest are.
+>
+> A number you cannot check is not a number.
+>
+> balast.xyz
+
+**Image description** (X's "Add description")
+
+> Balast's leaderboard at balast.xyz: Robinhood Chain markets ranked by market cap, each row showing liquidity, 24-hour volume, buy and sell counts, the 24-hour price change and a volume sparkline.
+
 ## Order
 
 Pin the contract-address post first, before anything else goes out: the
