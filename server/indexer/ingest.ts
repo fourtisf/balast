@@ -21,7 +21,7 @@
 
 import { feeFromSwap, swapInputSide } from '../chain/price';
 import { amountsForLiquidity } from '../chain/tick-math';
-import { sortEvents, type ChainEvent, type Protocol } from './events';
+import { isPoolEvent, sortEvents, type ChainEvent, type Protocol } from './events';
 
 export interface PoolRow {
   id: string;
@@ -69,6 +69,19 @@ export interface LiquidityRow {
   amount0: bigint;
   amount1: bigint;
   owner: string;
+  salt: string | null;
+}
+
+/** A PositionManager Transfer, as a row. */
+export interface PositionTransferRow {
+  txHash: string;
+  logIndex: number;
+  tokenId: bigint;
+  salt: string;
+  from: string;
+  to: string;
+  blockNum: bigint;
+  blockTime: Date;
 }
 
 /** Latest price/tick/liquidity seen for a pool in this batch. */
@@ -85,6 +98,8 @@ export interface IngestPlan {
   pools: PoolRow[];
   swaps: SwapRow[];
   liquidity: LiquidityRow[];
+  /** PositionManager transfers: mints, moves and burns of position tokens. */
+  transfers: PositionTransferRow[];
   states: StateRow[];
   /**
    * Liquidity events that could not be valued, because no price was known for
@@ -127,7 +142,7 @@ export interface IngestContext {
  * `Swap` that actually preceded it and value it at the wrong price.
  */
 export function planIngest(events: ChainEvent[], context: IngestContext): IngestPlan {
-  const plan: IngestPlan = { pools: [], swaps: [], liquidity: [], states: [], unpriced: [] };
+  const plan: IngestPlan = { pools: [], swaps: [], liquidity: [], transfers: [], states: [], unpriced: [] };
   // Copies, so a caller can reuse the context for a second batch unchanged.
   const sqrtPrice = new Map(context.sqrtPriceByPool);
   const feePips = new Map(context.feePipsByPool);
@@ -237,6 +252,21 @@ export function planIngest(events: ChainEvent[], context: IngestContext): Ingest
           amount0,
           amount1,
           owner: event.owner,
+          salt: event.salt,
+        });
+        break;
+      }
+
+      case 'position-transfer': {
+        plan.transfers.push({
+          txHash: event.txHash,
+          logIndex: event.logIndex,
+          tokenId: event.tokenId,
+          salt: event.salt,
+          from: event.from,
+          to: event.to,
+          blockNum: event.blockNumber,
+          blockTime: event.blockTime,
         });
         break;
       }
@@ -254,5 +284,5 @@ export function planIngest(events: ChainEvent[], context: IngestContext): Ingest
  * take down the whole pass.
  */
 export function referencedPools(events: ChainEvent[]): Set<string> {
-  return new Set(events.map((e) => e.poolId));
+  return new Set(events.filter(isPoolEvent).map((e) => e.poolId));
 }

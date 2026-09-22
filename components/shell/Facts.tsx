@@ -41,8 +41,8 @@ export function Facts() {
           data-fact="positions"
           title={
             global.totalPositions === 0
-              ? 'The indexer does not follow minted positions yet, so this stays at zero even after a mint.'
-              : undefined
+              ? 'Open positions minted through PositionManager on this chain, as the indexer counts them. None yet, or the indexer has not reached the block they were minted in.'
+              : 'Open positions minted through PositionManager on this chain, as the indexer counts them. A burned position leaves the count.'
           }
         >
           {count(global.totalPositions)}

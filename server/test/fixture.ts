@@ -20,13 +20,15 @@
 import { encodeAbiParameters, encodeEventTopics, parseAbiParameters, toHex } from 'viem';
 import { CONTRACTS, NATIVE_ETH } from '../../lib/chain';
 import { mulberry32 } from '../../lib/rng';
-import { POOL_MANAGER_ABI, V3_FACTORY_ABI, V3_POOL_ABI } from '../chain/abi';
+import { POOL_MANAGER_ABI, POSITION_MANAGER_EVENTS_ABI, V3_FACTORY_ABI, V3_POOL_ABI } from '../chain/abi';
 import { amountsForLiquidity, getSqrtRatioAtTick } from '../chain/tick-math';
 import type { TokenFacts } from '../indexer/discovery';
-import { poolKey } from '../indexer/events';
+import { poolKey, saltForTokenId } from '../indexer/events';
 import type { LogSource } from '../indexer/poller';
 
 const MANAGER = CONTRACTS.poolManager.toLowerCase();
+/** Uniswap's PositionManager: the one address whose Transfer logs are fetched (§22). */
+export const POSITION_MANAGER = CONTRACTS.positionManager.toLowerCase() as `0x${string}`;
 
 /**
  * First log index for a pool's seed logs. Above anything the per-block swap
@@ -148,7 +150,7 @@ export const FIXTURE_POOLS: FixturePool[] = [
   { id: bytes32(0xa3), currency0: address(0x03), currency1: WETH, feePips: 10_000, tickSpacing: 200, hooks: address(0), tick: -107_800, liquidity: 8n * 10n ** 21n, initBlock: 4_400 },
 ];
 
-interface RawLog {
+export interface RawLog {
   address: string;
   topics: string[];
   data: string;
@@ -225,7 +227,7 @@ function swapLog(args: {
   };
 }
 
-function modifyLiquidityLog(args: {
+export function modifyLiquidityLog(args: {
   poolId: `0x${string}`;
   sender: `0x${string}`;
   tickLower: number;
@@ -233,6 +235,8 @@ function modifyLiquidityLog(args: {
   liquidityDelta: bigint;
   block: number;
   logIndex: number;
+  /** PositionManager's salt is bytes32(tokenId); anything else is zero. */
+  salt?: `0x${string}`;
 }): RawLog {
   const topics = encodeEventTopics({
     abi: POOL_MANAGER_ABI,
@@ -241,7 +245,7 @@ function modifyLiquidityLog(args: {
   });
   const data = encodeAbiParameters(
     parseAbiParameters('int24 tickLower, int24 tickUpper, int256 liquidityDelta, bytes32 salt'),
-    [args.tickLower, args.tickUpper, args.liquidityDelta, bytes32(0)],
+    [args.tickLower, args.tickUpper, args.liquidityDelta, args.salt ?? bytes32(0)],
   );
   return {
     address: MANAGER,
@@ -250,6 +254,81 @@ function modifyLiquidityLog(args: {
     blockNumber: BigInt(args.block),
     logIndex: args.logIndex,
     transactionHash: txHash(args.block, args.logIndex),
+  };
+}
+
+/**
+ * A PositionManager Transfer: minted from the zero address, moved, or burned
+ * to it. Encoded as the ERC-721 emits it — three indexed topics, no data —
+ * from the PositionManager's own address, which is the only address the
+ * poller asks for this signature at (§22).
+ */
+export function positionTransferLog(args: {
+  from: `0x${string}`;
+  to: `0x${string}`;
+  tokenId: bigint;
+  block: number;
+  logIndex: number;
+}): RawLog {
+  const topics = encodeEventTopics({
+    abi: POSITION_MANAGER_EVENTS_ABI,
+    eventName: 'Transfer',
+    args: { from: args.from, to: args.to, id: args.tokenId },
+  });
+  return {
+    address: POSITION_MANAGER,
+    topics: topics as string[],
+    data: '0x',
+    blockNumber: BigInt(args.block),
+    logIndex: args.logIndex,
+    transactionHash: txHash(args.block, args.logIndex),
+  };
+}
+
+/**
+ * The logs one PositionManager mint produces, in the order the contract
+ * emits them: the ERC-721 Transfer from the zero address, then the
+ * PoolManager's ModifyLiquidity with `sender = PositionManager` and
+ * `salt = bytes32(tokenId)`, both in one transaction.
+ */
+export function positionMintLogs(args: {
+  pool: FixturePool;
+  owner: `0x${string}`;
+  tokenId: bigint;
+  tickLower: number;
+  tickUpper: number;
+  liquidity: bigint;
+  block: number;
+  logIndex: number;
+}): RawLog[] {
+  const transfer = positionTransferLog({
+    from: address(0),
+    to: args.owner,
+    tokenId: args.tokenId,
+    block: args.block,
+    logIndex: args.logIndex,
+  });
+  const modify = modifyLiquidityLog({
+    poolId: args.pool.id,
+    sender: POSITION_MANAGER,
+    tickLower: args.tickLower,
+    tickUpper: args.tickUpper,
+    liquidityDelta: args.liquidity,
+    block: args.block,
+    logIndex: args.logIndex + 1,
+    salt: saltForTokenId(args.tokenId) as `0x${string}`,
+  });
+  // One transaction: the same hash on both logs.
+  return [transfer, { ...modify, transactionHash: transfer.transactionHash }];
+}
+
+/** A chain with extra logs spliced in, kept in chain order. */
+export function withLogs(chain: FixtureChain, extra: RawLog[]): FixtureChain {
+  return {
+    ...chain,
+    logs: [...chain.logs, ...extra].sort((a, b) =>
+      a.blockNumber === b.blockNumber ? a.logIndex - b.logIndex : a.blockNumber < b.blockNumber ? -1 : 1,
+    ),
   };
 }
 

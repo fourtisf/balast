@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { BinChart } from '@/components/positions/BinChart';
-import { useMintFlow } from '@/components/positions/useMintFlow';
+import { DEFAULT_SLIPPAGE_BPS, useMintFlow } from '@/components/positions/useMintFlow';
 import { CHAIN, EXPLORER_URL, NATIVE_ETH } from '@/lib/chain';
 import type { Pool, ShapeId } from '@/lib/data/types';
 import { price as fmtPrice, quoteLabel } from '@/lib/format';
@@ -17,6 +17,8 @@ import { yieldPct } from '@/lib/yield';
 const MAX_DEPOSIT_ETH = 4.18;
 /** Ether to leave behind for gas when the deposit is in ether. */
 const GAS_RESERVE_WEI = 500_000_000_000_000n; // 0.0005 ETH
+/** Slippage tolerances offered, in basis points. */
+const SLIPPAGE_CHOICES = [50, 100, 300] as const;
 
 const SHAPE_ICONS: Record<ShapeId, number[]> = {
   spot: [20, 20, 20, 20, 20, 20, 20, 20],
@@ -63,7 +65,16 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
   const [poolId, setPoolId] = useState(
     () => stakeablePools.find((p) => p.id === wantedPool)?.id ?? stakeablePools[0].id,
   );
-  const [amount, setAmount] = useState('2.5');
+  // A first deposit a wallet is likely to hold: a tenth of an ether, or a
+  // hundred dollars for a pool quoted in USDG. The old default of 2.5 opened
+  // the drawer's hand-off on "above your balance" for most wallets (§22).
+  // Simulated pools keep the ether figure: their balance is the prototype's
+  // few ether whatever the quote says.
+  const [amount, setAmount] = useState(() => {
+    const first = stakeablePools.find((p) => p.id === wantedPool) ?? stakeablePools[0];
+    return first.key && first.quote === 'USDG' ? '100' : '0.1';
+  });
+  const [slippageBps, setSlippageBps] = useState(DEFAULT_SLIPPAGE_BPS);
   const [shape, setShape] = useState<ShapeId>('spot');
   const [minPct, setMinPct] = useState(-15);
   const [maxPct, setMaxPct] = useState(15);
@@ -100,6 +111,7 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
     bins: fullRange ? 1 : bins,
     shape: fullRange ? 'spot' : shape,
     fullRange,
+    slippageBps,
     valid: inputsValid,
   });
 
@@ -244,6 +256,30 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
               : `Balast swaps part of this into ${tokenSymbol} to fill the shape you choose.`}
           </p>
         </div>
+
+        {onChain && (
+          <div className="field">
+            <span className="lbl" id="slippage-label">
+              Slippage
+            </span>
+            <div className="seg" role="group" aria-labelledby="slippage-label">
+              {SLIPPAGE_CHOICES.map((bps) => (
+                <button
+                  key={bps}
+                  className={slippageBps === bps ? 'on' : undefined}
+                  aria-pressed={slippageBps === bps}
+                  onClick={() => setSlippageBps(bps)}
+                >
+                  {(bps / 100).toLocaleString('en-US', { maximumFractionDigits: 1 })}%
+                </button>
+              ))}
+            </div>
+            <p className="hint">
+              How much more than the amounts shown the mint may take if the price moves before it is included.
+              Past that it reverts and nothing is taken.
+            </p>
+          </div>
+        )}
 
         <div className="field">
           <label className="lbl" htmlFor="b-full" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>

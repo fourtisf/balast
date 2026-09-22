@@ -13,10 +13,10 @@
  */
 
 import { CHAIN, CONTRACTS } from '../../lib/chain';
-import { FOLLOWED_TOPICS, POOL_MANAGER_ABI, V3_POOL_ABI } from '../chain/abi';
+import { FOLLOWED_TOPICS, POOL_MANAGER_ABI, POSITION_TRANSFER_TOPIC, V3_POOL_ABI } from '../chain/abi';
 import { env } from '../env';
 import type { PriceAnchors } from './aggregate';
-import { rebuildAggregates, rebuildFlowHours, rebuildPoolState } from './aggregate';
+import { rebuildAggregates, rebuildFlowHours, rebuildPoolState, rebuildPositions } from './aggregate';
 import {
   classifyPools,
   ensureTokens,
@@ -27,13 +27,16 @@ import {
 } from './discovery';
 import {
   decodePoolManagerLog,
+  decodePositionManagerLog,
   decodeV3FactoryLog,
   decodeV3PoolLog,
+  isPoolEvent,
   sortEvents,
   type ChainEvent,
 } from './events';
 import { resolveUsdg } from './anchor';
 import { planIngest } from './ingest';
+import { POSITION_HISTORY_KEY, backfillPositionHistory } from './position-history';
 import { V3_HISTORY_KEY, backfillV3History, writeState } from './v3-history';
 import { clearWork, withWork } from './working';
 import { prisma } from '../db';
@@ -47,6 +50,7 @@ import {
   writeCursor,
   writeLiquidity,
   writePools,
+  writePositionTransfers,
   writeSwaps,
 } from './store';
 
@@ -285,6 +289,14 @@ export class Poller {
   private classifiedAll = false;
   /** Fully refused passes in a row. */
   private refusedInARow = 0;
+  /**
+   * The anchor hour every pool's state was last rebuilt against, once the
+   * indexer follows head. Untouched pools only change with the anchor price,
+   * which moves at most hourly — so the unscoped rebuild runs when that hour
+   * changes, and on the FULL_STATE_EVERY cadence for the supply refresh,
+   * rather than on every one-second pass (§22).
+   */
+  private stateAnchorHour: string | null = null;
 
   constructor(options: PollerOptions) {
     this.source = options.source;
@@ -373,6 +385,27 @@ export class Poller {
           );
         }
       }
+      // And the positions minted before PositionManager was followed at all
+      // (position-history.ts): the same shape as the factory's, and on a box
+      // whose cursor was millions of blocks in when this code arrived, the
+      // only way a wallet's older positions reach the portfolio.
+      if (cursorNow !== null) {
+        const history = await backfillPositionHistory({
+          source: this.source,
+          startBlock: this.startBlock,
+          toBlock: cursorNow,
+          window: this.minRange,
+          maxWindow: this.maxRange,
+          log: this.log,
+        });
+        if (history.transfers > 0 || history.salted > 0) {
+          await withWork('positions rebuild', () => rebuildPositions());
+          this.log(
+            `  position history: ${history.transfers} transfer(s) and ${history.salted} liquidity row(s) ` +
+              'from before PositionManager was followed — positions rebuilt',
+          );
+        }
+      }
       this.v3Loaded = true;
     }
 
@@ -423,16 +456,33 @@ export class Poller {
     }
 
     const managerAddress = CONTRACTS.poolManager.toLowerCase();
+    const positionManager = CONTRACTS.positionManager.toLowerCase();
     // By signature, not by address. v3 is one contract per pool and the
     // factory on this chain has named nearly thirteen thousand; a request
     // listing them all was answered in seventeen seconds when it was
     // answered at all, and the list only grows. The seven signatures never
     // do. What comes back from a contract this poller does not follow —
     // another DEX's v3 pool emits the same Swap — is dropped below.
+    //
+    // One exception, by address: PositionManager's Transfer (§22). Its
+    // selector is every ERC-20's too, so asked by signature alone it would
+    // return every token transfer on the chain; asked with the one address
+    // it is a handful of logs a window, and it is the only way to know who
+    // holds which position.
     const windows = splitWindows(from, to, windowBlocks);
     const logsStarted = Date.now();
     const fetched = await Promise.allSettled(
-      windows.map((w) => this.source.getLogs({ topics: FOLLOWED_TOPICS, fromBlock: w.from, toBlock: w.to })),
+      windows.map((w) =>
+        Promise.all([
+          this.source.getLogs({ topics: FOLLOWED_TOPICS, fromBlock: w.from, toBlock: w.to }),
+          this.source.getLogs({
+            address: positionManager,
+            topics: [POSITION_TRANSFER_TOPIC],
+            fromBlock: w.from,
+            toBlock: w.to,
+          }),
+        ]).then(([pools, transfers]) => [...pools, ...transfers]),
+      ),
     );
     // The windows are contiguous, so the ones that succeeded up to the first
     // that did not are a range this pass can still ingest. A later window
@@ -512,6 +562,8 @@ export class Poller {
       let decoded: ChainEvent | null;
       if (source === managerAddress) {
         decoded = decodePoolManagerLog(log as never, blockTime);
+      } else if (source === positionManager) {
+        decoded = decodePositionManagerLog(log as never, blockTime);
       } else if (source === this.v3Factory) {
         decoded = decodeV3FactoryLog(log as never, blockTime);
         if (decoded?.kind === 'initialize') followed.add(decoded.contract.toLowerCase());
@@ -525,11 +577,15 @@ export class Poller {
     }
 
     const ordered = sortEvents(events);
+    // Position transfers carry no pool id and skip the pool filter below;
+    // everything else is a pool event.
+    const poolEvents = ordered.filter(isPoolEvent);
+    const transfers = ordered.filter((e) => !isPoolEvent(e));
 
     // Pools first: a swap row has a foreign key to its pool, and a pool
     // discovered in this very range has to exist before its swaps are written.
     const initializePlan = planIngest(
-      ordered.filter((e) => e.kind === 'initialize'),
+      poolEvents.filter((e) => e.kind === 'initialize'),
       { chainId: CHAIN.id, sqrtPriceByPool: new Map(), feePipsByPool: new Map() },
     );
     const tokenAddresses = initializePlan.pools.flatMap((p) => [p.token0, p.token1]);
@@ -553,8 +609,8 @@ export class Poller {
     // a restart mid-chain resumes exactly where a full replay would be.
     const ingestStarted = Date.now();
     const known = await loadKnownPools();
-    const usable = ordered.filter((e) => known.has(e.poolId));
-    const skipped = ordered.length - usable.length;
+    const usable = poolEvents.filter((e) => known.has(e.poolId));
+    const skipped = poolEvents.length - usable.length;
     if (skipped > 0) {
       // Events for a pool whose Initialize predates our start block. Counting
       // their fees would attribute them to a pool that does not exist in our
@@ -569,7 +625,7 @@ export class Poller {
     // The pools this batch touches: what the price state is loaded for and
     // what the pool-state rebuild below is scoped to.
     const touched = new Set(usable.map((e) => e.poolId));
-    const plan = planIngest(usable, {
+    const plan = planIngest([...usable, ...transfers], {
       chainId: CHAIN.id,
       sqrtPriceByPool: await loadPriceState(from, touched),
       feePipsByPool: await loadFeeTiers(),
@@ -589,6 +645,7 @@ export class Poller {
 
     const swapsWritten = await writeSwaps(plan);
     const liquidityWritten = await writeLiquidity(plan);
+    await writePositionTransfers(plan);
     const ingestMs = Date.now() - ingestStarted;
 
     // Aggregates, in dependency order: the anchor price series, the staged
@@ -621,6 +678,10 @@ export class Poller {
     // were its recent swaps without the mint that funded them. Negative
     // reserves read as unknown depth (§14), and the whole site showed TVL $0.
     await rebuildFlowHours(bounds);
+    // Positions need no anchor either: a holder, a range and a liquidity are
+    // facts from the logs, and the portfolio reads them whether or not a
+    // dollar figure exists yet.
+    await rebuildPositions(bounds);
 
     if (anchors) {
       if (this.lastAnchorAddress === undefined) {
@@ -652,9 +713,10 @@ export class Poller {
         await rebuildAggregates(anchors, bounds, undefined, touched);
         // Pool state depends on the latest anchor price as well as on each
         // pool's own flow, so the scoped rebuild above leaves untouched pools
-        // priced at an older anchor. Every pool is redone once the pass
-        // reaches head, and on a cadence while it is still far from it.
-        if (caughtUpNow || this.passes % FULL_STATE_EVERY === 0) await rebuildPoolState(anchors);
+        // priced at an older anchor. Every pool is redone when that price
+        // moves — it is hourly, so following head this is once an hour, not
+        // once a second — and on a cadence for the supply refresh.
+        if (await this.poolStateDue(caughtUpNow)) await rebuildPoolState(anchors);
       }
     }
     // No anchor yet means no dollar figure is derivable. The raw rows and the
@@ -670,8 +732,10 @@ export class Poller {
 
     const lastBlockTime = blockTimes.get(to) ?? head.timestamp;
     await writeCursor(POOL_MANAGER_CURSOR, to, lastBlockTime, head.number);
-    // The factory's PoolCreated logs have been read to here (v3-history.ts).
+    // The factory's PoolCreated logs have been read to here (v3-history.ts),
+    // and so have PositionManager's transfers (position-history.ts).
     if (this.v3Factory) await writeState(V3_HISTORY_KEY, to.toString());
+    await writeState(POSITION_HISTORY_KEY, to.toString());
 
     // Adapt for the next pass. Only while backfilling: once the indexer is
     // following head there is nothing to gain from a wider window and a
@@ -729,6 +793,24 @@ export class Poller {
         totalMs: Date.now() - startedAt,
       },
     };
+  }
+
+  /**
+   * Whether every pool's state needs rebuilding this pass.
+   *
+   * While backfilling, on the cadence. Following head, when the anchor's
+   * latest hour has changed since the last unscoped rebuild — an untouched
+   * pool's dollar figures depend on nothing else that moves — or on the
+   * cadence, which also carries the supply refresh through.
+   */
+  private async poolStateDue(caughtUp: boolean): Promise<boolean> {
+    if (this.passes % FULL_STATE_EVERY === 0) return true;
+    if (!caughtUp) return false;
+    const [row] = await prisma.$queryRaw<{ hour: Date | null }[]>`SELECT MAX(hour) AS hour FROM weth_usd_hourly`;
+    const hour = row?.hour ? new Date(row.hour).toISOString() : null;
+    if (hour === this.stateAnchorHour) return false;
+    this.stateAnchorHour = hour;
+    return true;
   }
 
   /**

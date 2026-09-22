@@ -26,6 +26,7 @@ import { resolveUsdg } from '../indexer/anchor';
 import { readWork } from '../indexer/working';
 import { busKind, subscribeTicks } from './bus';
 import { MarketFeed } from './market';
+import { buildPortfolio } from './portfolio';
 import { buildSnapshot } from './snapshot';
 
 const USDG = process.env.USDG_ADDRESS ?? '';
@@ -36,6 +37,8 @@ const USDG = process.env.USDG_ADDRESS ?? '';
  * the threshold is high enough not to call a brief catch-up a first sync.
  */
 const SYNCING_BLOCKS = 50_000n;
+/** How long the swap count on /api/health is kept before it is counted again. */
+const COUNTS_TTL_MS = 30_000;
 
 /**
  * The sentence that tells an operator which of two situations they are in.
@@ -380,6 +383,21 @@ export async function buildServer(
    * that watches a status code catches it with no extra plumbing, and the
    * body says which of the two it is.
    */
+  // How many pools and swaps the tables hold, for the health body. The
+  // pools count is a small table and is exact on every call; a COUNT(*)
+  // over swap_events is a sequential scan of millions of rows, and the
+  // waiting page polls this route (§22), so that one is kept for half a
+  // minute. The figures are context, not a signal anything acts on.
+  let swapsCache: { at: number; value: number } | null = null;
+  const tableCounts = async (): Promise<{ pools: number; swaps: number }> => {
+    const [{ pools }] = await prisma.$queryRaw<{ pools: number }[]>`SELECT COUNT(*)::int AS pools FROM pools`;
+    if (!swapsCache || Date.now() - swapsCache.at >= COUNTS_TTL_MS) {
+      const [{ swaps }] = await prisma.$queryRaw<{ swaps: number }[]>`SELECT COUNT(*)::int AS swaps FROM swap_events`;
+      swapsCache = { at: Date.now(), value: swaps };
+    }
+    return { pools, swaps: swapsCache.value };
+  };
+
   app.get('/api/health', async (_request, reply) => {
     const cursor = await prisma.indexerCursor.findUnique({
       where: { contract: POOL_MANAGER_CURSOR },
@@ -424,10 +442,7 @@ export async function buildServer(
       Number.isFinite(heartbeatSeconds) &&
       heartbeatSeconds <= env.stallSeconds;
     const workSeconds = work ? Math.max(0, (Date.now() - Date.parse(work.startedAt)) / 1000) : null;
-    const [counts] = await prisma.$queryRaw<{ pools: number; swaps: number }[]>`
-      SELECT (SELECT COUNT(*) FROM pools)::int AS pools,
-             (SELECT COUNT(*) FROM swap_events)::int AS swaps
-    `;
+    const counts = await tableCounts();
     // Which token is pricing the whole site, and how that was decided. This
     // is the single most consequential value in the system — a wrong anchor
     // makes every dollar figure wrong — so it is auditable from outside.
@@ -623,6 +638,26 @@ export async function buildServer(
       remember({ at: now, miss: true });
       return reply.code(404).send();
     }
+  });
+
+  /**
+   * A wallet's positions (§22): the PositionManager tokens it holds, valued
+   * at the last indexed block. Per wallet, so not part of the cached
+   * snapshot; the query is a handful of rows and it is rate limited like
+   * any other. 503 for the same reasons the snapshot is.
+   */
+  app.get<{ Params: { wallet: string } }>('/api/portfolio/:wallet', async (request, reply) => {
+    const wallet = request.params.wallet.toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(wallet)) {
+      return reply.code(400).send({ statusCode: 400, error: 'bad-address', message: 'Not an address.' });
+    }
+    const problem = configurationProblem();
+    if (problem) return reply.code(503).send({ error: 'misconfigured', message: problem });
+    const built = await buildPortfolio(wallet, USDG || null);
+    if (!built) {
+      return reply.code(503).send({ error: 'no-data', message: 'The indexer has not priced a block yet.' });
+    }
+    return reply.header('cache-control', 'no-store').send(built);
   });
 
   app.get('/api/snapshot', async (_request, reply) => {

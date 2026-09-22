@@ -57,6 +57,30 @@ export const V3_POOL_TOPICS = selectors(V3_POOL_ABI);
 export const V3_FACTORY_TOPICS = selectors(V3_FACTORY_ABI);
 export const FOLLOWED_TOPICS = [...new Set([...POOL_MANAGER_TOPICS, ...V3_FACTORY_TOPICS, ...V3_POOL_TOPICS])];
 
+/**
+ * Uniswap v4's PositionManager is an ERC-721 whose token IS the position
+ * (§20). Its Transfer log says who holds each token; the position's pool,
+ * range and liquidity come from the PoolManager's ModifyLiquidity, which it
+ * emits with `sender = PositionManager` and `salt = bytes32(tokenId)`.
+ *
+ * NOT in FOLLOWED_TOPICS: Transfer shares its selector with every ERC-20 on
+ * the chain, so it is fetched with the PositionManager's address, never by
+ * signature alone.
+ */
+export const POSITION_MANAGER_EVENTS_ABI = parseAbi([
+  'event Transfer(address indexed from, address indexed to, uint256 indexed id)',
+]);
+export const POSITION_TRANSFER_TOPIC = toEventSelector(POSITION_MANAGER_EVENTS_ABI[0]).toLowerCase();
+
+/**
+ * The one PoolManager signature the position history walk asks for on its
+ * own (position-history.ts): the liquidity events whose `sender` is
+ * PositionManager carry the salt that ties a row to a token.
+ */
+export const MODIFY_LIQUIDITY_TOPIC = toEventSelector(
+  POOL_MANAGER_ABI.find((item) => item.type === 'event' && item.name === 'ModifyLiquidity') as AbiEvent,
+).toLowerCase();
+
 /** Read-only v3 pool state, for the reserves half of a TVL figure. */
 export const V3_POOL_READ_ABI = parseAbi([
   'function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)',

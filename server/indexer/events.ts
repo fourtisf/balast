@@ -7,8 +7,8 @@
  * §9's "byte-identical replay" is provable rather than hoped for.
  */
 
-import { decodeEventLog, type Log } from 'viem';
-import { POOL_MANAGER_ABI, V3_FACTORY_ABI, V3_POOL_ABI } from '../chain/abi';
+import { decodeEventLog, toHex, type Log } from 'viem';
+import { POOL_MANAGER_ABI, POSITION_MANAGER_EVENTS_ABI, V3_FACTORY_ABI, V3_POOL_ABI } from '../chain/abi';
 
 export type Protocol = 'v4' | 'v3';
 
@@ -77,9 +77,39 @@ export interface LiquidityEventDecoded extends EventPosition {
   amount0: bigint | null;
   amount1: bigint | null;
   owner: string;
+  /**
+   * v4's position salt, lowercase hex. PositionManager mints with
+   * `salt = bytes32(tokenId)`, which is what ties a position NFT to its own
+   * liquidity events (§22). Null for v3, which has no such thing.
+   */
+  salt: string | null;
 }
 
-export type ChainEvent = InitializeEvent | SwapEventDecoded | LiquidityEventDecoded;
+/**
+ * A PositionManager Transfer: the position token moved, or was minted (from
+ * the zero address) or burned (to it). Not a pool event — it carries no pool
+ * id; the position's pool comes from the liquidity event with the same salt.
+ */
+export interface PositionTransferEvent extends EventPosition {
+  kind: 'position-transfer';
+  tokenId: bigint;
+  /** bytes32(tokenId), lowercase: joins to `LiquidityEventDecoded.salt`. */
+  salt: string;
+  from: string;
+  to: string;
+}
+
+export type PoolEvent = InitializeEvent | SwapEventDecoded | LiquidityEventDecoded;
+export type ChainEvent = PoolEvent | PositionTransferEvent;
+
+export function isPoolEvent(event: ChainEvent): event is PoolEvent {
+  return event.kind !== 'position-transfer';
+}
+
+/** The salt PositionManager gives a token's liquidity: the id as 32 bytes. */
+export function saltForTokenId(tokenId: bigint): string {
+  return toHex(tokenId, { size: 32 }).toLowerCase();
+}
 
 /**
  * Total order over the log stream: block, then position in the block.
@@ -178,10 +208,36 @@ export function decodePoolManagerLog(log: RawLog, blockTime: Date): ChainEvent |
         amount0: null,
         amount1: null,
         owner: (args.sender as string).toLowerCase(),
+        salt: (args.salt as string).toLowerCase(),
       };
     default:
       return null;
   }
+}
+
+/**
+ * Decode one PositionManager log: its ERC-721 Transfer, and nothing else.
+ * An ERC-20 Transfer has the same selector and three topics rather than
+ * four; it does not decode against this ABI and is ignored.
+ */
+export function decodePositionManagerLog(log: RawLog, blockTime: Date): PositionTransferEvent | null {
+  let decoded;
+  try {
+    decoded = decodeEventLog({ abi: POSITION_MANAGER_EVENTS_ABI, data: log.data, topics: log.topics });
+  } catch {
+    return null;
+  }
+  if (decoded.eventName !== 'Transfer') return null;
+  const args = decoded.args as Record<string, unknown>;
+  const tokenId = args.id as bigint;
+  return {
+    kind: 'position-transfer',
+    ...position(log, blockTime),
+    tokenId,
+    salt: saltForTokenId(tokenId),
+    from: (args.from as string).toLowerCase(),
+    to: (args.to as string).toLowerCase(),
+  };
 }
 
 /**
@@ -268,6 +324,7 @@ export function decodeV3PoolLog(log: RawLog, blockTime: Date): ChainEvent | null
         amount0: args.amount0 as bigint,
         amount1: args.amount1 as bigint,
         owner: (args.owner as string).toLowerCase(),
+        salt: null,
       };
     case 'Burn':
       return {
@@ -282,6 +339,7 @@ export function decodeV3PoolLog(log: RawLog, blockTime: Date): ChainEvent | null
         amount0: -(args.amount0 as bigint),
         amount1: -(args.amount1 as bigint),
         owner: (args.owner as string).toLowerCase(),
+        salt: null,
       };
     default:
       return null;

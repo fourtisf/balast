@@ -112,19 +112,31 @@ export async function approve(provider: Eip1193Provider, owner: Address, step: A
   });
 }
 
-/** The node runs the exact transaction; a revert surfaces here, before any signature. Returns the gas it would take. */
-export async function simulateMint(client: PublicClient, owner: Address, plan: MintPlan): Promise<bigint> {
-  return client.estimateGas({ account: owner, to: CONTRACTS.positionManager, data: plan.calldata, value: plan.value });
+/** Any PositionManager transaction the site builds: a mint, a collect, a withdrawal. */
+export interface PositionCall {
+  calldata: Hex;
+  value: bigint;
 }
 
-export async function sendMint(provider: Eip1193Provider, owner: Address, plan: MintPlan, gas?: bigint): Promise<Hex> {
+/** The node runs the exact transaction; a revert surfaces here, before any signature. Returns the gas it would take. */
+export async function simulateCall(client: PublicClient, owner: Address, call: PositionCall): Promise<bigint> {
+  return client.estimateGas({ account: owner, to: CONTRACTS.positionManager, data: call.calldata, value: call.value });
+}
+
+export async function sendCall(provider: Eip1193Provider, owner: Address, call: PositionCall, gas?: bigint): Promise<Hex> {
   return walletClient(provider, owner).sendTransaction({
     to: CONTRACTS.positionManager,
-    data: plan.calldata,
-    value: plan.value,
+    data: call.calldata,
+    value: call.value,
     gas: gas ? (gas * 12n) / 10n : undefined,
   });
 }
+
+export const simulateMint = (client: PublicClient, owner: Address, plan: MintPlan): Promise<bigint> =>
+  simulateCall(client, owner, plan);
+
+export const sendMint = (provider: Eip1193Provider, owner: Address, plan: MintPlan, gas?: bigint): Promise<Hex> =>
+  sendCall(provider, owner, plan, gas);
 
 const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 

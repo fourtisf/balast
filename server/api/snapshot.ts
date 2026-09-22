@@ -689,7 +689,7 @@ export async function buildSnapshot(
   const [totals] = await prisma.$queryRaw<{ fees_usd: number; positions: number }[]>`
     SELECT
       COALESCE((SELECT SUM(fees_usd) FROM pool_fee_hourly), 0)::float8 AS fees_usd,
-      COALESCE((SELECT COUNT(*) FROM positions), 0)::int              AS positions
+      COALESCE((SELECT COUNT(*) FROM positions WHERE status = 'open'), 0)::int AS positions
   `;
 
   // ETH in USD: the latest row of the anchor series, and nothing else (§4.3).

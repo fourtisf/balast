@@ -36,6 +36,10 @@ class SparseSource extends FixtureLogSource {
   }
 
   override async getLogs(args: Parameters<FixtureLogSource['getLogs']>[0]) {
+    // PositionManager's transfers ride beside each window in a request of
+    // their own, by address (poller.ts). This fake models the endpoint's
+    // answer to the window itself, so those are answered and not counted.
+    if (args.address !== undefined) return super.getLogs(args);
     const width = args.toBlock - args.fromBlock + 1n;
     this.widths.push(width);
     if (this.cap !== null && width > this.cap) {
@@ -63,6 +67,10 @@ class BurstSource extends FixtureLogSource {
   }
 
   override async getLogs(args: Parameters<FixtureLogSource['getLogs']>[0]) {
+    // PositionManager's transfers ride beside each window in a request of
+    // their own, by address (poller.ts). This fake models the endpoint's
+    // answer to the window itself, so those are answered and not counted.
+    if (args.address !== undefined) return super.getLogs(args);
     this.widths.push(args.toBlock - args.fromBlock + 1n);
     this.inFlight++;
     try {
@@ -278,6 +286,10 @@ class StubbornSource extends FixtureLogSource {
   }
 
   override async getLogs(args: Parameters<FixtureLogSource['getLogs']>[0]) {
+    // PositionManager's transfers ride beside each window in a request of
+    // their own, by address (poller.ts). This fake models the endpoint's
+    // answer to the window itself, so those are answered and not counted.
+    if (args.address !== undefined) return super.getLogs(args);
     const width = args.toBlock - args.fromBlock + 1n;
     this.widths.push(width);
     if (width > this.cap) throw new Error('HTTP request failed. Status: 429 Too Many Requests');

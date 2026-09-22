@@ -178,23 +178,35 @@ export async function backfillV3History(args: {
   return { pools: found.length, events, addresses };
 }
 
-/** Sequential windows over a range, adapting the width the way the poller does. */
-async function walk(
+export interface WalkFilter {
+  address?: string[];
+  topics?: string[];
+}
+
+/**
+ * Sequential windows over a range, adapting the width the way the poller
+ * does. Several filters are asked for together per window, one request
+ * each, and answered as one list; a refusal of any of them is a refusal of
+ * the window.
+ */
+export async function walk(
   source: LogSource,
-  filter: { address?: string[]; topics?: string[] },
+  filter: WalkFilter | WalkFilter[],
   from: bigint,
   to: bigint,
   window: bigint,
   maxWindow: bigint,
   onWindow: (logs: RawLog[], w: { from: bigint; to: bigint }) => Promise<void>,
 ): Promise<void> {
+  const filters = Array.isArray(filter) ? filter : [filter];
   let width = max(HARD_MIN_RANGE, min(window, maxWindow));
   let cursor = from;
   while (cursor <= to) {
     const end = min(to, cursor + width - 1n);
     let logs: RawLog[];
     try {
-      logs = await source.getLogs({ ...filter, fromBlock: cursor, toBlock: end });
+      const answers = await Promise.all(filters.map((f) => source.getLogs({ ...f, fromBlock: cursor, toBlock: end })));
+      logs = answers.flat();
     } catch (error) {
       // A refused width, as in the poller: halve and ask again for the same
       // range. At the hard minimum there is nothing left to try.
@@ -209,7 +221,7 @@ async function walk(
   }
 }
 
-function asLog(raw: RawLog) {
+export function asLog(raw: RawLog) {
   return {
     ...raw,
     address: raw.address as `0x${string}`,
@@ -219,7 +231,7 @@ function asLog(raw: RawLog) {
   } as never;
 }
 
-async function readState(key: string): Promise<string | null> {
+export async function readState(key: string): Promise<string | null> {
   const row = await prisma.indexerState.findUnique({ where: { key } });
   return row?.value ?? null;
 }

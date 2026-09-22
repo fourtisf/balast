@@ -21,7 +21,8 @@ import {
   fixtureTokenReader,
   v3SwapLog,
 } from '../test/fixture';
-import { FOLLOWED_TOPICS } from '../chain/abi';
+import { CONTRACTS } from '../../lib/chain';
+import { FOLLOWED_TOPICS, POSITION_TRANSFER_TOPIC } from '../chain/abi';
 import { Poller } from './poller';
 
 const chain = buildV3Chain();
@@ -222,11 +223,18 @@ describe('the v3 factory', () => {
     const source = new FixtureLogSource(foreignChain);
     const passes = await poller(source, 400).syncToHead();
 
-    // Every request of the pass named no contract and every followed signature.
+    // Every request of the pass named no contract and every followed
+    // signature — except the one address-scoped fetch a window makes, for
+    // PositionManager's Transfer, whose selector is every ERC-20's (§22).
     expect(source.calls.length).toBeGreaterThan(0);
+    expect(source.calls.some((call) => call.address === undefined)).toBe(true);
     for (const call of source.calls) {
-      expect(call.address).toBeUndefined();
-      expect(call.topics).toEqual(FOLLOWED_TOPICS);
+      if (call.address === undefined) {
+        expect(call.topics).toEqual(FOLLOWED_TOPICS);
+      } else {
+        expect(call.address).toBe(CONTRACTS.positionManager.toLowerCase());
+        expect(call.topics).toEqual([POSITION_TRANSFER_TOPIC]);
+      }
     }
     // The pool we follow is whole: the same-range Mint and swaps came with
     // the factory's log, no second fetch needed.

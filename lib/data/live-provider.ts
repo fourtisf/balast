@@ -1,4 +1,4 @@
-import type { DataProvider, MarketListener, MarketSnapshot, Unsubscribe } from './types';
+import type { DataProvider, MarketListener, MarketSnapshot, Portfolio, Unsubscribe, UserPosition } from './types';
 
 /**
  * P1. The indexer-backed provider (§4).
@@ -53,9 +53,31 @@ export class LiveProvider implements DataProvider {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectMs = RECONNECT_MIN_MS;
   private started = false;
+  /** The wallet whose positions the portfolio carries, and the last answer for it. */
+  private wallet: string | null = null;
+  private portfolio: Portfolio | null = null;
 
   getSnapshot(): MarketSnapshot | null {
     return this.snapshot;
+  }
+
+  /**
+   * The portfolio is per wallet, so it is not in the cached snapshot the
+   * API serves everyone. It is fetched for the connected wallet, merged over
+   * the snapshot's (empty) portfolio, and re-read on the poll cadence and on
+   * request — after a mint, a collect or a withdrawal.
+   */
+  setWallet(address: string | null): void {
+    const next = address ? address.toLowerCase() : null;
+    if (next === this.wallet) return;
+    this.wallet = next;
+    this.portfolio = null;
+    this.reissue();
+    if (next) void this.fetchPortfolio();
+  }
+
+  async refreshPortfolio(): Promise<void> {
+    await this.fetchPortfolio();
   }
 
   subscribe(listener: MarketListener): Unsubscribe {
@@ -104,6 +126,57 @@ export class LiveProvider implements DataProvider {
       // Offline, or the API is restarting. The last good snapshot stays on
       // screen with its lag figure climbing, which is the honest state.
     }
+    // The wallet's positions ride the same cadence.
+    void this.fetchPortfolio();
+  }
+
+  private async fetchPortfolio(): Promise<void> {
+    const wallet = this.wallet;
+    if (!wallet) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/portfolio/${wallet}`, { cache: 'no-store' });
+      if (!response.ok) return;
+      const body = (await response.json()) as {
+        wallet: string;
+        positions: UserPosition[];
+        netValueUsd: number;
+        priceImpactUsd: number;
+      };
+      // The wallet may have changed while this was in flight.
+      if (this.wallet !== wallet) return;
+      this.portfolio = {
+        netValueUsd: body.netValueUsd,
+        netChangeUsd: 0,
+        netChangePct: 0,
+        // Not tracked: a position's collected history is not indexed, and
+        // the uncollected figure is read from the chain by the page (§7).
+        feesEarnedWeth: null,
+        feesEarnedUsd: null,
+        priceImpactUsd: body.priceImpactUsd,
+        fees7dUsd: null,
+        dailyFeesWeth: [],
+        stakes: [],
+        positions: body.positions,
+        claimableWeth: 0,
+        wallet,
+      };
+      this.reissue();
+    } catch {
+      /* the last answer stays; the next poll asks again */
+    }
+  }
+
+  /** The snapshot's portfolio, with the wallet's over it when there is one. */
+  private withPortfolio(snapshot: MarketSnapshot): MarketSnapshot {
+    if (!this.portfolio) return this.wallet ? { ...snapshot, portfolio: { ...snapshot.portfolio, wallet: this.wallet } } : snapshot;
+    return { ...snapshot, portfolio: this.portfolio };
+  }
+
+  /** Re-notify with the current snapshot after the portfolio changed. */
+  private reissue(): void {
+    if (!this.snapshot) return;
+    this.snapshot = this.withPortfolio(this.snapshot);
+    this.listeners.forEach((listener) => listener(this.snapshot!));
   }
 
   private openSocket(): void {
@@ -154,7 +227,7 @@ export class LiveProvider implements DataProvider {
    */
   private accept(next: MarketSnapshot): void {
     if (this.snapshot && next.revision <= this.snapshot.revision) return;
-    this.snapshot = next;
-    this.listeners.forEach((listener) => listener(next));
+    this.snapshot = this.withPortfolio(next);
+    this.listeners.forEach((listener) => listener(this.snapshot!));
   }
 }

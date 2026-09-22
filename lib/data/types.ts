@@ -189,32 +189,78 @@ export interface UserStake {
   streamRemainingSeconds: number;
 }
 
+/**
+ * What a live position carries beyond the simulator's shape: enough to
+ * render, value and manage it without its pool being on the board. A
+ * position's pool can sit below the listing bar and still be someone's.
+ */
+export interface LivePosition {
+  /** The pool's key, for the collect and withdraw transactions. */
+  key: PoolKeyInfo;
+  poolAddress: string;
+  protocol: Protocol;
+  feeTierBps: number;
+  token: TokenMeta;
+  quote: Quote;
+  /** The quote side's address (ether as the zero address, or the wrapper, or USDG). */
+  quoteAddress: string;
+  quoteDecimals: number;
+  tokenIsCurrency0: boolean;
+  tickLower: number;
+  tickUpper: number;
+  /** Raw units, as decimal strings: JSON carries no bigint. */
+  liquidity: string;
+  amount0: string;
+  amount1: string;
+  /** What the net principal put in would be worth today, in USD. */
+  holdUsd: number;
+  /**
+   * Each currency's USD price at the last indexed block — the same one path
+   * the value above was priced through (§4.3) — so the page can value what
+   * it reads from the chain (uncollected fees) in the same dollars.
+   */
+  priceUsd0: number;
+  priceUsd1: number;
+  mintedAt: string | null;
+}
+
 export interface UserPosition {
   tokenId: string;
   poolId: string;
-  shape: ShapeId;
+  /** The shape chosen at mint. The simulator knows it; a live position's is not on chain. */
+  shape?: ShapeId;
+  /** Half-width of a symmetric range, in percent — the simulator's figure. */
   rangePct: number;
+  /** The range around the token's price, or the whole line. */
+  range?: { minPct: number; maxPct: number } | 'full';
   inRange: boolean;
   /** Set when inRange is false: how long it has been earning nothing. */
   outOfRangeSinceHours?: number;
   valueUsd: number;
-  feesWeth: number;
+  /** Simulated data only: fees in WETH. A live position's fees are read from the chain by the page. */
+  feesWeth?: number;
+  /** Price impact on holdings for this one position (§7). Negative when the position is worth less than holding. */
+  priceImpactUsd?: number;
+  live?: LivePosition;
 }
 
 export interface Portfolio {
   netValueUsd: number;
   netChangeUsd: number;
   netChangePct: number;
-  feesEarnedWeth: number;
-  feesEarnedUsd: number;
+  /** Null when the site cannot know it: the live portfolio reads uncollected fees from the chain, not history. */
+  feesEarnedWeth: number | null;
+  feesEarnedUsd: number | null;
   /** Impermanent loss, under its honest name (§7). Negative. */
   priceImpactUsd: number;
-  fees7dUsd: number;
-  /** 56 days of WETH fees, oldest first. */
+  fees7dUsd: number | null;
+  /** 56 days of WETH fees, oldest first. Empty when not tracked. */
   dailyFeesWeth: number[];
   stakes: UserStake[];
   positions: UserPosition[];
   claimableWeth: number;
+  /** Live: the wallet these positions belong to. */
+  wallet?: string | null;
 }
 
 export interface GlobalStats {
@@ -284,4 +330,8 @@ export interface DataProvider {
   getSnapshot(): MarketSnapshot | null;
   /** Push deltas. The returned function detaches and may stop the stream. */
   subscribe(listener: MarketListener): Unsubscribe;
+  /** The wallet whose positions the portfolio should carry. The simulator has no wallet and ignores it. */
+  setWallet?(address: string | null): void;
+  /** Re-read the wallet's positions now — after a mint, a collect or a withdrawal. */
+  refreshPortfolio?(): Promise<void>;
 }

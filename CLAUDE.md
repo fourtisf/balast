@@ -3209,3 +3209,175 @@ The six-hours-per-tick simulator clock, `/positions`'s forward-looking
 *Est. fee yield*, `LAUNCHPAD_HOOKS` and `STAKEABLE_HOOKS`, the listing
 bar's two thresholds, and the protocol fee's immutable cap before any
 vault is deployed. None of them changed here.
+
+---
+
+## 23. "Perbaiki semuanya": what §22 listed, built or deferred
+
+ALFA's answer to §22 was two words: fix everything. This section records
+what is now built, what changed underneath it, and the three items that
+are deferred with the reason for each. As with §22, nothing here could be
+sent on chain from the session that wrote it — the sandbox reaches no RPC
+and not the box — so the first collect and the first withdrawal on the
+live site should be small ones, watched on the explorer, as §20 said of
+the first mint.
+
+### A portfolio of real positions
+
+**The indexer follows PositionManager.** A position is an ERC-721 token
+(§20), and two logs describe it: PositionManager's `Transfer`, which says
+who holds it, and the PoolManager's `ModifyLiquidity` with `sender =
+PositionManager` and `salt = bytes32(tokenId)`, which says which pool,
+which range and how much. The second was already being read and its salt
+thrown away; `liquidity_events.salt` keeps it now. The first is fetched by
+address, the one exception to §20's by-signature rule: `Transfer`'s
+selector is every ERC-20's too, so asked by signature alone it would
+return every token transfer on the chain, and asked at the one address it
+is a handful of logs a window. It rides beside each window in a request
+of its own, so a pass sends two requests per window; the burst rule (§20)
+halves the concurrency on a rate limit as before.
+
+`position_transfers` is a raw table keyed by log coordinates, and
+`positions` is **rebuilt from both, never incremented**: the holder is the
+latest transfer's `to`, the range and liquidity are the sum of the salted
+events, the principal is the sum of their amounts, and a token sent to the
+zero address is `burned`. `server/indexer/positions.test.ts` mints a
+position to one wallet, moves it to another, halves it and burns it, and
+asserts the table at each step — and that the block-zero and incremental
+replays agree (§9).
+
+**The history that the main loop never saw.** On the box the cursor was
+millions of blocks in when this code arrived, so every position minted
+before it — through Uniswap's own interface, by anyone — had no transfer
+row, and its liquidity rows had no salt. The first pass after the deploy
+walks PositionManager's history from the start block to the cursor
+(`position_history_block`, advanced by every pass since), writes the
+transfers, gives the existing liquidity rows their salt and nothing else,
+and rebuilds `positions` once. The same shape as the v3 factory's history
+(§20), for the same reason; a `working` stage with a heartbeat, so health
+says what it is doing. There is a test that wipes exactly what a synced
+box lacks and asserts one pass restores it.
+
+**`/api/portfolio/:wallet`** values each position by the same tick maths
+the indexer uses and through the same one path to dollars (§4.3), says
+whether it is in range and for how long it has not been, and puts *price
+impact on holdings* beside it as what it is: the position's value today
+against what its net principal would be worth today. *Fees earned* is
+null. A position's collections are not indexed — v4 collects inside a
+`ModifyLiquidity` of delta zero whose event carries no amounts — and a
+figure for them would be invented (§7).
+
+**Uncollected fees are read from the chain by the page.** Fees are state,
+not events: the pool's fee-growth accumulators inside the range, less the
+value the position last settled at, times its liquidity, over 2^128 —
+`lib/v4/fees.ts`, the same arithmetic as v4-core's `Position.update`,
+wrap included, with a test. `useLiveFees` reads them through StateView in
+one multicall every thirty seconds and values them at the same prices the
+portfolio used, so the two figures on a row are in the same dollars. The
+live provider carries the wallet's portfolio beside the shared snapshot,
+re-read on the poll and on request.
+
+The page: Net value, Uncollected fees, Price impact on holdings, In range;
+a row per position with its range (`Full range`, or `−12% / +12%` around
+the token's price), its status in red when out of range, its value, its
+uncollected fees in both currencies, and **Collect fees** and **Withdraw**.
+The masthead's *Positions* is the count of open ones. A position whose
+pool is below the listing bar still renders: the token rides on the
+position.
+
+### Collect and withdraw
+
+`lib/v4/manage.ts`: a collect is `DECREASE_LIQUIDITY` by zero, which
+settles the fees, then `TAKE_PAIR` to the owner; a withdrawal is
+`BURN_POSITION` then `TAKE_PAIR`. Both are byte-compared with Uniswap's
+`V4Planner` in the test. `usePositionActions` sends them with the mint's
+guards: the wallet has to be on this chain, the node dry-runs the exact
+calldata before any signature, and a withdrawal's minimums come from the
+chain's own liquidity at the chain's price read a moment before, less one
+percent — not from the indexer's figures, which during a sync are weeks
+old and would either revert every withdrawal after a rally or guard
+nothing after a fall. The receipt is awaited, the portfolio re-read, and
+the row says what happened with a link to the transaction.
+
+### Transaction history
+
+`lib/tx-history.ts` keeps a short list per wallet in the browser: hash,
+kind, a label in words, and whether it was mined. Approvals, mints,
+collections and withdrawals record themselves as they are sent and mark
+themselves on the receipt; a transaction cut off by a reload is asked
+about through the public RPC until it is. The *Activity* card on
+`/portfolio` shows it and says what it is — a convenience, per browser,
+with the explorer as the record.
+
+### Slippage, and the deposit that opened on "above your balance"
+
+The builder offers 0.5, 1 and 3 percent, default 1, passed through to the
+plan's `amountMax`. The deposit defaults to a tenth of an ether or a
+hundred dollars, by the pool's quote, instead of 2.5 of whichever it was.
+
+### The drifts §22 recorded in the indexer
+
+- **Reserves are principal.** `pool_state` now values the flow less every
+  fee the pool has earned (`pool_fee_hourly`'s exact integer sums per
+  token). Fees sit in the pool until collected, and collecting emits
+  nothing the indexer reads, so the figure grew with every fee ever
+  earned and the yield, being fees over it, was understated. Exact for a
+  static-fee pool; for a dynamic-fee pool it inherits the fee row's
+  proportion (§20). Asserted in the positions suite against the SQL.
+- **The anchor hour is a volume-weighted mean** of its swaps, each
+  weighted by its USDG side, rather than the last swap in the hour — so a
+  dust trade at the hour's end no longer sets the ether price every fee
+  in every pool is valued at. Postgres numeric sums are exact, so the
+  mean is order-independent and §9 still holds.
+- **The unscoped pool-state rebuild runs when the anchor hour changes**,
+  once the indexer follows head, and on the cadence for the supply
+  refresh — not every second. An untouched pool's dollar figures depend on
+  nothing else that moves.
+- **`/api/health`'s swap count is kept for thirty seconds.** A
+  `COUNT(*)` over millions of swap rows per waiting-page poll was a
+  sequential scan per poll, for a figure that is context. The pools
+  count is a small table and stays exact on every call — the first
+  version cached both, and the health suite caught it answering a stale
+  zero for a database that had just been synced.
+
+### Smaller
+
+The footer's four links go somewhere: Contracts to PositionManager on the
+explorer, Audit to Uniswap's v4-periphery audits, Docs to the v4
+contracts overview, Status to `/api/health`. `deploy/nginx.conf` sends a
+`Content-Security-Policy-Report-Only` — Next.js inlines its hydration
+scripts and `next/font` its styles, WalletConnect's modal has its own
+hosts, a wallet's icon is a `data:` URI, and the comment says what to
+watch in the console for a few days before renaming the header to
+enforce. The masthead's *Positions* tooltip says what the count is. The
+rate-limit fakes in `adaptive.test.ts` answer the address-scoped request
+without counting it, since they model the endpoint's answer to the window.
+
+### Deferred, and why
+
+1. **The single-token zap.** A Universal Router swap of the token side in
+   the same transaction, §3.1's design, with the address already in
+   `lib/chain.ts`. Not built here because it cannot be fork-tested from
+   this sandbox and its failure mode is not a revert: a wrong swap path
+   or a wrong minimum loses money. It should follow the first watched
+   mint, not precede it. The builder still says the deposit is two-sided.
+2. **Removing reorged-out rows.** The 32-block re-scan upserts, so a row
+   from an orphaned block stays. Deleting rows absent from a re-scan
+   would delete real rows whenever an endpoint answers a window partially
+   — which on this chain they do — and needs a per-window "complete
+   answer" guarantee the sources do not give. On a sequenced Orbit chain
+   the drift is negligible and it is recorded rather than risked.
+3. **A history of collected fees.** Not in the log stream (above). The
+   uncollected figure is live and exact; the collected one would be a
+   guess. Indexing v4's `BalanceDelta` would need a trace, not a log.
+
+Still ALFA's, unchanged: `STAKEABLE_HOOKS` and `LAUNCHPAD_HOOKS` (§14,
+§20), the listing bar's two thresholds, the §12 questions, and the
+protocol fee's immutable cap before any vault is deployed.
+
+### Verified here
+
+On a fresh Postgres: `typecheck`, `lint`, the full suite — 38 files and
+375 tests, the positions, history-walk, fees, manage and tx-history
+suites among them — the production build, and the 34 Playwright
+end-to-end tests against that build. All green.

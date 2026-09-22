@@ -97,7 +97,7 @@ Five pages against a simulated data source, with the prototype's live behaviour:
 | `/stakes` | Vault grid with trailing-7d fee yield, staked total, fees 24h, stakers, next harvest; your stakes with the 7-day stream |
 | `/positions` | The shape builder: token, deposit, shape, range, bin count, live bin chart |
 | `/router` | Token-team surface: fee source, trigger mode, destination, timeline, depth projection |
-| `/portfolio` | Net value, fees earned, price impact on holdings, daily fee heatmap, position list |
+| `/portfolio` | Net value, uncollected fees read from the chain, price impact on holdings, position list with Collect and Withdraw, what this browser has sent |
 
 Ported interactions: value flash on change (green up, red down, ~1.1s), FLIP row
 reordering on rank change, leader row highlight, `Stake` revealed on row hover,
@@ -138,10 +138,13 @@ that has not been set, and the page names it.
 ```
 PoolManager v4 + v3 pools  --Initialize, Swap, ModifyLiquidity/Mint/Burn-->
   swap_events, liquidity_events     raw rows, keyed (tx_hash, log_index)
-    -> weth_usd_hourly              the one USD anchor (WETH/USDG)
+    -> weth_usd_hourly              the one USD anchor (WETH/USDG), volume-weighted per hour
     -> pool_flow_hourly             signed token flow, which gives reserves
     -> pool_fee_hourly              fees and volume per pool per hour
-    -> pool_state                   latest price, reserves, TVL
+    -> pool_state                   latest price, principal reserves, TVL
+PositionManager            --Transfer, and the salt on ModifyLiquidity-->
+  position_transfers                raw rows, keyed the same way
+    -> positions                    who holds which position, in which pool and range
 ```
 
 Every table is **rebuilt by aggregation, never incremented**. That is the whole
@@ -160,6 +163,16 @@ vested and treasury-held tokens, and none of that is distinguishable on chain.
 That makes it FDV, not market cap, and presenting FDV as market cap overstates
 every token with a vesting schedule. So the figure is marked `fdv`, and a
 token that will not report a supply shows an em dash rather than a guess.
+
+**Positions are the PositionManager's tokens.** Its `Transfer` says who holds
+a position and the PoolManager's `ModifyLiquidity` with `sender =
+PositionManager` and `salt = bytes32(tokenId)` says which pool, which range
+and how much; `positions` is rebuilt from both. `/api/portfolio/:wallet`
+values them at the pool's price through the same one path as everything
+else, and the page reads each position's uncollected fees from StateView —
+fees are state, not events. A box that synced before the poller followed
+PositionManager walks its history on the first pass after the deploy
+(`position_history_block`), the way the v3 factory's is walked.
 
 **A pool with neither WETH nor USDG on one side** cannot be priced through the
 one allowed path, so it is not listed at all rather than listed at zero.

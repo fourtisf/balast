@@ -14,8 +14,7 @@ export default function PortfolioPage() {
             Your fees, <em>day by day</em>.
           </>
         }
-        lede="Every stake and position, marked to market, with the fees it actually earned. Nothing here is projected."
-        actions={<button className="btn btn-ghost">Share PnL card</button>}
+        lede="Every position, marked to market, with the fees it has actually earned and a way to collect them. Nothing here is projected."
       />
       <PortfolioBody />
     </section>

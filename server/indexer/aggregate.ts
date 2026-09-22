@@ -35,7 +35,7 @@
  * WETH nor USDG on a side is left unpriced rather than guessed at.
  */
 
-import { etherCurrencies } from '../../lib/chain';
+import { CONTRACTS, NATIVE_ETH, etherCurrencies } from '../../lib/chain';
 import { prisma } from '../db';
 
 /** Tokens that can anchor a price, and the pool that prices WETH itself. */
@@ -192,9 +192,15 @@ function touchedHours(bounds: Bounds | undefined, table: string): string {
 /**
  * Step 1 — `weth_usd_hourly`: WETH in USD, per hour, from the anchor pool.
  *
- * The last anchor swap in each hour sets that hour's price. Hours with no
- * anchor swap get no row; readers carry the previous price forward, because a
- * quiet hour in the anchor pool is not WETH becoming worthless.
+ * The hour's price is the volume-weighted mean of the hour's anchor swaps,
+ * each weighted by its USDG side. It used to be the LAST swap in the hour,
+ * which let one trade at the hour's end — a dust trade, or a deliberate one
+ * — set the ether price every fee in every pool is valued at (§22). Hours
+ * with no anchor swap get no row; readers carry the previous price forward,
+ * because a quiet hour in the anchor pool is not WETH becoming worthless.
+ *
+ * Order-independent, which §9 needs: numeric sums are exact in Postgres, so
+ * the mean comes out the same whatever order the rows arrive in.
  */
 export async function rebuildAnchorPrices(
   anchors: PriceAnchors,
@@ -209,22 +215,30 @@ export async function rebuildAnchorPrices(
 
   return prisma.$executeRawUnsafe(`
     INSERT INTO weth_usd_hourly (hour, weth_usd)
-    SELECT DISTINCT ON (date_trunc('hour', sw.block_time))
-      date_trunc('hour', sw.block_time) AS hour,
-      ${sane(
-        `CASE
-           WHEN lower(p.token1) = lower('${usdg}') THEN ${SWAP_RATIO}
-           WHEN lower(p.token0) = lower('${usdg}') THEN 1 / NULLIF(${SWAP_RATIO}, 0)
-           ELSE NULL
-         END`,
-        MAX_SANE_PRICE_USD,
-      )}::numeric(38,18) AS weth_usd
-    FROM swap_events sw
-    JOIN pools  p  ON p.id = sw.pool_id
-    JOIN tokens t0 ON lower(t0.address) = lower(p.token0)
-    JOIN tokens t1 ON lower(t1.address) = lower(p.token1)
-    WHERE sw.pool_id = '${anchorPoolId}' ${hourFilter}
-    ORDER BY date_trunc('hour', sw.block_time), sw.block_num DESC, sw.log_index DESC
+    SELECT hour, (SUM(price * weight) / SUM(weight))::numeric(38,18) AS weth_usd
+    FROM (
+      SELECT
+        date_trunc('hour', sw.block_time) AS hour,
+        ${sane(
+          `CASE
+             WHEN lower(p.token1) = lower('${usdg}') THEN ${SWAP_RATIO}
+             WHEN lower(p.token0) = lower('${usdg}') THEN 1 / NULLIF(${SWAP_RATIO}, 0)
+             ELSE NULL
+           END`,
+          MAX_SANE_PRICE_USD,
+        )} AS price,
+        -- The USDG side of the swap, either direction: the dollars that
+        -- actually traded at this price.
+        abs(CASE WHEN lower(p.token1) = lower('${usdg}') THEN sw.amount1 ELSE sw.amount0 END) AS weight
+      FROM swap_events sw
+      JOIN pools  p  ON p.id = sw.pool_id
+      JOIN tokens t0 ON lower(t0.address) = lower(p.token0)
+      JOIN tokens t1 ON lower(t1.address) = lower(p.token1)
+      WHERE sw.pool_id = '${anchorPoolId}' ${hourFilter}
+    ) priced
+    WHERE price IS NOT NULL AND weight > 0
+    GROUP BY hour
+    HAVING SUM(weight) > 0
     ON CONFLICT (hour) DO UPDATE SET weth_usd = EXCLUDED.weth_usd
   `);
 }
@@ -420,6 +434,14 @@ export async function rebuildFeeHours(
  * Reserves come from `pool_flow_hourly`, not from the raw tables, so this is
  * a sum over a small table. The latest price comes from a `DISTINCT ON`
  * backed by the `(pool_id, block_num, log_index)` index.
+ *
+ * The reserves are PRINCIPAL: the signed flow less every fee the pool has
+ * earned (`pool_fee_hourly`, exact integer sums per token). Fees sit in the
+ * pool until an LP collects them, and collecting emits nothing the indexer
+ * reads — v4 does it inside a modifyLiquidity of delta zero, v3 with a
+ * Collect the indexer does not follow — so a figure that included them
+ * drifted upward with every fee ever earned (§22). What the curve trades
+ * against is the principal, and that is what "liquidity" now means here.
  */
 export async function rebuildPoolState(anchors: PriceAnchors, poolIds?: Iterable<string>): Promise<number> {
   const { weth, usdg } = checkAnchors(anchors);
@@ -449,11 +471,25 @@ export async function rebuildPoolState(anchors: PriceAnchors, poolIds?: Iterable
     ),
 
     -- Reserves: the staged hourly flow, summed.
-    reserves AS (
+    flow AS (
       SELECT pool_id, SUM(delta0) AS r0, SUM(delta1) AS r1
       FROM pool_flow_hourly
       ${scope('pool_id')}
       GROUP BY pool_id
+    ),
+
+    -- Fees the pool has earned, in each token. Principal is flow less these.
+    earned AS (
+      SELECT pool_id, SUM(fees_token0) AS f0, SUM(fees_token1) AS f1
+      FROM pool_fee_hourly
+      ${scope('pool_id')}
+      GROUP BY pool_id
+    ),
+
+    reserves AS (
+      SELECT f.pool_id, f.r0 - COALESCE(e.f0, 0) AS r0, f.r1 - COALESCE(e.f1, 0) AS r1
+      FROM flow f
+      LEFT JOIN earned e ON e.pool_id = f.pool_id
     ),
 
     base AS (
@@ -598,8 +634,90 @@ export async function rebuildPoolState(anchors: PriceAnchors, poolIds?: Iterable
 }
 
 /**
- * All four steps, in order. The order is not arbitrary: fee valuation reads
- * the anchor series, and pool state reads the staged flow.
+ * Step 5 — `positions`: one row per PositionManager token, from the raw
+ * transfers and the salted liquidity events (§22).
+ *
+ * The holder is the `to` of the token's latest Transfer; the pool, the range
+ * and the liquidity are the sum of the ModifyLiquidity events PositionManager
+ * emitted for that salt; the net principal is the sum of their amounts, which
+ * is what "holding" would be worth today. A token sent to the zero address
+ * is `burned`. Scoped to the salts a block range touched, or every salt when
+ * unscoped, and rebuilt rather than incremented like every other aggregate.
+ */
+export async function rebuildPositions(bounds?: Bounds): Promise<number> {
+  const pm = safeIdentifier(CONTRACTS.positionManager.toLowerCase(), 'PositionManager address');
+  const touched = bounds
+    ? `SELECT salt FROM position_transfers
+         WHERE block_num >= ${bounds.fromBlock} AND block_num <= ${bounds.toBlock}
+       UNION
+       SELECT salt FROM liquidity_events
+         WHERE salt IS NOT NULL AND lower(owner) = '${pm}'
+           AND block_num >= ${bounds.fromBlock} AND block_num <= ${bounds.toBlock}`
+    : `SELECT DISTINCT salt FROM position_transfers`;
+
+  return prisma.$executeRawUnsafe(`
+    WITH touched AS (${touched}),
+    latest AS (
+      SELECT DISTINCT ON (t.salt) t.salt, t.token_id, t.to_addr
+      FROM position_transfers t
+      JOIN touched ON touched.salt = t.salt
+      ORDER BY t.salt, t.block_num DESC, t.log_index DESC
+    ),
+    minted AS (
+      SELECT DISTINCT ON (t.salt) t.salt, t.block_num AS minted_block, t.block_time AS minted_at
+      FROM position_transfers t
+      JOIN touched ON touched.salt = t.salt
+      WHERE t.from_addr = '${NATIVE_ETH}'
+      ORDER BY t.salt, t.block_num ASC, t.log_index ASC
+    ),
+    liq AS (
+      SELECT le.salt, le.pool_id,
+             MIN(le.tick_lower) AS tick_lower,
+             MAX(le.tick_upper) AS tick_upper,
+             SUM(le.liquidity_delta) AS liquidity,
+             SUM(le.amount0) AS dep0,
+             SUM(le.amount1) AS dep1
+      FROM liquidity_events le
+      JOIN touched ON touched.salt = le.salt
+      WHERE lower(le.owner) = '${pm}'
+      GROUP BY le.salt, le.pool_id
+    )
+    INSERT INTO positions (token_id, wallet, pool_id, tick_lower, tick_upper, liquidity, status,
+                           deposited0, deposited1, minted_block, minted_at, updated_at)
+    SELECT
+      l.token_id::text,
+      l.to_addr,
+      q.pool_id,
+      q.tick_lower,
+      q.tick_upper,
+      GREATEST(q.liquidity, 0)::numeric(78,0),
+      CASE WHEN l.to_addr = '${NATIVE_ETH}' THEN 'burned' ELSE 'open' END,
+      q.dep0::numeric(78,0),
+      q.dep1::numeric(78,0),
+      m.minted_block,
+      m.minted_at,
+      now()
+    FROM latest l
+    JOIN liq q ON q.salt = l.salt
+    LEFT JOIN minted m ON m.salt = l.salt
+    ON CONFLICT (token_id) DO UPDATE SET
+      wallet       = EXCLUDED.wallet,
+      pool_id      = EXCLUDED.pool_id,
+      tick_lower   = EXCLUDED.tick_lower,
+      tick_upper   = EXCLUDED.tick_upper,
+      liquidity    = EXCLUDED.liquidity,
+      status       = EXCLUDED.status,
+      deposited0   = EXCLUDED.deposited0,
+      deposited1   = EXCLUDED.deposited1,
+      minted_block = EXCLUDED.minted_block,
+      minted_at    = EXCLUDED.minted_at,
+      updated_at   = EXCLUDED.updated_at
+  `);
+}
+
+/**
+ * All five steps, in order. The order is not arbitrary: fee valuation reads
+ * the anchor series, and pool state reads the staged flow and the fees.
  */
 export async function rebuildAggregates(
   anchors: PriceAnchors,
@@ -623,4 +741,5 @@ export async function rebuildAggregates(
   await step('flow', () => rebuildFlowHours(bounds));
   await step('fees', () => rebuildFeeHours(anchors, bounds));
   await step('pool state', () => rebuildPoolState(anchors, bounds ? poolIds : undefined));
+  await step('positions', () => rebuildPositions(bounds));
 }

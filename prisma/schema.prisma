@@ -157,13 +157,39 @@ model LiquidityEvent {
   amount0        Decimal  @db.Decimal(78, 0)
   amount1        Decimal  @db.Decimal(78, 0)
   owner          String
+  /// v4's position salt. For a position minted through PositionManager it
+  /// is bytes32(tokenId), which ties the position to its own liquidity
+  /// events (§22). Null for v3, and for v4 rows written before the column.
+  salt           String?
 
   pool Pool @relation(fields: [poolId], references: [id], onDelete: Cascade)
 
   @@id([txHash, logIndex])
   @@index([poolId, blockTime])
   @@index([blockNum])
+  @@index([salt])
   @@map("liquidity_events")
+}
+
+/// PositionManager's ERC-721 Transfer logs: who holds which position token.
+/// Raw and keyed by log coordinates, like the swap rows; `positions` is
+/// rebuilt from these and the salted liquidity events (§22).
+model PositionTransfer {
+  txHash    String   @map("tx_hash")
+  logIndex  Int      @map("log_index")
+  tokenId   Decimal  @map("token_id") @db.Decimal(78, 0)
+  /// bytes32(tokenId), lowercase: the salt the position's liquidity events carry.
+  salt      String
+  fromAddr  String   @map("from_addr")
+  toAddr    String   @map("to_addr")
+  blockNum  BigInt   @map("block_num")
+  blockTime DateTime @map("block_time")
+
+  @@id([txHash, logIndex])
+  @@index([salt, blockNum, logIndex])
+  @@index([toAddr])
+  @@index([blockNum])
+  @@map("position_transfers")
 }
 
 /// One row per contract the poller follows, so a restart resumes rather than
@@ -314,6 +340,8 @@ model Stake {
   @@map("stakes")
 }
 
+/// One row per PositionManager token, rebuilt from position_transfers and
+/// the salted liquidity events: current holder, pool, range, liquidity.
 model Position {
   tokenId   String   @id @map("token_id")
   wallet    String
@@ -323,12 +351,21 @@ model Position {
   liquidity Decimal  @db.Decimal(78, 0)
   /// spot / curve / bidask — the frontend weight generator used at mint (§3.2).
   shape     String?
+  /// `open`, or `burned` once the token has been sent to the zero address.
   status    String
-  updatedAt DateTime @map("updated_at")
+  /// Net principal put in, in each token's smallest units: mints add, burns
+  /// subtract. Valued at today's prices this is "what holding would be
+  /// worth", the honest basis for price impact on holdings (§7).
+  deposited0  Decimal   @default(0) @db.Decimal(78, 0)
+  deposited1  Decimal   @default(0) @db.Decimal(78, 0)
+  mintedBlock BigInt?   @map("minted_block")
+  mintedAt    DateTime? @map("minted_at")
+  updatedAt   DateTime  @map("updated_at")
 
   pool Pool @relation(fields: [poolId], references: [id], onDelete: Cascade)
 
   @@index([wallet])
+  @@index([status])
   @@map("positions")
 }
 

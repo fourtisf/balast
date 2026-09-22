@@ -4,7 +4,7 @@
  */
 
 import { createPublicClient, createWalletClient, custom, defineChain, http, type Address, type PublicClient } from 'viem';
-import { CHAIN, EXPLORER_URL, PUBLIC_RPC_URL } from '../chain';
+import { CHAIN, CONTRACTS, EXPLORER_URL, PUBLIC_RPC_URL } from '../chain';
 import type { Eip1193Provider } from '../wallet';
 
 export const robinhoodChain = defineChain({
@@ -13,6 +13,9 @@ export const robinhoodChain = defineChain({
   nativeCurrency: CHAIN.nativeCurrency,
   rpcUrls: { default: { http: [PUBLIC_RPC_URL] } },
   blockExplorers: { default: { name: 'Blockscout', url: EXPLORER_URL } },
+  // Multicall3 is at its canonical address on this chain (§2), so a page
+  // can read every position's fees in one round trip.
+  contracts: { multicall3: { address: CONTRACTS.multicall3 } },
 });
 
 let shared: PublicClient | null = null;

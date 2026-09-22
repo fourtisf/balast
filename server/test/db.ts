@@ -12,6 +12,7 @@ const TABLES = [
   'router_routes',
   'router_configs',
   'positions',
+  'position_transfers',
   'stakes',
   'vaults',
   'pool_fee_hourly',

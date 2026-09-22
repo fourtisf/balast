@@ -102,8 +102,29 @@ export async function writeLiquidity(plan: IngestPlan): Promise<number> {
       amount0: dec(l.amount0),
       amount1: dec(l.amount1),
       owner: l.owner,
+      salt: l.salt,
     }));
     const result = await prisma.liquidityEvent.createMany({ data: rows, skipDuplicates: true });
+    written += result.count;
+  }
+  return written;
+}
+
+/** PositionManager transfers, keyed by log coordinates like everything else. */
+export async function writePositionTransfers(plan: IngestPlan): Promise<number> {
+  let written = 0;
+  for (const batch of chunk(plan.transfers)) {
+    const rows = batch.map((t) => ({
+      txHash: t.txHash,
+      logIndex: t.logIndex,
+      tokenId: dec(t.tokenId),
+      salt: t.salt,
+      fromAddr: t.from,
+      toAddr: t.to,
+      blockNum: t.blockNum,
+      blockTime: t.blockTime,
+    }));
+    const result = await prisma.positionTransfer.createMany({ data: rows, skipDuplicates: true });
     written += result.count;
   }
   return written;

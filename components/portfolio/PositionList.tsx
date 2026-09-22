@@ -1,30 +1,50 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { formatUnits } from 'viem';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { TokenBadge } from '@/components/ui/TokenBadge';
+import { EXPLORER_URL } from '@/lib/chain';
+import { getProvider } from '@/lib/data';
+import type { TokenMeta, UserPosition } from '@/lib/data/types';
 import { countdown, quoteLabel, usdExact } from '@/lib/format';
 import { SHAPES } from '@/lib/shapes';
+import { amount as fmtAmount } from '@/lib/v4/format';
+import { feesUsd, type LiveFeesState } from './useLiveFees';
+import type { PositionActions } from './usePositionActions';
 
-export function PositionList() {
+/** A signed percent for a range bound: −12.5% / +12.5%. */
+function pct(n: number): string {
+  const digits = Math.abs(n) >= 10 ? 0 : 1;
+  const sign = n < 0 ? '−' : '+';
+  return `${sign}${Math.abs(n).toFixed(digits)}%`;
+}
+
+function since(hours: number): string {
+  if (hours < 1) return 'less than an hour ago';
+  if (hours < 48) return `${Math.round(hours)}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+export function PositionList({ fees, actions }: { fees: LiveFeesState; actions: PositionActions }) {
   const { portfolio, pools } = useMarket();
-  const { query } = useUi();
+  const { query, wallet } = useUi();
   const router = useRouter();
+  const live = getProvider().kind === 'live';
 
+  // A live position's pool can sit below the listing bar and still be
+  // someone's; its token rides on the position when the board has no row.
+  const tokenOf = (position: UserPosition): TokenMeta | null =>
+    pools.find((p) => p.id === position.poolId)?.token ?? position.live?.token ?? null;
   const q = query.trim().toLowerCase();
-  const matches = (poolId: string) => {
-    if (q === '') return true;
-    const pool = pools.find((p) => p.id === poolId);
-    if (!pool) return false;
-    return (
-      pool.token.symbol.toLowerCase().includes(q) || pool.token.name.toLowerCase().includes(q)
-    );
-  };
-  const positions = portfolio.positions.filter((p) => matches(p.poolId));
-  const stakes = portfolio.stakes.filter((s) => matches(s.poolId));
-  const stranded = portfolio.positions.find((p) => !p.inRange);
-  const strandedPool = pools.find((p) => p.id === stranded?.poolId);
+  const matchesToken = (token: TokenMeta | null) =>
+    q === '' || (token !== null && (token.symbol.toLowerCase().includes(q) || token.name.toLowerCase().includes(q)));
+  const positions = portfolio.positions.filter((p) => matchesToken(tokenOf(p)));
+  const stakes = portfolio.stakes.filter((s) => matchesToken(pools.find((p) => p.id === s.poolId)?.token ?? null));
+  const stranded = positions.find((p) => !p.inRange);
+  const strandedToken = stranded ? tokenOf(stranded) : null;
+  const strandedOnBoard = stranded ? pools.find((p) => p.id === stranded.poolId && p.stakeable) : undefined;
 
   return (
     <div className="card panel">
@@ -33,17 +53,45 @@ export function PositionList() {
       </h2>
 
       {positions.map((position) => {
-        const pool = pools.find((p) => p.id === position.poolId);
-        if (!pool) return null;
-        const shape = SHAPES.find((s) => s.id === position.shape)!;
+        const token = tokenOf(position);
+        if (!token) return null;
+        const lp = position.live;
+        const quote = lp ? quoteLabel(lp) : quoteLabel(pools.find((p) => p.id === position.poolId)!);
+        const shape = position.shape ? SHAPES.find((s) => s.id === position.shape) : undefined;
+        const rangeText =
+          position.range === 'full'
+            ? 'Full range'
+            : position.range
+              ? `${pct(position.range.minPct)} / ${pct(position.range.maxPct)}`
+              : `${shape?.label ?? 'Position'} · ±${position.rangePct}%`;
+
+        // Uncollected fees, from the chain (useLiveFees), in the token and
+        // the quote and in dollars at the prices the value beside them used.
+        const entry = lp ? fees.fees.get(position.tokenId) : undefined;
+        const feeUsd = lp ? feesUsd(position, fees.fees) : null;
+        const tokenFees = entry && lp ? (lp.tokenIsCurrency0 ? entry.fees0 : entry.fees1) : null;
+        const quoteFees = entry && lp ? (lp.tokenIsCurrency0 ? entry.fees1 : entry.fees0) : null;
+        const hasFees = tokenFees !== null && quoteFees !== null && (tokenFees > 0n || quoteFees > 0n);
+        const busy = actions.busy?.tokenId === position.tokenId ? actions.busy : null;
+        const error = actions.error?.tokenId === position.tokenId ? actions.error.message : null;
+        const done = actions.done?.tokenId === position.tokenId ? actions.done : null;
+        const canAct = Boolean(lp) && !actions.busy;
+
         return (
-          <div className="pnl-row" key={position.tokenId}>
+          <div className="pnl-row" key={position.tokenId} data-token-id={position.tokenId}>
             <div className="tok">
-              <TokenBadge token={pool.token} />
+              <TokenBadge token={token} />
               <div>
-                <div className="n">{pool.token.symbol} / {quoteLabel(pool)}</div>
+                <div className="n">
+                  {token.symbol} / {quote}
+                  {lp && (
+                    <span className="muted num" style={{ fontWeight: 400, fontSize: 12, marginLeft: 8 }}>
+                      #{position.tokenId}
+                    </span>
+                  )}
+                </div>
                 <div className="s">
-                  {shape.label} · ±{position.rangePct}% ·{' '}
+                  {rangeText} ·{' '}
                   {position.inRange ? (
                     'in range'
                   ) : (
@@ -53,13 +101,68 @@ export function PositionList() {
                 </div>
               </div>
             </div>
-            <div style={{ textAlign: 'right' }}>
+            <div style={{ textAlign: 'right', flex: '0 1 auto', minWidth: 0 }}>
               <div className="num" style={{ fontWeight: 600 }}>
                 {usdExact(position.valueUsd)}
               </div>
-              <div className="up num" style={{ fontSize: 12 }}>
-                +{position.feesWeth.toFixed(2)} WETH fees
-              </div>
+              {lp ? (
+                <div
+                  className={`num${hasFees ? ' up' : ' muted'}`}
+                  style={{ fontSize: 12 }}
+                  title="Uncollected fees, read from the chain now and valued at the last indexed block's prices. Collect sends them to your wallet."
+                >
+                  {entry
+                    ? `+${fmtAmount(tokenFees!, token.decimals)} ${token.symbol} · +${fmtAmount(quoteFees!, lp.quoteDecimals)} ${quote} fees` +
+                      (feeUsd !== null && feeUsd >= 0.5 ? ` ≈ ${usdExact(feeUsd)}` : '')
+                    : fees.reading
+                      ? 'reading fees from the chain…'
+                      : fees.error
+                        ? 'fees unreadable right now'
+                        : 'fees not read'}
+                </div>
+              ) : (
+                <div className="up num" style={{ fontSize: 12 }}>
+                  +{(position.feesWeth ?? 0).toFixed(2)} WETH fees
+                </div>
+              )}
+              {lp && (
+                <div className="row" style={{ justifyContent: 'flex-end', marginTop: 8, gap: 6 }}>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    disabled={!canAct || (entry !== undefined && !hasFees)}
+                    title={entry !== undefined && !hasFees ? 'Nothing to collect yet' : 'Send the uncollected fees to your wallet'}
+                    onClick={() => void actions.collect(position)}
+                  >
+                    Collect fees
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    disabled={!canAct}
+                    title="Burn the position: its liquidity and its fees go to your wallet in one transaction"
+                    onClick={() => void actions.withdraw(position)}
+                  >
+                    Withdraw
+                  </button>
+                </div>
+              )}
+              {busy && (
+                <p className="hint" style={{ marginTop: 6 }} aria-live="polite">
+                  {busy.label}
+                </p>
+              )}
+              {error && (
+                <p className="hint down" style={{ marginTop: 6 }} role="alert">
+                  {error}
+                </p>
+              )}
+              {done && !busy && !error && (
+                <p className="hint" style={{ marginTop: 6 }}>
+                  {done.kind === 'collect' ? 'Fees collected.' : 'Withdrawn.'}{' '}
+                  <a href={`${EXPLORER_URL}/tx/${done.hash}`} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline' }}>
+                    View the transaction
+                  </a>
+                </p>
+              )}
             </div>
           </div>
         );
@@ -93,27 +196,51 @@ export function PositionList() {
 
       {positions.length === 0 && stakes.length === 0 && (
         <div className="empty">
-          {q === '' ? (
+          {q !== '' ? (
             <>
-              <b>No positions yet</b>Positions you mint and stakes you open appear here,
-              marked to market, with the fees they earned.
+              <b>No match</b>Nothing in your portfolio matches that search.
+            </>
+          ) : live && !wallet ? (
+            <>
+              <b>Connect a wallet</b>Its positions — the NFTs Uniswap&rsquo;s PositionManager minted to it — appear here,
+              marked to market, with their uncollected fees read from the chain.
+            </>
+          ) : live ? (
+            <>
+              <b>No positions yet</b>Mint one from Positions, or stake from a pool. It appears here once the indexer has
+              read the block it was minted in.
             </>
           ) : (
             <>
-              <b>No match</b>Nothing in your portfolio matches that search.
+              <b>No positions yet</b>Positions you mint and stakes you open appear here,
+              marked to market, with the fees they earned.
             </>
           )}
         </div>
       )}
 
-      {stranded && strandedPool && matches(stranded.poolId) && (
+      {stranded && strandedToken && (
         <div className="alert">
-          {strandedPool.token.symbol} left its range {stranded.outOfRangeSinceHours}h ago and has
-          earned nothing since.{' '}
-          <button className="link" onClick={() => router.push('/positions')}>
-            Rebalance
-          </button>{' '}
-          to start earning again.
+          {strandedToken.symbol} left its range{' '}
+          {stranded.outOfRangeSinceHours !== undefined ? since(stranded.outOfRangeSinceHours) : ''} and has earned
+          nothing since.{' '}
+          {strandedOnBoard ? (
+            <>
+              <button className="link" onClick={() => router.push(`/positions?pool=${encodeURIComponent(strandedOnBoard.id)}`)}>
+                Rebalance
+              </button>{' '}
+              to start earning again{stranded.live ? ': withdraw it here, then mint a range around today’s price' : ''}.
+            </>
+          ) : stranded.live ? (
+            'Withdraw it here, then mint a range around today’s price to start earning again.'
+          ) : (
+            <>
+              <button className="link" onClick={() => router.push('/positions')}>
+                Rebalance
+              </button>{' '}
+              to start earning again.
+            </>
+          )}
         </div>
       )}
     </div>

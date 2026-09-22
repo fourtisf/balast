@@ -1,8 +1,9 @@
 'use client';
 
-import { createContext, useCallback, useContext, useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { getProvider } from '@/lib/data';
 import { AwaitingIndexer } from './AwaitingIndexer';
+import { useUi } from './UiProvider';
 import type { MarketSnapshot, Pool, Vault } from '@/lib/data/types';
 
 const MarketContext = createContext<MarketSnapshot | null>(null);
@@ -22,6 +23,14 @@ const MarketContext = createContext<MarketSnapshot | null>(null);
  */
 export function MarketProvider({ children }: { children: ReactNode }) {
   const provider = getProvider();
+  const { wallet } = useUi();
+
+  // The portfolio is the connected wallet's. The provider that can read one
+  // (live) is told which; the simulator has no wallet and no such method.
+  const address = wallet?.address ?? null;
+  useEffect(() => {
+    provider.setWallet?.(address);
+  }, [provider, address]);
 
   const subscribe = useCallback(
     (onChange: () => void) => provider.subscribe(() => onChange()),

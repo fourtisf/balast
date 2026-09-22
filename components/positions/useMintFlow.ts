@@ -3,8 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Address } from 'viem';
 import { useUi } from '@/components/providers/UiProvider';
+import { useWalletChainId } from '@/components/providers/useWalletChainId';
 import { CHAIN } from '@/lib/chain';
+import { getProvider } from '@/lib/data';
 import type { Pool, PoolKeyInfo, ShapeId } from '@/lib/data/types';
+import { quoteLabel } from '@/lib/format';
+import { recordTx, updateTx } from '@/lib/tx-history';
 import {
   approvalsNeeded,
   approve,
@@ -21,11 +25,12 @@ import {
 import { toRaw } from '@/lib/v4/format';
 import { planMint, type MintPlan } from '@/lib/v4/mint';
 import { priceFromSqrt, toPoolKey, type PoolKey } from '@/lib/v4/pool';
-import { currentChainId, describeWalletError, ensureChain, onChainChanged } from '@/lib/wallet';
+import { describeWalletError, ensureChain } from '@/lib/wallet';
 
 /** Reads refresh on this cadence: the price for the plan, the balances for the check. */
 const REFRESH_MS = 12_000;
-const SLIPPAGE_BPS = 100;
+/** The tolerance when the builder does not say: one percent. */
+export const DEFAULT_SLIPPAGE_BPS = 100;
 const DEADLINE_SECONDS = 20 * 60;
 const PLACEHOLDER_OWNER = '0x0000000000000000000000000000000000000001';
 
@@ -95,10 +100,13 @@ export function useMintFlow(args: {
   shape: ShapeId;
   /** One full-range position — a stake — instead of a shaped range. */
   fullRange?: boolean;
+  /** How much more than the plan's amounts the mint may take before it reverts. */
+  slippageBps?: number;
   valid: boolean;
 }): MintFlow {
   const { pool, deposit, minPct, maxPct, bins, shape, valid } = args;
   const fullRange = args.fullRange ?? false;
+  const slippageBps = args.slippageBps ?? DEFAULT_SLIPPAGE_BPS;
   const { wallet, openWallet, showToast } = useUi();
   const [live, setLive] = useState<(Slot0 & { tokenPriceInQuote: number }) | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
@@ -110,8 +118,6 @@ export function useMintFlow(args: {
   const [result, setResult] = useState<{ hash: `0x${string}`; minted: number } | null>(null);
   // Bumped after a transaction so the reads run again without waiting for the cadence.
   const [refreshTick, setRefreshTick] = useState(0);
-  /** The network the wallet is on. Null until it has answered, or when it will not. */
-  const [chainId, setChainId] = useState<number | null>(null);
 
   // One key object per pool identity, whatever the snapshot does.
   const keyId = keyIdentity(pool.key);
@@ -142,27 +148,9 @@ export function useMintFlow(args: {
   const provider = wallet?.provider ?? null;
   const owner = (wallet?.address ?? null) as Address | null;
 
-  // Which network the wallet is on, and every switch it makes afterwards.
-  // The dialog asks the wallet to switch on connect, but a person can decline
-  // that and stay connected, or switch away later; a mint sent from another
-  // network would be refused by viem with a message nobody should have to
-  // read. So the flow knows, and says so, before anything is sent.
-  useEffect(() => {
-    setChainId(null);
-    if (!provider) return;
-    let cancelled = false;
-    void currentChainId(provider).then((id) => {
-      if (!cancelled) setChainId(id);
-    });
-    const stop = onChainChanged(provider, (id) => {
-      if (!cancelled) setChainId(id);
-    });
-    return () => {
-      cancelled = true;
-      stop();
-    };
-  }, [provider]);
-
+  // Which network the wallet is on, and every switch it makes afterwards
+  // (useWalletChainId): nothing is sent until it is on this chain.
+  const { chainId, refresh: refreshChainId } = useWalletChainId(provider);
   const onChain = chainId === CHAIN.id;
   // Reads go through the wallet only while it is on this chain. On another
   // network its provider would answer for the wrong chain — StateView is not
@@ -244,7 +232,7 @@ export function useMintFlow(args: {
           shape,
           fullRange,
           owner: (owner ?? PLACEHOLDER_OWNER) as Address,
-          slippageBps: SLIPPAGE_BPS,
+          slippageBps,
           deadline: BigInt(Math.floor(Date.now() / 1000) + DEADLINE_SECONDS),
         }),
         planError: null,
@@ -252,7 +240,7 @@ export function useMintFlow(args: {
     } catch (e) {
       return { plan: null, planError: (e as Error).message };
     }
-  }, [key, sides, live, valid, depositRaw, minPct, maxPct, bins, shape, fullRange, owner]);
+  }, [key, sides, live, valid, depositRaw, minPct, maxPct, bins, shape, fullRange, owner, slippageBps]);
 
   const needs = useMemo(() => {
     if (!plan || !sides) return null;
@@ -324,8 +312,7 @@ export function useMintFlow(args: {
       setBusyLabel('Switching network…');
       try {
         await ensureChain(provider);
-        const id = await currentChainId(provider);
-        setChainId(id);
+        const id = await refreshChainId();
         if (id !== CHAIN.id) setError(`Switch the wallet to ${CHAIN.name} to mint. Nothing was sent.`);
       } catch (e) {
         setError(describeWalletError(e));
@@ -338,13 +325,26 @@ export function useMintFlow(args: {
     setError(null);
     setResult(null);
     const client = readClient(provider);
+    const pair = `${pool.token.symbol} / ${quoteLabel(pool)}`;
     try {
       if (approvals.length > 0) {
         const next = approvals[0];
+        const symbol = next.token.toLowerCase() === sides.tokenCurrency.toLowerCase() ? pool.token.symbol : quoteLabel(pool);
         setBusyLabel('Approve in the wallet…');
         const hash = await approve(provider, owner, next, Math.floor(Date.now() / 1000));
+        recordTx({
+          hash,
+          kind: 'approve',
+          wallet: owner,
+          at: Date.now(),
+          status: 'pending',
+          label: next.kind === 'erc20' ? `Approve ${symbol} for Permit2` : `Allow PositionManager to use ${symbol}`,
+          poolId: pool.id,
+        });
         setBusyLabel('Waiting for the approval…');
-        await client.waitForTransactionReceipt({ hash });
+        const receipt = await client.waitForTransactionReceipt({ hash });
+        updateTx(hash, receipt.status === 'success' ? 'success' : 'reverted');
+        if (receipt.status !== 'success') throw new Error('The approval reverted on chain.');
         setApprovals((s) => s.slice(1));
         setRefreshTick((n) => n + 1);
         return;
@@ -363,14 +363,26 @@ export function useMintFlow(args: {
         shape,
         fullRange,
         owner,
-        slippageBps: SLIPPAGE_BPS,
+        slippageBps,
         deadline: BigInt(Math.floor(Date.now() / 1000) + DEADLINE_SECONDS),
       });
       const estimate = await simulateMint(client, owner, fresh);
       setBusyLabel('Confirm in the wallet…');
       const hash = await sendMint(provider, owner, fresh, estimate);
+      recordTx({
+        hash,
+        kind: 'mint',
+        wallet: owner,
+        at: Date.now(),
+        status: 'pending',
+        label: fullRange
+          ? `Stake full range · ${pair}`
+          : `Mint ${fresh.positions.length} position${fresh.positions.length === 1 ? '' : 's'} · ${pair}`,
+        poolId: pool.id,
+      });
       setBusyLabel('Minting…');
       const done = await waitForMint(client, hash, owner);
+      updateTx(hash, done.ok ? 'success' : 'reverted');
       if (!done.ok) throw new Error('The transaction reverted on chain.');
       // The outcome stays on screen: the re-read below refreshes the price
       // and the balances, and must not take the receipt with it. It did —
@@ -379,12 +391,15 @@ export function useMintFlow(args: {
       setResult({ hash, minted: done.tokenIds.length });
       showToast(`${done.tokenIds.length} position${done.tokenIds.length === 1 ? '' : 's'} minted to your wallet`);
       setRefreshTick((n) => n + 1);
+      // The portfolio shows it once the indexer has read the block; ask now
+      // rather than waiting for the poll, and again on the poll's cadence.
+      void getProvider().refreshPortfolio?.();
     } catch (e) {
       setError(describeTxError(e));
     } finally {
       setBusyLabel(null);
     }
-  }, [step, plan, owner, provider, key, sides, onChain, approvals, live, depositRaw, minPct, maxPct, bins, shape, fullRange, showToast, openWallet]);
+  }, [step, plan, owner, provider, key, sides, onChain, approvals, live, depositRaw, minPct, maxPct, bins, shape, fullRange, slippageBps, pool, refreshChainId, showToast, openWallet]);
 
   return { key, sides, live, liveError, plan, planError, needs, balances, step, busyLabel, approvals, gas, error, result, run };
 }
