@@ -4115,3 +4115,71 @@ the field rather than assuming a number.
 **Verified**: typecheck, lint, 432 unit tests, the production build and 37
 Playwright tests, all green, and the builder checked by screenshot at
 1280px on both an ether and a USDG market.
+
+### Twelve pills for one token: the compound question, again
+
+ALFA, on CASHCAT in the builder: *market pair eth aja berbeda2 fixkan*.
+The screenshot showed twelve markets — `ETH · 2%`, `ETH · 0.5%`,
+`ETH · 0.46%`, `ETH · 0.66%`, `ETH · 0.96%`, `ETH · 3%`, and six more in
+USDG.
+
+**The tiers are real.** `pools.fee_tier` is written only from the pool's
+own `Initialize` log, which carries the fee named in its `PoolKey`, and
+Uniswap v4 lets that be any value a hook chooses — it is not restricted to
+v3's four tiers. On a launchpad chain a token accumulates pools at
+whatever fee whoever created them picked. Nothing was miscomputed; there
+is no dynamic-fee flag leaking through, and `feeTierLabel` was right.
+
+What was wrong is that the control asked one compound question — the same
+fault §26 fixed for token-and-market, one level down. **Which currency do
+I pay with** has two or three answers and decides whether the wallet can
+enter at all. **Which of that currency's pools** decides what the position
+earns, and it cannot be answered from a percentage alone: `ETH · 0.46%`
+against `ETH · 0.66%` is not a choice, it is noise.
+
+So there are two controls. **Market** names currencies and nothing else —
+`ETH`, `USDG` — and picking one selects that currency's deepest pool.
+**Fee tier** appears only when that currency has more than one pool, lists
+them deepest first, and carries **the pool's own liquidity on each
+option**, because that is the figure the choice turns on. Twelve
+undifferentiated pills become two plus six, and the six are ranked and
+readable.
+
+`lib/markets.ts` holds it: `quoteGroups` groups and orders (the ether
+group leads, per §27; everything else by its deepest pool), `orderMarkets`
+flattens it so `[0]` is still what the builder opens on, and
+`poolLiquidityUsd` is deliberately **the pool's figure and never the
+token's** — an aggregator's token-wide liquidity is the same number for
+every pool of that token, so ranking pools by it ranks nothing. An unknown
+depth is null and sorts last, never zero (§14).
+
+### The drawer was substituting a pool nobody asked for
+
+Found while changing the ordering. §27 gave the drawer's Stake button a
+`stakeTarget` — the token's best mintable market — and sorted the
+candidates with the row's own pool merely one of them. With ether ordered
+ahead of a deeper USDG market, clicking Stake on a USDG row could open the
+ether pool instead. The row's own pool is now taken whenever it can be
+minted into, and the fallback applies only when it cannot; and that note's
+copy asserted the reason was always a Uniswap v3 pool, when an unverified
+hook is the other way to get there. It names whichever it is.
+
+### The simulator had never sent a token's other markets
+
+`otherPools` has been in the snapshot since §26 and `SimProvider` never
+filled it, so every token in the prototype had exactly one market and the
+whole path — the market control, the fee-tier control, the deposit
+re-defaulting when the currency changes — was unreachable in a browser and
+untestable end to end. The live board was where each was first seen, which
+is how all three of these faults reached it.
+
+The simulator now gives its two deepest pools a second currency and a
+spread of tiers, in no total (§12), shaped like the case that broke the
+control. `e2e/forms.spec.ts` asserts the market pills carry no percentage,
+that exactly one is selected, and that every fee-tier option carries a
+liquidity figure or an honest dash.
+
+**Verified**: typecheck, lint, 438 unit tests, the production build and 39
+Playwright tests, all green, plus the builder checked by screenshot at
+1280px — `Market: ETH | USDG`, `Fee tier: 0.3% $6.20M · 1% $1.40M ·
+0.05% $421.5K`, and the tier list changing with the currency.

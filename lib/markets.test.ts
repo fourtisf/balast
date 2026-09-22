@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { CONTRACTS, NATIVE_ETH } from './chain';
 import type { Pool } from './data/types';
-import { byEntryCurrency, isMintable } from './markets';
+import { isMintable, orderMarkets, poolLiquidityUsd, quoteGroups } from './markets';
 
 const TOKEN = '0x2222222222222222222222222222222222222222';
+const USDG = '0x1111111111111111111111111111111111111111';
 
 function pool(over: Partial<Pool> & { quoteSide?: string; keyed?: boolean }): Pool {
   const { quoteSide = NATIVE_ETH, keyed = true, ...rest } = over;
   return {
-    id: `p-${quoteSide}-${rest.feeTierBps ?? 3000}-${rest.tvlUsd ?? 0}`,
+    id: `p-${quoteSide}-${rest.feeTierBps ?? 30}-${rest.tvlUsd ?? 0}`,
     address: '0xpool',
     token: { address: TOKEN, symbol: 'VIRTUAL', name: 'Virtual', decimals: 18, logoColor: 'var(--fg-3)' },
-    quote: 'ETH',
+    quote: quoteSide.toLowerCase() === USDG ? 'USDG' : 'ETH',
     feeTierBps: 30,
     key: keyed
       ? { currency0: quoteSide, currency1: TOKEN, fee: 3000, tickSpacing: 60, hooks: NATIVE_ETH, decimals0: 18, decimals1: 18 }
@@ -64,42 +65,94 @@ describe('isMintable', () => {
   });
 });
 
-describe('byEntryCurrency', () => {
+describe('quoteGroups', () => {
   /**
-   * The pair is entered with this chain's own ether, not the wrapper: a
-   * native market spends the balance the wallet already shows, a wrapped one
-   * needs an ERC-20 first.
+   * CASHCAT on the live board had twelve markets — six in ether at 2%, 0.5%,
+   * 0.46%, 0.66%, 0.96% and 3%, six more in USDG — and the builder showed
+   * them as twelve near-identical pills. v4 lets a pool carry any fee its
+   * key names, so those tiers are real; a row of them is still not a choice
+   * anybody can make.
    */
-  it('puts the native ether market in front of a deeper wrapped one', () => {
-    const native = pool({ quoteSide: NATIVE_ETH, tvlUsd: 10_000 });
-    const wrapped = pool({ quoteSide: CONTRACTS.weth, tvlUsd: 900_000 });
-    expect([wrapped, native].sort(byEntryCurrency)[0]).toBe(native);
+  const cashcat = [
+    pool({ quoteSide: NATIVE_ETH, feeTierBps: 200, tvlUsd: 4_000 }),
+    pool({ quoteSide: NATIVE_ETH, feeTierBps: 50, tvlUsd: 900_000 }),
+    pool({ quoteSide: NATIVE_ETH, feeTierBps: 46, tvlUsd: 2_500 }),
+    pool({ quoteSide: USDG, feeTierBps: 83, tvlUsd: 120_000 }),
+    pool({ quoteSide: USDG, feeTierBps: 200, tvlUsd: 3_000 }),
+  ];
+
+  it('asks the two questions separately: what you pay with, then which pool', () => {
+    const groups = quoteGroups(cashcat);
+    expect(groups.map((g) => g.label)).toEqual(['ETH', 'USDG']);
+    expect(groups[0].markets).toHaveLength(3);
+    expect(groups[1].markets).toHaveLength(2);
   });
 
-  it('orders everything else by depth, then by the cheaper fee tier', () => {
-    const shallow = pool({ quoteSide: CONTRACTS.weth, tvlUsd: 1_000 });
-    const deep = pool({ quoteSide: CONTRACTS.weth, tvlUsd: 50_000 });
-    expect([shallow, deep].sort(byEntryCurrency)[0]).toBe(deep);
-
-    const cheap = pool({ quoteSide: CONTRACTS.weth, tvlUsd: 1_000, feeTierBps: 30 });
-    const dear = pool({ quoteSide: CONTRACTS.weth, tvlUsd: 1_000, feeTierBps: 100 });
-    expect([dear, cheap].sort(byEntryCurrency)[0]).toBe(cheap);
+  it('orders each currency deepest first, so the board\u2019s own pool leads', () => {
+    const [eth, usdg] = quoteGroups(cashcat);
+    expect(eth.markets.map((m) => m.tvlUsd)).toEqual([900_000, 4_000, 2_500]);
+    expect(usdg.markets.map((m) => m.tvlUsd)).toEqual([120_000, 3_000]);
   });
 
-  it('is a total order — sorting the same set twice gives the same answer', () => {
-    const set = [
-      pool({ quoteSide: CONTRACTS.weth, tvlUsd: 50_000 }),
-      pool({ quoteSide: NATIVE_ETH, tvlUsd: 1_000 }),
-      pool({ quoteSide: NATIVE_ETH, tvlUsd: 80_000 }),
-      pool({ quoteSide: CONTRACTS.weth, tvlUsd: 3_000 }),
+  it('leads with ether, which is what a wallet on this chain holds (§27)', () => {
+    // Even where the USDG side is deeper than every ether pool.
+    const deepUsdg = [
+      pool({ quoteSide: USDG, feeTierBps: 30, tvlUsd: 9_000_000 }),
+      pool({ quoteSide: NATIVE_ETH, feeTierBps: 30, tvlUsd: 5_000 }),
     ];
-    const once = [...set].sort(byEntryCurrency).map((p) => p.id);
-    const again = [...set].reverse().sort(byEntryCurrency).map((p) => p.id);
-    expect(again).toEqual(once);
-    // Both native markets lead, deepest first.
-    expect(once.slice(0, 2)).toEqual([
-      `p-${NATIVE_ETH}-3000-80000`,
-      `p-${NATIVE_ETH}-3000-1000`,
+    expect(quoteGroups(deepUsdg)[0].label).toBe('ETH');
+    expect(orderMarkets(deepUsdg)[0].tvlUsd).toBe(5_000);
+  });
+
+  it('puts a native and a wrapped pool in one group, because both are ETH', () => {
+    const groups = quoteGroups([
+      pool({ quoteSide: CONTRACTS.weth, feeTierBps: 30, tvlUsd: 10_000 }),
+      pool({ quoteSide: NATIVE_ETH, feeTierBps: 30, tvlUsd: 50_000 }),
     ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].label).toBe('ETH');
+    // Deepest first; the wrapper is not preferred or penalised for being one.
+    expect(groups[0].markets[0].tvlUsd).toBe(50_000);
+  });
+
+  it('sorts an unknown depth last rather than treating it as empty (§14)', () => {
+    const groups = quoteGroups([
+      pool({ quoteSide: NATIVE_ETH, feeTierBps: 100, tvlUsd: 0 }),
+      pool({ quoteSide: NATIVE_ETH, feeTierBps: 30, tvlUsd: 1 }),
+    ]);
+    expect(groups[0].markets.map((m) => m.feeTierBps)).toEqual([30, 100]);
+    expect(poolLiquidityUsd(groups[0].markets[1])).toBeNull();
+  });
+
+  it('is a total order — the same set sorts the same whichever way it arrives', () => {
+    const once = orderMarkets(cashcat).map((p) => p.id);
+    const again = orderMarkets([...cashcat].reverse()).map((p) => p.id);
+    expect(again).toEqual(once);
+  });
+});
+
+describe('poolLiquidityUsd', () => {
+  /**
+   * Never the token's figure. An aggregator's token-wide liquidity is the
+   * same number for every pool of that token, so ranking pools by it ranks
+   * nothing — and it was the figure the board's own liquidity column falls
+   * back to.
+   */
+  it('takes the chain\u2019s own figure for the pool', () => {
+    expect(poolLiquidityUsd(pool({ tvlUsd: 1_234 }))).toBe(1_234);
+  });
+
+  it('falls back to a live figure for the same pool, never for the token', () => {
+    const tokenWide = pool({ tvlUsd: 0 });
+    (tokenWide as { market?: unknown }).market = { liquidityUsd: 5_000_000, poolLiquidityUsd: null };
+    expect(poolLiquidityUsd(tokenWide)).toBeNull();
+
+    const poolWide = pool({ tvlUsd: 0 });
+    (poolWide as { market?: unknown }).market = { liquidityUsd: 5_000_000, poolLiquidityUsd: 7_000 };
+    expect(poolLiquidityUsd(poolWide)).toBe(7_000);
+  });
+
+  it('is null for an unreconstructable pool, not zero', () => {
+    expect(poolLiquidityUsd(pool({ tvlUsd: 0 }))).toBeNull();
   });
 });

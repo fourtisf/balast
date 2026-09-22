@@ -17,6 +17,7 @@ import type {
   Payout,
   Pool,
   Portfolio,
+  Quote,
   Unsubscribe,
   Vault,
 } from './types';
@@ -52,6 +53,8 @@ export class SimProvider implements DataProvider {
 
   private rng: Rng;
   private pools: Pool[];
+  /** A listed token's other markets — a second currency, other fee tiers (§26). */
+  private otherPools: Pool[];
   private vaults: Vault[];
   private portfolio: Portfolio;
   private router = { ...SEED_ROUTER };
@@ -71,6 +74,7 @@ export class SimProvider implements DataProvider {
   constructor(seed = SIM_SEED) {
     this.rng = mulberry32(seed);
     this.pools = SEED_POOLS.map((s) => this.buildPool(s));
+    this.otherPools = this.buildOtherMarkets();
     this.vaults = this.buildVaults();
     const fees24h = this.pools.reduce((a, p) => a + p.fees24hUsd, 0);
     this.featuredHistory = Array.from({ length: 14 }, (_, i) =>
@@ -97,6 +101,56 @@ export class SimProvider implements DataProvider {
   }
 
   // ---------------------------------------------------------------- build --
+
+  /**
+   * A token's other markets, which the live snapshot has carried since §26
+   * and the simulator never did.
+   *
+   * Its absence meant the whole `otherPools` path — the market control, the
+   * fee-tier control, the "pick a token then its market" behaviour — was
+   * unreachable in the prototype and untestable in a browser, so the live
+   * board was where they were first seen. The board still shows one row per
+   * token; these ride beside it, in no total (§12), as they do live.
+   *
+   * The shape is the one that broke the control: on the live chain CASHCAT
+   * had six ether pools at six arbitrary tiers — v4 lets a pool carry any
+   * fee its key names — beside six more in USDG.
+   */
+  private buildOtherMarkets(): Pool[] {
+    const rng = this.rng;
+    const extra: Pool[] = [];
+    // The two deepest pools get a second currency and a spread of tiers, so
+    // both controls have something to do without burying the board.
+    for (const base of [...this.pools].sort((a, b) => b.tvlUsd - a.tvlUsd).slice(0, 2)) {
+      const otherQuote: Quote = base.quote === 'USDG' ? 'ETH' : 'USDG';
+      const tiers: { quote: Quote; feeTierBps: number; share: number }[] = [
+        { quote: base.quote, feeTierBps: 100, share: 0.22 },
+        { quote: base.quote, feeTierBps: 5, share: 0.06 },
+        { quote: otherQuote, feeTierBps: 30, share: 0.4 },
+        { quote: otherQuote, feeTierBps: 100, share: 0.05 },
+      ];
+      for (const t of tiers) {
+        const jitter = 0.7 + rng() * 0.6;
+        extra.push({
+          ...base,
+          id: `${base.id}-${t.quote}-${t.feeTierBps}`,
+          address: addr(rng),
+          quote: t.quote,
+          feeTierBps: t.feeTierBps,
+          tvlUsd: base.tvlUsd * t.share * jitter,
+          quoteTvlUsd: (base.tvlUsd * t.share * jitter) / 2,
+          fees24hUsd: base.fees24hUsd * t.share * jitter,
+          feesWindowUsd: base.feesWindowUsd * t.share * jitter,
+          volume24hUsd: base.volume24hUsd * t.share * jitter,
+          // Nothing on the board reads these, and the builder draws no
+          // sparkline for a market it is not showing a row for.
+          feeHistory: [],
+          volumeHistory: [],
+        });
+      }
+    }
+    return extra;
+  }
 
   private buildPool(s: SeedPool): Pool {
     const rng = this.rng;
@@ -358,6 +412,7 @@ export class SimProvider implements DataProvider {
     const totals = this.deriveTotals();
     return {
       pools: this.pools.map((p) => ({ ...p })),
+      otherPools: this.otherPools.map((p) => ({ ...p })),
       vaults: this.vaults.map((v) => ({ ...v })),
       portfolio: {
         ...this.portfolio,

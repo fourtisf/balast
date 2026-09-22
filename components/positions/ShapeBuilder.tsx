@@ -9,8 +9,8 @@ import { DEFAULT_SLIPPAGE_BPS, useMintFlow } from '@/components/positions/useMin
 import { CHAIN, EXPLORER_URL, NATIVE_ETH } from '@/lib/chain';
 import { DATA_SOURCE } from '@/lib/data';
 import type { Pool, ShapeId } from '@/lib/data/types';
-import { feeTierLabel, price as fmtPrice, quoteIsWrappedEther, quoteLabel } from '@/lib/format';
-import { byEntryCurrency, isMintable } from '@/lib/markets';
+import { feeTierLabel, price as fmtPrice, quoteIsWrappedEther, quoteLabel, usd } from '@/lib/format';
+import { isMintable, orderMarkets, poolLiquidityUsd, quoteGroups } from '@/lib/markets';
 import { densityAtPrice, MAX_BINS, MIN_BINS, SHAPES, shapeWeights } from '@/lib/shapes';
 import { amount as fmtAmount, num } from '@/lib/v4/format';
 import { yieldPct } from '@/lib/yield';
@@ -58,21 +58,18 @@ const SHAPE_ICONS: Record<ShapeId, number[]> = {
  * an unverified one that the select could not even show.
  */
 /**
- * A market's name among its siblings: the quote, then the fee tier when the
- * token has more than one market.
+ * A pool's name among the others quoted in the same currency: its fee tier,
+ * and the wrapper marked only where two pools would otherwise read alike.
  *
  * An ether pair is named ETH however the pool holds it (§27), so a token
  * with both a native and a wrapped pool at the same tier would show one
- * label twice. The wrapper is marked in that case, and only in that case —
- * naming it everywhere would put the distinction back on every row, which
- * is the thing the one name removed.
+ * label twice. Naming the wrapper everywhere would put the distinction back
+ * on every row, which is the thing the one name removed.
  */
-function marketLabel(market: Pool, siblings: Pool[]): string {
-  const base = quoteLabel(market) + (siblings.length > 1 ? ` · ${feeTierLabel(market.feeTierBps)}` : '');
+function tierLabel(market: Pool, siblings: Pool[]): string {
+  const base = feeTierLabel(market.feeTierBps);
   if (!quoteIsWrappedEther(market)) return base;
-  const clash = siblings.some(
-    (m) => m.id !== market.id && quoteLabel(m) + (siblings.length > 1 ? ` · ${feeTierLabel(m.feeTierBps)}` : '') === base,
-  );
+  const clash = siblings.some((m) => m.id !== market.id && feeTierLabel(m.feeTierBps) === base);
   return clash ? `${base} · wrapped` : base;
 }
 
@@ -204,7 +201,7 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
     }
     return [...byToken.entries()]
       .map(([address, list]) => {
-        const markets = list.slice().sort(byEntryCurrency);
+        const markets = orderMarkets(list);
         const symbol = markets[0].token.symbol;
         const ambiguous = (perSymbol.get(symbol.toUpperCase()) ?? 0) > 1;
         return {
@@ -220,6 +217,17 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
   }, [stakeablePools, pools, live]);
 
   const token = tokens.find((t) => t.markets.some((m) => m.id === pool.id)) ?? tokens[0];
+
+  /**
+   * The chosen token's markets, grouped by what the wallet pays with.
+   *
+   * Two questions, asked separately for the same reason the token and the
+   * market were split (§26): the quote currency is a choice with two or
+   * three answers, and the pool is a choice only the pool's own liquidity
+   * can settle.
+   */
+  const groups = useMemo(() => quoteGroups(token.markets), [token]);
+  const group = groups.find((g) => g.markets.some((m) => m.id === pool.id)) ?? groups[0];
   const shapeMeta = SHAPES.find((s) => s.id === shape)!;
   const weights = useMemo(() => (fullRange ? [1] : shapeWeights(shape, bins)), [shape, bins, fullRange]);
 
@@ -413,21 +421,21 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
             Market
           </span>
           <div className="seg wrap" role="group" aria-labelledby="market-label">
-            {token.markets.map((m) => (
+            {groups.map((g) => (
               <button
-                key={m.id}
-                className={m.id === pool.id ? 'on' : undefined}
-                aria-pressed={m.id === pool.id}
-                onClick={() => choose(m.id)}
+                key={g.label}
+                className={g.label === group.label ? 'on' : undefined}
+                aria-pressed={g.label === group.label}
+                onClick={() => choose(g.markets[0].id)}
               >
-                {marketLabel(m, token.markets)}
+                {g.label}
               </button>
             ))}
           </div>
           <p className="hint">
-            {token.markets.length === 1
-              ? `The only market for ${token.symbol} this builder can mint into. A pool with no real money behind it is not offered here.`
-              : 'The quote currency decides what your wallet needs; the fee tier decides what the position earns.'}
+            {groups.length === 1
+              ? `${token.symbol} trades against ${group.label} here, and nothing else this builder can mint into. A pool with no real money behind it is not offered.`
+              : 'What your wallet pays with. Both sides of the deposit are taken in it.'}
             {wrapped
               ? ` This pool holds its ether as aeWETH — one token per ether, the same asset — so the mint wraps what your wallet is short of and spends that.`
               : ''}
@@ -439,6 +447,48 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
               } listed but not offered here.`}
           </p>
         </div>
+
+        {/* Which of that currency's pools. A fee tier alone is not a choice
+            anybody can make — v4 lets a pool carry any fee its key names, so
+            on this chain a token can have six ether pools at six arbitrary
+            tiers. The pool's own liquidity is what settles it, so it is on
+            the option rather than a click away. */}
+        {group.markets.length > 1 && (
+          <div className="field">
+            <span className="lbl" id="tier-label">
+              Fee tier
+            </span>
+            <div className="seg wrap" role="group" aria-labelledby="tier-label">
+              {group.markets.map((m) => {
+                const depth = poolLiquidityUsd(m);
+                return (
+                  <button
+                    key={m.id}
+                    className={m.id === pool.id ? 'on' : undefined}
+                    aria-pressed={m.id === pool.id}
+                    onClick={() => choose(m.id)}
+                    title={
+                      depth === null
+                        ? 'This pool\u2019s liquidity cannot be reconstructed from its own events yet.'
+                        : `${usd(depth)} of liquidity in this pool`
+                    }
+                  >
+                    {tierLabel(m, group.markets)}{' '}
+                    <span className="num" style={{ opacity: 0.7 }}>
+                      {depth === null ? '—' : usd(depth)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="hint">
+              What every trade in the pool pays, and what the position earns a share of. The figure
+              beside each is that pool&rsquo;s own liquidity — {group.markets.length} pools quote{' '}
+              {token.symbol} in {group.label} here, and the deepest is the one the board&rsquo;s row
+              is. A higher tier earns more per trade and usually sees fewer of them.
+            </p>
+          </div>
+        )}
 
         <div className="field">
           <label htmlFor="b-amount">Deposit</label>

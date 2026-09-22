@@ -66,6 +66,48 @@ test.describe('shape builder', () => {
     await expect(page.locator('main')).not.toContainText(/\bWETH\b/);
   });
 
+  test('the market control names currencies only, never a fee tier', async ({ page }) => {
+    await page.goto('/positions', { waitUntil: 'networkidle' });
+    const markets = page.getByRole('group', { name: 'Market' });
+    const labels = await markets.getByRole('button').allTextContents();
+    expect(labels.length).toBeGreaterThan(0);
+    for (const label of labels) {
+      expect(label.trim()).toMatch(/^[A-Za-z]+$/);
+      expect(label).not.toContain('%');
+    }
+    // Exactly one currency selected, always.
+    const pressed = await markets
+      .getByRole('button')
+      .evaluateAll((els) => els.filter((el) => el.getAttribute('aria-pressed') === 'true').length);
+    expect(pressed).toBe(1);
+  });
+
+  test('a fee tier carries the pool\u2019s own liquidity, and only shows when there is a choice', async ({ page }) => {
+    await page.goto('/positions', { waitUntil: 'networkidle' });
+    const token = page.locator('#b-token');
+    const tiers = page.getByRole('group', { name: 'Fee tier' });
+
+    // Find a token whose chosen currency has more than one pool; the
+    // simulated chain may have none, in which case the control must be absent.
+    let found = false;
+    const count = await token.locator('option').count();
+    for (let i = 0; i < count; i++) {
+      await token.selectOption({ index: i });
+      await page.waitForTimeout(120);
+      if (await tiers.isVisible()) {
+        found = true;
+        const labels = await tiers.getByRole('button').allTextContents();
+        expect(labels.length).toBeGreaterThan(1);
+        for (const label of labels) expect(label).toMatch(/%/);
+        // A tier is only a choice with the pool's depth beside it: a figure
+        // or an honest dash (§14), never a bare percentage.
+        for (const label of labels) expect(label).toMatch(/(\$|—)/);
+        break;
+      }
+    }
+    if (!found) await expect(tiers).toHaveCount(0);
+  });
+
   test('picks a token, then one of its markets', async ({ page }) => {
     // Two questions, asked separately (§26). One flat list of every pool on
     // the chain answered neither: choosing VIRTUAL meant scrolling past

@@ -7,8 +7,8 @@ import { useUi } from '@/components/providers/UiProvider';
 import { TokenBadge } from '@/components/ui/TokenBadge';
 import { EXPLORER_URL, NATIVE_ETH, isEther } from '@/lib/chain';
 import { DATA_SOURCE } from '@/lib/data';
-import { ageLabel, quoteLabel, usd } from '@/lib/format';
-import { byEntryCurrency, isMintable } from '@/lib/markets';
+import { ageLabel, feeTierLabel, quoteLabel, usd } from '@/lib/format';
+import { isMintable, orderMarkets } from '@/lib/markets';
 import { buyShare, shownLiquidity, shownSplit, shownVolume, sourceName } from '@/lib/market-figures';
 import { FEE_YIELD_LABEL, feeYieldQualifier, feeYieldTitle, feeYieldValue } from '@/lib/yield';
 
@@ -38,9 +38,14 @@ export function StakeDrawer() {
    */
   const stakeTarget = useMemo(() => {
     if (!pool) return null;
+    const live = DATA_SOURCE === 'live';
+    // The row's own pool first, always. It is the pool this drawer's figures
+    // describe, and handing over a different one because some rule preferred
+    // it is a substitution nobody asked for.
+    if (isMintable(pool, live)) return pool;
     const address = pool.token.address.toLowerCase();
-    const candidates = [pool, ...(otherPools ?? []).filter((p) => p.token.address.toLowerCase() === address)];
-    return candidates.filter((p) => isMintable(p, DATA_SOURCE === 'live')).sort(byEntryCurrency)[0] ?? null;
+    const others = (otherPools ?? []).filter((p) => p.token.address.toLowerCase() === address);
+    return orderMarkets(others.filter((p) => isMintable(p, live)))[0] ?? null;
   }, [pool, otherPools]);
 
   // Escape closes, Tab cycles inside, focus returns where it came from.
@@ -325,10 +330,13 @@ export function StakeDrawer() {
                   </div>
                   {stakeTarget && stakeTarget.id !== pool.id && (
                     <p className="hint" style={{ marginTop: 12 }}>
-                      This row is {pool.token.symbol}&rsquo;s deepest market, a Uniswap v3 pool.
-                      Balast mints through Uniswap v4, so staking opens{' '}
+                      This row is {pool.token.symbol}&rsquo;s deepest market, and it is{' '}
+                      {pool.protocol === 'v3'
+                        ? 'a Uniswap v3 pool'
+                        : 'a pool running a hook Balast has not verified'}
+                      . Balast mints through Uniswap v4, so staking opens{' '}
                       <b>
-                        {pool.token.symbol} / {quoteLabel(stakeTarget)} · {(stakeTarget.feeTierBps / 100).toFixed(2).replace(/\.?0+$/, '')}%
+                        {pool.token.symbol} / {quoteLabel(stakeTarget)} · {feeTierLabel(stakeTarget.feeTierBps)}
                       </b>{' '}
                       instead — a different pool, with its own liquidity and its own fees.
                     </p>
