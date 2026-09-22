@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Address } from 'viem';
 import { useUi } from '@/components/providers/UiProvider';
-import type { Pool, ShapeId } from '@/lib/data/types';
+import { CHAIN } from '@/lib/chain';
+import type { Pool, PoolKeyInfo, ShapeId } from '@/lib/data/types';
 import {
   approvalsNeeded,
   approve,
@@ -20,6 +21,7 @@ import {
 import { toRaw } from '@/lib/v4/format';
 import { planMint, type MintPlan } from '@/lib/v4/mint';
 import { priceFromSqrt, toPoolKey, type PoolKey } from '@/lib/v4/pool';
+import { currentChainId, describeWalletError, ensureChain, onChainChanged } from '@/lib/wallet';
 
 /** Reads refresh on this cadence: the price for the plan, the balances for the check. */
 const REFRESH_MS = 12_000;
@@ -30,6 +32,8 @@ const PLACEHOLDER_OWNER = '0x0000000000000000000000000000000000000001';
 export type MintStep =
   | 'simulated' // no pool on chain to mint into
   | 'connect'
+  /** A wallet is connected, and it is on another network. Nothing is sent until it switches. */
+  | 'wrong-chain'
   | 'reading'
   | 'unavailable'
   | 'approve'
@@ -64,6 +68,24 @@ export interface MintFlow {
   run: () => Promise<void>;
 }
 
+/**
+ * A pool key's identity as a string, so the flow can tell "the same pool"
+ * from "the same pool, in a new snapshot".
+ *
+ * The live provider replaces the whole snapshot on every push, and the
+ * snapshot query builds a fresh `key` object for every pool each time. Keyed
+ * on the object, every effect below re-ran on every push — a few seconds
+ * apart on a live box — resetting the price to "Reading the pool…", the
+ * approvals, the dry run, and a mint's own result while the person was
+ * looking at it. The pool did not change; only the object did.
+ */
+function keyIdentity(info: PoolKeyInfo | undefined): string | null {
+  if (!info) return null;
+  return [info.currency0, info.currency1, info.fee, info.tickSpacing, info.hooks, info.decimals0, info.decimals1]
+    .join('|')
+    .toLowerCase();
+}
+
 export function useMintFlow(args: {
   pool: Pool;
   deposit: string;
@@ -88,37 +110,83 @@ export function useMintFlow(args: {
   const [result, setResult] = useState<{ hash: `0x${string}`; minted: number } | null>(null);
   // Bumped after a transaction so the reads run again without waiting for the cadence.
   const [refreshTick, setRefreshTick] = useState(0);
+  /** The network the wallet is on. Null until it has answered, or when it will not. */
+  const [chainId, setChainId] = useState<number | null>(null);
 
-  const key = useMemo(() => (pool.key ? toPoolKey(pool.key) : null), [pool.key]);
+  // One key object per pool identity, whatever the snapshot does.
+  const keyId = keyIdentity(pool.key);
+  const stable = useRef<{ id: string | null; key: PoolKey | null; info: PoolKeyInfo | null }>({
+    id: null,
+    key: null,
+    info: null,
+  });
+  if (stable.current.id !== keyId) {
+    stable.current = { id: keyId, key: pool.key ? toPoolKey(pool.key) : null, info: pool.key ?? null };
+  }
+  const key = stable.current.key;
+  const info = stable.current.info;
+  const tokenAddress = pool.token.address.toLowerCase();
+
   const sides = useMemo<MintSides | null>(() => {
-    if (!key || !pool.key) return null;
-    const tokenIsCurrency0 = pool.token.address.toLowerCase() === key.currency0.toLowerCase();
+    if (!key || !info) return null;
+    const tokenIsCurrency0 = tokenAddress === key.currency0.toLowerCase();
     return {
       tokenIsCurrency0,
-      tokenDecimals: tokenIsCurrency0 ? pool.key.decimals0 : pool.key.decimals1,
-      quoteDecimals: tokenIsCurrency0 ? pool.key.decimals1 : pool.key.decimals0,
+      tokenDecimals: tokenIsCurrency0 ? info.decimals0 : info.decimals1,
+      quoteDecimals: tokenIsCurrency0 ? info.decimals1 : info.decimals0,
       tokenCurrency: tokenIsCurrency0 ? key.currency0 : key.currency1,
       quoteCurrency: tokenIsCurrency0 ? key.currency1 : key.currency0,
     };
-  }, [key, pool.key, pool.token.address]);
+  }, [key, info, tokenAddress]);
 
   const provider = wallet?.provider ?? null;
   const owner = (wallet?.address ?? null) as Address | null;
 
-  // The live price, from the chain, on a cadence. A new pool resets it.
+  // Which network the wallet is on, and every switch it makes afterwards.
+  // The dialog asks the wallet to switch on connect, but a person can decline
+  // that and stay connected, or switch away later; a mint sent from another
+  // network would be refused by viem with a message nobody should have to
+  // read. So the flow knows, and says so, before anything is sent.
+  useEffect(() => {
+    setChainId(null);
+    if (!provider) return;
+    let cancelled = false;
+    void currentChainId(provider).then((id) => {
+      if (!cancelled) setChainId(id);
+    });
+    const stop = onChainChanged(provider, (id) => {
+      if (!cancelled) setChainId(id);
+    });
+    return () => {
+      cancelled = true;
+      stop();
+    };
+  }, [provider]);
+
+  const onChain = chainId === CHAIN.id;
+  // Reads go through the wallet only while it is on this chain. On another
+  // network its provider would answer for the wrong chain — StateView is not
+  // there — so the public RPC answers instead and the price still shows.
+  const readVia = onChain ? provider : null;
+
+  // A different pool: the last mint's outcome belongs to the old one.
+  useEffect(() => {
+    setResult(null);
+    setError(null);
+  }, [key]);
+
+  // The live price, from the chain, on a cadence.
   useEffect(() => {
     setLive(null);
     setLiveError(null);
-    setResult(null);
-    setError(null);
-    if (!key || !sides) return;
+    if (!key || !sides || !info) return;
     let cancelled = false;
-    const client = readClient(provider);
+    const client = readClient(readVia);
     const tick = async () => {
       try {
         const slot0 = await readSlot0(client, key);
         if (cancelled) return;
-        const p = priceFromSqrt(slot0.sqrtPriceX96, pool.key!.decimals0, pool.key!.decimals1);
+        const p = priceFromSqrt(slot0.sqrtPriceX96, info.decimals0, info.decimals1);
         setLive({ ...slot0, tokenPriceInQuote: sides.tokenIsCurrency0 ? p : 1 / p });
         setLiveError(null);
       } catch (e) {
@@ -131,14 +199,14 @@ export function useMintFlow(args: {
       cancelled = true;
       clearInterval(id);
     };
-  }, [key, sides, provider, refreshTick, pool.key]);
+  }, [key, sides, info, readVia, refreshTick]);
 
   // Balances, when there is a wallet to read for.
   useEffect(() => {
     setBalances(null);
     if (!owner || !sides) return;
     let cancelled = false;
-    const client = readClient(provider);
+    const client = readClient(readVia);
     const tick = async () => {
       try {
         const [token, quote] = await Promise.all([
@@ -156,7 +224,7 @@ export function useMintFlow(args: {
       cancelled = true;
       clearInterval(id);
     };
-  }, [owner, sides, provider, refreshTick]);
+  }, [owner, sides, readVia, refreshTick]);
 
   // The plan, at the live price. Owner is only stamped in at send time.
   const depositRaw = sides ? toRaw(deposit, sides.quoteDecimals) : 0n;
@@ -193,13 +261,15 @@ export function useMintFlow(args: {
       : { token: plan.amount1, quote: plan.amount0 };
   }, [plan, sides]);
 
-  // Approvals and a dry run, whenever the plan or the wallet changes.
+  // Approvals and a dry run, whenever the plan or the wallet changes — and
+  // only on this chain: an allowance read or an estimate on another network
+  // is an answer about a different contract.
   useEffect(() => {
     setApprovals([]);
     setGas(null);
-    if (!plan || !owner || !key) return;
+    if (!plan || !owner || !key || !onChain) return;
     let cancelled = false;
-    const client = readClient(provider);
+    const client = readClient(readVia);
     void (async () => {
       try {
         const steps = await approvalsNeeded(client, owner, key, plan, Math.floor(Date.now() / 1000));
@@ -219,7 +289,7 @@ export function useMintFlow(args: {
     return () => {
       cancelled = true;
     };
-  }, [plan, owner, key, provider]);
+  }, [plan, owner, key, readVia, onChain]);
 
   const step: MintStep = !key
     ? 'simulated'
@@ -227,13 +297,17 @@ export function useMintFlow(args: {
       ? 'connect'
       : busyLabel
         ? 'busy'
-        : liveError
-          ? 'unavailable'
-          : !live
-            ? 'reading'
-            : approvals.length > 0
-              ? 'approve'
-              : 'ready';
+        : chainId === null
+          ? 'reading'
+          : !onChain
+            ? 'wrong-chain'
+            : liveError
+              ? 'unavailable'
+              : !live
+                ? 'reading'
+                : approvals.length > 0
+                  ? 'approve'
+                  : 'ready';
 
   const run = useCallback(async () => {
     if (step === 'simulated') {
@@ -244,7 +318,23 @@ export function useMintFlow(args: {
       openWallet();
       return;
     }
-    if (!plan || !owner || !provider || !key || !sides) return;
+    if (step === 'wrong-chain') {
+      if (!provider) return;
+      setError(null);
+      setBusyLabel('Switching network…');
+      try {
+        await ensureChain(provider);
+        const id = await currentChainId(provider);
+        setChainId(id);
+        if (id !== CHAIN.id) setError(`Switch the wallet to ${CHAIN.name} to mint. Nothing was sent.`);
+      } catch (e) {
+        setError(describeWalletError(e));
+      } finally {
+        setBusyLabel(null);
+      }
+      return;
+    }
+    if (!plan || !owner || !provider || !key || !sides || !onChain) return;
     setError(null);
     setResult(null);
     const client = readClient(provider);
@@ -282,6 +372,10 @@ export function useMintFlow(args: {
       setBusyLabel('Minting…');
       const done = await waitForMint(client, hash, owner);
       if (!done.ok) throw new Error('The transaction reverted on chain.');
+      // The outcome stays on screen: the re-read below refreshes the price
+      // and the balances, and must not take the receipt with it. It did —
+      // the effect that re-read them also cleared this, so the "minted,
+      // view the transaction" line never survived its own success.
       setResult({ hash, minted: done.tokenIds.length });
       showToast(`${done.tokenIds.length} position${done.tokenIds.length === 1 ? '' : 's'} minted to your wallet`);
       setRefreshTick((n) => n + 1);
@@ -290,8 +384,7 @@ export function useMintFlow(args: {
     } finally {
       setBusyLabel(null);
     }
-  }, [step, plan, owner, provider, key, sides, approvals, live, depositRaw, minPct, maxPct, bins, shape, fullRange, showToast, openWallet]);
+  }, [step, plan, owner, provider, key, sides, onChain, approvals, live, depositRaw, minPct, maxPct, bins, shape, fullRange, showToast, openWallet]);
 
   return { key, sides, live, liveError, plan, planError, needs, balances, step, busyLabel, approvals, gas, error, result, run };
 }
-

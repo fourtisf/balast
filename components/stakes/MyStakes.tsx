@@ -3,7 +3,7 @@
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { TokenBadge } from '@/components/ui/TokenBadge';
-import { countdown, usd, usdExact, weth } from '@/lib/format';
+import { countdown, quoteLabel, usd, usdExact, weth } from '@/lib/format';
 
 export function MyStakes() {
   const { portfolio, pools, global } = useMarket();
@@ -19,15 +19,17 @@ export function MyStakes() {
     );
   });
 
-  // Nothing staked is not a failed search. Until the vaults exist and a
-  // wallet is connected there is nothing here, and the card says that.
+  // Nothing staked is not a failed search. A stake lives in the wallet as a
+  // position NFT (§20) and the indexer does not read those back yet, so the
+  // card says exactly that rather than promising a stream.
   if (portfolio.stakes.length === 0 && q === '') {
     return (
       <div className="card mine" style={{ marginTop: 22 }}>
         <h2 className="sect-h">Your stakes</h2>
         <div className="empty">
-          <b>Nothing staked yet</b>Once vaults open and a wallet is connected, your stakes and
-          their 7-day streams appear here.
+          <b>Nothing to show here yet</b>A stake is a position NFT in your wallet, and this site
+          does not read positions back from the chain yet. Your wallet and the explorer hold the
+          record until it does.
         </div>
       </div>
     );
@@ -78,7 +80,7 @@ export function MyStakes() {
                   <td data-label="Pool">
                     <div className="tok">
                       <TokenBadge token={pool.token} />
-                      <div className="n">{pool.token.symbol} / WETH</div>
+                      <div className="n">{pool.token.symbol} / {quoteLabel(pool)}</div>
                     </div>
                   </td>
                   <td className="r num" data-label="Staked">

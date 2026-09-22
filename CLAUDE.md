@@ -3044,3 +3044,168 @@ traded inside the yield window, which on a sync 68 days behind means it traded
 in July. That is the listing bar working on data that is two months old, not a
 bug — but it is what the bar will need revisiting for once the sync reaches
 head.
+
+---
+
+## 22. A full read of the code before mainnet: what was wrong, what is missing
+
+ALFA asked for the whole codebase read as a senior engineer would read it
+before calling mainnet live: every bug found, and every feature that is
+missing. This section is that report. The fixes below are committed with
+it; the rest is for ALFA to decide.
+
+Two limits on what this session could check. It could not reach the box or
+the chain: the sandbox's egress refuses `balast.xyz` and every RPC endpoint,
+so *whether mainnet is live right now* is a question for `deploy/doctor.sh`
+and `/api/health` on the box, not for this file. And nothing was sent on
+chain: the mint path is verified by its tests, its byte-comparison against
+Uniswap's SDK, and the node's dry run, as §20 says — the first real mint
+should still be a small one, watched on the explorer.
+
+What was run here, on a fresh Postgres: `typecheck`, `lint`, the full suite
+(31 files and 324 tests on the checkout this session started from; 34 files
+and 358 tests on `origin/main` with this commit's additions, all green), the
+production build, and the 34 Playwright end-to-end tests against that
+build. All pass.
+
+### Bugs fixed in this commit
+
+**The builder reset itself on every snapshot push (live mode).** The mint
+flow memoised the pool's key on the `pool.key` *object*, and the snapshot
+query builds a fresh object for every pool on every rebuild — every five
+seconds on a live box. So every effect in the flow re-ran on every push:
+the price fell back to "Reading the pool…", the allowance reads and the
+dry run ran again, and the balances were re-read. In the simulator the key
+is absent and nothing showed it. The key is memoised on its *contents* now.
+
+**A mint's result was wiped by its own success.** After the receipt the
+flow bumps a counter so the price and balances are re-read, and the effect
+that re-read them also cleared the result — so "N positions minted · View
+the transaction" never survived the render that would have shown it. Only
+the toast did. The result is cleared when the pool changes, and never by a
+refresh.
+
+**No wrong-chain state.** The dialog asks the wallet to switch on connect,
+and a person may decline and stay connected — `ensureChain` says as much
+— or switch away afterwards. The flow then read StateView through the
+wallet's provider on whatever network it was on, which answered "no data",
+which the page called "Pool unreadable"; a send would have been refused by
+viem with a chain-mismatch error nobody should have to read. `useMintFlow`
+reads `eth_chainId`, follows `chainChanged`, and has a `wrong-chain` step:
+the button reads *Switch to Robinhood Chain*, the price is read from the
+public RPC meanwhile, and nothing is sent until the wallet is on 4663.
+`lib/wallet.ts` gained `currentChainId` and `onChainChanged`, both tested.
+
+**`/positions` crashed on an empty listing.** The builder planned against
+`pools[0]`, which throws when the listing bar leaves nothing listed, and on
+a listing with no verified pool it silently offered an unverified one that
+its own select could not show. It now says which of the two it is and
+offers nothing.
+
+**Every pair label was `/ WETH`.** The drawer, the vault cards, the stakes
+table, the position list and the payout feed all hardcoded the prototype's
+one quote. On the live board the tokenised stocks trade against USDG, and
+a v4 ether pool holds ether natively. `quoteLabel()` in `lib/format.ts`
+answers from the pool's key: `USDG`, `ETH` for a native pool, `WETH` for
+the wrapper and for every v3 pool.
+
+**The rate limit could be escaped by anyone who typed a header.** nginx
+*appends* the real peer to `X-Forwarded-For`, so the client's own entry is
+first and nginx's is last — and the key was the first entry. One loop with
+a made-up address per request had a fresh budget per request. The key is
+`X-Real-IP` (which only nginx sets), else the last hop, else the socket;
+two tests pin it.
+
+**Every open page froze after an API restart.** The snapshot's revision
+counter started at zero with the process, and the live provider discards
+any snapshot whose revision is not above the one it holds (so the poll and
+the socket cannot make the board jump backwards). After a deploy, a page
+already open kept the old, higher number and discarded every push and
+every poll until the new count climbed past it — at one rebuild per five
+seconds, hours of a board frozen on the previous process's last numbers,
+the lag figure included, which is exactly the state §7 forbids. The
+revision starts at the clock now, and a test asserts it survives a restart.
+
+**`deploy/monitor.sh` reported every process offline.** The same grep over
+`pm2 jlist` that §17 removed from `doctor.sh` was still here: it never
+matched, every process read as `missing`, and the monitor alerted
+"pm2-offline" on every run and never once said "ok". It parses the JSON
+now, as the doctor does.
+
+**A stage's heartbeat could outlive the stage.** `withWork` heartbeats on a
+timer while a long stage runs and deletes the record when it ends; a beat
+still in flight at that moment landed *after* the delete and put the record
+back, with a fresh heartbeat. `/api/health` would then read `working` for a
+stage that had already ended, for up to the stall threshold — five minutes
+of a wrong status after every full rebuild. The suite caught it as a
+leftover row that made the next test's insert collide; the beat is awaited
+before the clear now.
+
+**Copy that promised a product that does not exist.** Under §20 a stake is
+a full-range position in the wallet: no vault, no seven-day stream, no
+WETH conversion, no Balast fee. The `/stakes` masthead still said "Stake
+once. Fees stream for 7 days … your share arrives as WETH over a rolling
+week"; the `/pools` call-to-action and the page metadata said "collect
+swap fees in WETH, streamed to your wallet"; the vault grid's empty state
+said staking "opens when the vault contracts deploy" — beside a drawer
+that stakes for real; the wallet dialog told a connected person "nothing
+on this site asks you to sign yet"; and the router's *Enable router*
+button toasted "Router enabled" for a contract that is P4. Each now says
+what is true.
+
+### What is missing, in order of how much it matters
+
+1. **A portfolio of real positions.** After a mint there is nowhere on the
+   site to see it: the indexer does not follow PositionManager's `Transfer`
+   and `ModifyLiquidity`, so `/portfolio` is empty and the masthead's
+   *Positions* count stays at zero for ever. §20 called this "next"; it is
+   the first thing a person looks for after signing.
+2. **Collect fees, decrease, burn.** `encodeDecrease`, `encodeBurn` and
+   `encodeTakePair` exist and are byte-tested against the SDK, and nothing
+   in the UI uses them. A position minted here can only be managed on
+   Uniswap's own interface. Minting is a one-way door on this site.
+3. **The single-token zap.** Every mint is two-sided; the builder says so.
+   A Universal Router swap of the token side in the same transaction is
+   the design in §3.1, and the address is already in `lib/chain.ts`.
+4. **Transaction history.** A mint, an approval or a failure is forgotten
+   on reload; there is no pending-transaction state across pages.
+5. **`STAKEABLE_HOOKS` is empty**, so on a launchpad chain nearly every
+   pool's button reads *View* rather than *Stake*. This is the safe default
+   and it is still an input only a person can supply (§14, §20).
+6. **A Content-Security-Policy.** nginx sends the other security headers
+   and not this one; for a page that asks people to connect a wallet it is
+   the header that matters most. It needs testing on the box, because
+   `next/font` inlines styles and WalletConnect's modal loads remote assets.
+7. **The footer's Contracts / Audit / Docs / Status links go to `#`.** An
+   *Audit* link to nowhere on a site that asks for a wallet reads badly.
+8. **Slippage is fixed at 1%** and the deposit defaults to 2.5 of the quote.
+   Neither is exposed; the second makes the drawer's *Stake* hand-off open
+   on "above your balance" for most wallets.
+
+### Known drift the indexer carries, not fixed here
+
+- **Reserves include collected fees.** v4 emits no event when an LP takes
+  accrued fees (it is a `modifyLiquidity` with delta zero) and v3's
+  `Collect` is not indexed, so the summed flow overstates a pool's reserves
+  by everything ever collected. TVL drifts upward with age; yield, being
+  fees over that TVL, is understated. Conservative, but it grows.
+- **A reorged-out log is never removed.** The 32-block re-scan upserts, so
+  a row from an orphaned block stays. Negligible on a sequenced Orbit
+  chain; worth knowing.
+- **The anchor price is one swap an hour.** `weth_usd_hourly` takes the
+  last anchor swap in the hour, so one trade at hour end sets the ether
+  price every fee in every pool is valued at.
+- **`rebuildPoolState` runs unscoped on every caught-up pass.** Once the
+  indexer follows head, every pass — every second — walks every pool's
+  last swap and sums all of `pool_flow_hourly`, though the anchor price it
+  exists to refresh changes at most hourly. Fine on the fixture, worth
+  measuring on the real tables once the sync reaches head.
+- **`/api/health` counts `swap_events` with `COUNT(*)`** on every call; on
+  a table of millions that is a sequential scan per waiting-page poll.
+
+### The §12 questions are still open
+
+The six-hours-per-tick simulator clock, `/positions`'s forward-looking
+*Est. fee yield*, `LAUNCHPAD_HOOKS` and `STAKEABLE_HOOKS`, the listing
+bar's two thresholds, and the protocol fee's immutable cap before any
+vault is deployed. None of them changed here.

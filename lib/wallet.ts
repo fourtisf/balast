@@ -9,8 +9,9 @@
  * accounts, one to switch to Robinhood Chain, one to add it if the wallet
  * has never heard of it.
  *
- * This is the connection only. Nothing here signs a transaction; the
- * contracts that would want one are P2.
+ * This is the connection only. Nothing here signs a transaction: the mint on
+ * /positions does, through lib/v4/flow.ts, and it asks `currentChainId` first
+ * so nothing is ever sent from a wallet that is on another network.
  */
 
 import { getAddress } from 'viem';
@@ -177,7 +178,8 @@ export function describeWalletError(error: unknown): string {
 /**
  * Put the wallet on Robinhood Chain: switch, or add and switch. A person
  * declining the switch stays connected on whatever chain they were on —
- * nothing on the site sends a transaction yet, so that is not an error.
+ * browsing needs no particular network, and the mint flow checks the chain
+ * again before it sends anything (useMintFlow's `wrong-chain` step).
  */
 export async function ensureChain(provider: Eip1193Provider): Promise<void> {
   try {
@@ -196,6 +198,37 @@ export async function ensureChain(provider: Eip1193Provider): Promise<void> {
       throw addError;
     }
   }
+}
+
+/** A chain id as wallets spell it — a hex string, sometimes a number — or null. */
+function parseChainId(raw: unknown): number | null {
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  if (typeof raw !== 'string' || raw.trim() === '') return null;
+  const n = raw.startsWith('0x') || raw.startsWith('0X') ? Number.parseInt(raw, 16) : Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** The network the wallet is on, or null when it will not say. Never throws. */
+export async function currentChainId(provider: Eip1193Provider): Promise<number | null> {
+  try {
+    return parseChainId(await provider.request({ method: 'eth_chainId' }));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Follow the wallet's own network switches (EIP-1193 `chainChanged`). A
+ * wallet without events is simply not followed. Returns the function that
+ * stops listening.
+ */
+export function onChainChanged(provider: Eip1193Provider, handler: (chainId: number | null) => void): () => void {
+  const on = provider.on?.bind(provider);
+  const off = provider.removeListener?.bind(provider);
+  if (!on || !off) return () => {};
+  const listener = (payload: unknown) => handler(parseChainId(payload));
+  on('chainChanged', listener);
+  return () => off('chainChanged', listener);
 }
 
 /** Connect: ask for an account, then for the chain. Returns the checksummed address. */

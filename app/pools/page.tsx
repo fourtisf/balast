@@ -22,8 +22,9 @@ export default function PoolsPage() {
               Own a share of the <em>liquidity</em>.
             </h2>
             <p className="lede">
-              Deposit into any token on Robinhood Chain and collect swap fees in WETH, streamed to
-              your wallet. No lockups, no emissions, nothing to trust but the contract.
+              Deposit into any token on Robinhood Chain and earn its pool&rsquo;s swap fees, in a
+              position minted straight to your wallet. No lockups, no emissions, nothing held by
+              Balast.
             </p>
           </div>
           <div className="row">

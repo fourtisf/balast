@@ -330,6 +330,38 @@ describe('rate limiting', () => {
     expect(response.statusCode).toBe(200);
   });
 
+  it('cannot be escaped by inventing an X-Forwarded-For hop per request', async () => {
+    // nginx appends the real peer to whatever the client sent, so the client's
+    // own entry is FIRST and nginx's is LAST. Keyed on the first entry, a loop
+    // that made up a fresh address per request got a fresh budget per request.
+    const codes: number[] = [];
+    for (let i = 0; i < RATE_LIMIT_MAX + 6; i++) {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/snapshot',
+        headers: { 'x-forwarded-for': `10.0.${i}.${i}, 203.0.113.99` },
+      });
+      codes.push(response.statusCode);
+    }
+    expect(codes.filter((c) => c === 429).length).toBeGreaterThan(0);
+  });
+
+  it('prefers X-Real-IP, which only nginx sets', async () => {
+    for (let i = 0; i < RATE_LIMIT_MAX + 6; i++) {
+      await app.inject({
+        method: 'GET',
+        url: '/api/snapshot',
+        headers: { 'x-real-ip': '203.0.113.100', 'x-forwarded-for': `10.1.${i}.${i}` },
+      });
+    }
+    const refused = await app.inject({
+      method: 'GET',
+      url: '/api/snapshot',
+      headers: { 'x-real-ip': '203.0.113.100', 'x-forwarded-for': '10.9.9.9' },
+    });
+    expect(refused.statusCode).toBe(429);
+  });
+
   it('never rate-limits the websocket', async () => {
     // After a restart every client reconnects at once. Counting the stream
     // against a per-minute budget would refuse exactly the clients that most

@@ -2,7 +2,7 @@
 
 import { useMarket } from '@/components/providers/MarketProvider';
 import { TokenBadge } from '@/components/ui/TokenBadge';
-import { usdExact } from '@/lib/format';
+import { quoteLabel, usdExact } from '@/lib/format';
 
 /** Real harvest payouts, newest first. Fees only — there are no emissions. */
 export function LivePayouts() {
@@ -24,7 +24,7 @@ export function LivePayouts() {
           return (
             <div className="lv" key={p.id}>
               <TokenBadge token={pool.token} />
-              <span>{pool.token.symbol} / WETH</span>
+              <span>{pool.token.symbol} / {quoteLabel(pool)}</span>
               <span className="a num">+{p.weth.toFixed(3)} WETH</span>
               <span className="w num">{p.wallet}…</span>
             </div>

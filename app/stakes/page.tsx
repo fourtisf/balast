@@ -12,10 +12,10 @@ export default function StakesPage() {
         eyebrow="Stakes"
         title={
           <>
-            Stake once. Fees stream for <em>7 days</em>.
+            Stake once. Earn the pool&rsquo;s fee on <em>every trade</em>.
           </>
         }
-        lede="Drop in one token and Balast pairs it, places it, and harvests the fees. Your share arrives as WETH over a rolling week. Claim, compound, or leave whenever you like."
+        lede="A stake is one full-range position in the pool, minted through Uniswap's PositionManager straight to your wallet as an NFT. It earns the pool's fee on every trade, in the pool's own tokens, and is never out of range. No lockup, no Balast fee, nothing held by Balast. Pick a pool on the board and use Stake."
       />
       <VaultGrid />
       <MyStakes />

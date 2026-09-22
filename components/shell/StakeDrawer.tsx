@@ -6,7 +6,7 @@ import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { TokenBadge } from '@/components/ui/TokenBadge';
 import { EXPLORER_URL, NATIVE_ETH, isEther } from '@/lib/chain';
-import { ageLabel, usd } from '@/lib/format';
+import { ageLabel, quoteLabel, usd } from '@/lib/format';
 import { buyShare, shownLiquidity, shownSplit, shownVolume, sourceName } from '@/lib/market-figures';
 import { FEE_YIELD_LABEL, feeYieldQualifier, feeYieldTitle, feeYieldValue } from '@/lib/yield';
 
@@ -98,7 +98,7 @@ export function StakeDrawer() {
             <div className="dr-h">
               <TokenBadge token={pool.token} />
               <div>
-                <div style={{ fontWeight: 600, fontSize: 14 }}>{pool.token.symbol} / WETH</div>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{pool.token.symbol} / {quoteLabel(pool)}</div>
                 <div style={{ fontSize: 12 }} className="muted">
                   {pool.token.name}
                 </div>

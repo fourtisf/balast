@@ -180,8 +180,14 @@ export async function buildServer(
    * one NAT must not get throttled. This is here to stop a loop, not to
    * ration users.
    *
-   * `X-Forwarded-For` is trusted because nginx sets it and nothing else can
-   * reach the port — the API binds 127.0.0.1.
+   * The client's address is what nginx says it is, not what the client
+   * says. nginx sets `X-Real-IP` to the peer it accepted and APPENDS that
+   * peer to `X-Forwarded-For` (`$proxy_add_x_forwarded_for`), so the header
+   * a client sends arrives with nginx's word LAST. The key used to be the
+   * FIRST entry — the client's own — so one loop with a made-up header per
+   * request got a fresh budget every time, and the limit stopped nothing.
+   * Nothing but nginx can reach the port (the API binds 127.0.0.1), which is
+   * why the last hop can be trusted and the first never could.
    */
   await app.register(rateLimit, {
     max: env.rateLimitMax,
@@ -194,9 +200,17 @@ export async function buildServer(
     // not a loop.
     allowList: (request) =>
       request.url.startsWith('/api/stream') || request.url.startsWith('/api/logo/'),
-    keyGenerator: (request) =>
-      (request.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
-      request.ip,
+    keyGenerator: (request) => {
+      const real = request.headers['x-real-ip'];
+      if (typeof real === 'string' && real.trim() !== '') return real.trim();
+      const forwarded = request.headers['x-forwarded-for'];
+      const chain = Array.isArray(forwarded) ? forwarded.join(',') : (forwarded ?? '');
+      const hops = chain
+        .split(',')
+        .map((hop) => hop.trim())
+        .filter(Boolean);
+      return hops.length > 0 ? hops[hops.length - 1] : request.ip;
+    },
     // The object returned here is THROWN by the plugin, so it needs a
     // statusCode of its own — without one Fastify's error handler treats it
     // as an unhandled error and answers 500, which tells a client to retry

@@ -189,7 +189,9 @@ export function RouterPanel() {
           className="btn btn-brand"
           style={{ width: '100%', justifyContent: 'center', height: 46 }}
           disabled={blocked}
-          onClick={() => showToast(`Router enabled for ${router.tokenSymbol}`)}
+          // The contract is P4 and not deployed. A toast claiming "enabled" was
+          // the same lie the stake toast once told (§20); say what is true.
+          onClick={() => showToast('The router contract is not deployed yet. Nothing was enabled.')}
         >
           Enable router
         </button>

@@ -104,14 +104,28 @@ esac
 
 # --- the processes ---------------------------------------------------------
 # The API can answer while the indexer is a crash loop, so check both.
+#
+# Parsed with a JSON parser, as doctor.sh does (§17). This was grep over
+# `pm2 jlist`, matching `"name":"x","pm2_env":{` — PM2 puts other keys between
+# those two and the nested object closes long before `status`, so the pattern
+# never matched, every process read as `missing`, and this script alerted
+# "pm2-offline" on every run over a box that was up. A monitor that invents a
+# failure is the one that gets muted.
 if command -v pm2 >/dev/null; then
-  offline=""
-  for app in balast-web balast-api balast-indexer balast-logos; do
-    state=$(runuser -u "$APP_USER" -- pm2 jlist 2>/dev/null \
-      | grep -o "\"name\":\"$app\",\"pm2_env\":{[^}]*\"status\":\"[a-z]*\"" \
-      | grep -o '"status":"[a-z]*"' | cut -d'"' -f4 | head -1)
-    [[ "$state" == "online" ]] || offline="$offline $app(${state:-missing})"
-  done
+  offline=$(runuser -u "$APP_USER" -- pm2 jlist 2>/dev/null | node -e '
+    let raw = "";
+    process.stdin.on("data", (d) => (raw += d)).on("end", () => {
+      let list = [];
+      try { list = JSON.parse(raw); } catch { process.stdout.write(" pm2(unreadable)"); return; }
+      const by = new Map(list.map((p) => [p.name, p]));
+      const out = [];
+      for (const name of ["balast-web", "balast-api", "balast-indexer", "balast-logos"]) {
+        const p = by.get(name);
+        const state = p && p.pm2_env && p.pm2_env.status ? p.pm2_env.status : "missing";
+        if (state !== "online") out.push(` ${name}(${state})`);
+      }
+      process.stdout.write(out.join(""));
+    });' 2>/dev/null)
   if [[ -n "$offline" ]]; then
     alert "pm2-offline" "not online:$offline"
     exit 1

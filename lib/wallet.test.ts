@@ -9,8 +9,10 @@ import {
   WALLETCONNECT_ICON,
   WALLETCONNECT_RDNS,
   connectWallet,
+  currentChainId,
   describeWalletError,
   ensureChain,
+  onChainChanged,
   walletIcon,
   type Eip1193Provider,
 } from './wallet';
@@ -65,6 +67,37 @@ describe('ensureChain', () => {
   it('treats a declined switch as staying connected, and anything else as an error', async () => {
     await expect(ensureChain(provider({ wallet_switchEthereumChain: refuse(4001) }))).resolves.toBeUndefined();
     await expect(ensureChain(provider({ wallet_switchEthereumChain: refuse(-32000, 'boom') }))).rejects.toThrow('boom');
+  });
+});
+
+describe('currentChainId', () => {
+  it('reads the chain the wallet is on, in hex or as a number, and null when it will not say', async () => {
+    expect(await currentChainId(provider({ eth_chainId: '0x1237' }))).toBe(4663);
+    expect(await currentChainId(provider({ eth_chainId: 1 }))).toBe(1);
+    expect(await currentChainId(provider({ eth_chainId: 'nonsense' }))).toBeNull();
+    expect(await currentChainId(provider({ eth_chainId: refuse(-32603, 'no') }))).toBeNull();
+  });
+});
+
+describe('onChainChanged', () => {
+  it('follows the wallet\'s switches and stops when asked', () => {
+    const handlers = new Map<string, (payload: unknown) => void>();
+    const p: Eip1193Provider = {
+      request: async () => null,
+      on: (event, handler) => void handlers.set(event, handler),
+      removeListener: (event) => void handlers.delete(event),
+    };
+    const seen: (number | null)[] = [];
+    const stop = onChainChanged(p, (id) => seen.push(id));
+    handlers.get('chainChanged')?.('0x1');
+    handlers.get('chainChanged')?.('0x1237');
+    stop();
+    expect(handlers.has('chainChanged')).toBe(false);
+    expect(seen).toEqual([1, 4663]);
+  });
+
+  it('is a no-op for a provider without events', () => {
+    expect(() => onChainChanged({ request: async () => null }, () => {})()).not.toThrow();
   });
 });
 

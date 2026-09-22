@@ -38,7 +38,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: 'Balast — Liquidity layer for Robinhood Chain',
   description:
-    'Deposit into any token on Robinhood Chain and collect swap fees in WETH. No lockups, no emissions.',
+    'Deposit into any token on Robinhood Chain and earn its pool\'s swap fees. No lockups, no emissions.',
   alternates: { canonical: '/' },
   openGraph: {
     type: 'website',
@@ -46,7 +46,7 @@ export const metadata: Metadata = {
     siteName: 'Balast',
     title: 'Balast — Liquidity layer for Robinhood Chain',
     description:
-      'Deposit into any token on Robinhood Chain and collect swap fees in WETH. No lockups, no emissions.',
+      'Deposit into any token on Robinhood Chain and earn its pool\'s swap fees. No lockups, no emissions.',
     images: [{ url: '/og-card.png', width: 1200, height: 630, alt: 'Balast' }],
   },
   twitter: { card: 'summary_large_image', site: X_HANDLE, images: ['/og-card.png'] },

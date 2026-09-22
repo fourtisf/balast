@@ -614,7 +614,21 @@ function onePoolPerToken(pools: Pool[]): Pool[] {
   return kept;
 }
 
-let revision = 0;
+/**
+ * The snapshot's revision, and why it starts at the clock rather than at
+ * zero.
+ *
+ * The live provider takes a snapshot only if its revision is above the one it
+ * holds (lib/data/live-provider.ts), so the poll and the socket cannot make
+ * the boards jump backwards. Started at zero, every API restart restarted the
+ * count — and every page already open kept the old, higher number and
+ * discarded every push and every poll until the new count climbed past it:
+ * at one rebuild per five seconds, hours of a board frozen on the last
+ * snapshot the previous process served, lag figure included (§7). The clock
+ * is monotonic across restarts, and a process cannot rebuild faster than
+ * once a millisecond, so a fresh start always exceeds the last count.
+ */
+let revision = Date.now();
 
 /**
  * Build the whole snapshot.

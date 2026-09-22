@@ -6,9 +6,9 @@ import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { BinChart } from '@/components/positions/BinChart';
 import { useMintFlow } from '@/components/positions/useMintFlow';
-import { EXPLORER_URL, NATIVE_ETH } from '@/lib/chain';
-import type { ShapeId } from '@/lib/data/types';
-import { price as fmtPrice } from '@/lib/format';
+import { CHAIN, EXPLORER_URL, NATIVE_ETH } from '@/lib/chain';
+import type { Pool, ShapeId } from '@/lib/data/types';
+import { price as fmtPrice, quoteLabel } from '@/lib/format';
 import { MAX_BINS, MIN_BINS, SHAPES, shapeWeights } from '@/lib/shapes';
 import { amount as fmtAmount, num } from '@/lib/v4/format';
 import { yieldPct } from '@/lib/yield';
@@ -24,8 +24,35 @@ const SHAPE_ICONS: Record<ShapeId, number[]> = {
   bidask: [21, 16, 11, 6, 6, 11, 16, 21],
 };
 
+/**
+ * The builder needs a pool it may mint into. When the listing has none — no
+ * pool listed at all, or every listed pool running a hook Balast has not
+ * verified — it says so. It used to plan against `pools[0]`, which threw on
+ * an empty listing and, on a listing with no verified pool, quietly offered
+ * an unverified one that the select could not even show.
+ */
 export function ShapeBuilder() {
-  const { pools, global } = useMarket();
+  const { pools } = useMarket();
+  const stakeablePools = pools.filter((p) => p.stakeable);
+  if (stakeablePools.length === 0) {
+    return (
+      <div className="card">
+        <div className="empty">
+          <b>{pools.length === 0 ? 'Nothing to mint into yet' : 'No pool is offered for minting'}</b>
+          {pools.length === 0
+            ? 'No pool is listed yet. The builder opens on the first one the indexer lists.'
+            : 'Every listed pool runs a hook Balast has not verified. A hook can refuse liquidity ' +
+              'or take most of every trade as its fee, so none is offered until someone has looked ' +
+              '(STAKEABLE_HOOKS).'}
+        </div>
+      </div>
+    );
+  }
+  return <Builder pools={pools} stakeablePools={stakeablePools} />;
+}
+
+function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Pool[] }) {
+  const { global } = useMarket();
   const { wallet } = useUi();
 
   // The drawer hands over here: ?pool= picks the pool, ?range=full is a stake.
@@ -33,9 +60,8 @@ export function ShapeBuilder() {
   const wantedPool = params.get('pool');
   const wantedFull = params.get('range') === 'full';
 
-  const stakeablePools = pools.filter((p) => p.stakeable);
   const [poolId, setPoolId] = useState(
-    () => stakeablePools.find((p) => p.id === wantedPool)?.id ?? stakeablePools[0]?.id ?? pools[0].id,
+    () => stakeablePools.find((p) => p.id === wantedPool)?.id ?? stakeablePools[0].id,
   );
   const [amount, setAmount] = useState('2.5');
   const [shape, setShape] = useState<ShapeId>('spot');
@@ -48,7 +74,7 @@ export function ShapeBuilder() {
     if (wantedPool && pools.some((p) => p.id === wantedPool && p.stakeable)) setPoolId(wantedPool);
   }, [wantedPool, pools.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pool = pools.find((p) => p.id === poolId) ?? pools[0];
+  const pool = stakeablePools.find((p) => p.id === poolId) ?? stakeablePools[0];
   const shapeMeta = SHAPES.find((s) => s.id === shape)!;
   const weights = useMemo(() => (fullRange ? [1] : shapeWeights(shape, bins)), [shape, bins, fullRange]);
 
@@ -77,13 +103,7 @@ export function ShapeBuilder() {
     valid: inputsValid,
   });
 
-  const quoteSymbol = !flow.sides
-    ? pool.quote
-    : flow.sides.quoteCurrency.toLowerCase() === NATIVE_ETH
-      ? 'ETH'
-      : pool.quote === 'ETH'
-        ? 'WETH'
-        : pool.quote;
+  const quoteSymbol = quoteLabel(pool);
   const tokenSymbol = pool.token.symbol;
 
   // What the chain says: the plan's two sides against the wallet's balances.
@@ -160,6 +180,8 @@ export function ShapeBuilder() {
       ? 'Mint position'
       : flow.step === 'connect'
         ? 'Connect wallet to mint'
+        : flow.step === 'wrong-chain'
+          ? `Switch to ${CHAIN.name}`
         : flow.step === 'reading'
           ? 'Reading the pool…'
           : flow.step === 'unavailable'
@@ -173,12 +195,14 @@ export function ShapeBuilder() {
                 : flow.plan
                   ? `Mint ${flow.plan.positions.length} position${flow.plan.positions.length === 1 ? '' : 's'}`
                   : 'Mint position';
+  // Switching networks is always allowed; the inputs are judged once it has.
   const buttonDisabled =
-    !valid ||
+    flow.step !== 'wrong-chain' &&
+    (!valid ||
     flow.step === 'reading' ||
     flow.step === 'unavailable' ||
     flow.step === 'busy' ||
-    (flow.step === 'ready' && (!flow.plan || Boolean(flow.error)));
+    (flow.step === 'ready' && (!flow.plan || Boolean(flow.error))));
 
   return (
     <div className="builder">
@@ -344,7 +368,9 @@ export function ShapeBuilder() {
         ) : (
           <p className="hint" style={{ textAlign: 'center', marginTop: 8 }}>
             {onChain
-              ? flow.step === 'approve'
+              ? flow.step === 'wrong-chain'
+                ? `The wallet is on another network. Nothing is sent until it is on ${CHAIN.name}; the price shown is read from the chain's public RPC.`
+                : flow.step === 'approve'
                 ? `${flow.approvals.length} approval${flow.approvals.length === 1 ? '' : 's'} first, then one transaction to mint. Nothing is held by Balast.`
                 : `One transaction through Uniswap's PositionManager${flow.plan ? `: ${flow.plan.positions.length} position${flow.plan.positions.length === 1 ? '' : 's'}, each an NFT in your wallet` : ''}. Nothing is held by Balast.`
               : 'One transaction. You keep the NFT.'}

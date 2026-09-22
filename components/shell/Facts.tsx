@@ -41,7 +41,7 @@ export function Facts() {
           data-fact="positions"
           title={
             global.totalPositions === 0
-              ? 'Nothing minted yet. Position minting opens with the contracts.'
+              ? 'The indexer does not follow minted positions yet, so this stays at zero even after a mint.'
               : undefined
           }
         >

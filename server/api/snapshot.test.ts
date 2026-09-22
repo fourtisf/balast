@@ -160,6 +160,16 @@ describe('buildSnapshot', () => {
     }
   });
 
+  it('carries a revision that survives a restart of the API', async () => {
+    // The live provider drops any snapshot whose revision is not above the
+    // one it holds. A count that restarted at zero with the process left
+    // every open page discarding pushes for hours; the clock does not.
+    const bootFloor = Date.now() - 24 * 60 * 60 * 1000;
+    expect(snapshot.revision).toBeGreaterThan(bootFloor);
+    const again = await buildSnapshot({ usdgAddress: USDG });
+    expect(again!.revision).toBeGreaterThan(snapshot.revision);
+  });
+
   it('reports the indexer lag rather than hiding it', () => {
     // The fixture's chain time is in the past, so the lag is large and real.
     // What matters is that it is present and non-negative: the top bar shows

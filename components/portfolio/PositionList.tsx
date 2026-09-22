@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { TokenBadge } from '@/components/ui/TokenBadge';
-import { countdown, usdExact } from '@/lib/format';
+import { countdown, quoteLabel, usdExact } from '@/lib/format';
 import { SHAPES } from '@/lib/shapes';
 
 export function PositionList() {
@@ -41,7 +41,7 @@ export function PositionList() {
             <div className="tok">
               <TokenBadge token={pool.token} />
               <div>
-                <div className="n">{pool.token.symbol} / WETH</div>
+                <div className="n">{pool.token.symbol} / {quoteLabel(pool)}</div>
                 <div className="s">
                   {shape.label} · ±{position.rangePct}% ·{' '}
                   {position.inRange ? (

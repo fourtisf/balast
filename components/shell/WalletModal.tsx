@@ -245,8 +245,9 @@ export function WalletModal() {
               </button>
             </div>
             <p className="hint" style={{ marginTop: 14 }}>
-              Nothing on this site asks you to sign yet. Staking and minting arrive with the
-              contracts.
+              Minting and staking on the Positions page send one transaction through Uniswap&rsquo;s
+              PositionManager, after the node has dry-run it. Nothing else on this site asks you to
+              sign.
             </p>
           </>
         ) : (
@@ -317,7 +318,7 @@ export function WalletModal() {
             )}
             <p className="hint" style={{ marginTop: 14 }}>
               The wallet is asked to switch to Robinhood Chain, and to add it if it has never seen
-              it. Nothing is signed.
+              it. Connecting signs nothing.
             </p>
           </>
         )}

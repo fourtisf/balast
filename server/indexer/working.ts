@@ -76,12 +76,11 @@ export async function withWork<T>(
   await beat();
   // A beat that is still in flight when the next is due is skipped rather
   // than queued: a slow database must not pile up upserts behind itself.
-  let inFlight = false;
+  let inFlight: Promise<void> | null = null;
   const timer = setInterval(() => {
     if (inFlight) return;
-    inFlight = true;
-    void beat().finally(() => {
-      inFlight = false;
+    inFlight = beat().finally(() => {
+      inFlight = null;
     });
   }, options.heartbeatMs ?? HEARTBEAT_MS);
   // Never the reason the process stays up.
@@ -92,6 +91,12 @@ export async function withWork<T>(
     });
   } finally {
     clearInterval(timer);
+    // A beat still in flight would land AFTER the clear below and resurrect
+    // the record — with a fresh heartbeat, so health would read `working`
+    // for a stage that had already ended, for up to the stall threshold.
+    // The suite caught it as a leftover row; on the box it would have been
+    // five minutes of a wrong status after every rebuild.
+    await inFlight;
     await clearWork();
   }
 }

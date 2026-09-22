@@ -7,9 +7,11 @@ in WETH.
 `CLAUDE.md` is the engineering handoff and the source of truth. `design/depth.html`
 is the approved design prototype. Where the two disagree, `CLAUDE.md` wins.
 
-**This repository contains P0 and P1: the shell, and the indexer that replaces
-its simulated data with real chain data.** No contracts, no keeper, no wallet
-connector — those are P2 and P3. See *Build phases* in `CLAUDE.md` §8.
+**This repository contains P0, P1 and the mainnet mint path: the shell, the
+indexer that replaces its simulated data with real chain data, a wallet dialog,
+and a shape builder that mints positions through Uniswap's PositionManager
+(`CLAUDE.md` §20).** No contracts of Balast's own and no keeper — the router is
+P4. See *Build phases* in `CLAUDE.md` §8.
 
 ## Run it
 

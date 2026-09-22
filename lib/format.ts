@@ -3,6 +3,9 @@
  * that belongs in the provider (§4: compute it in SQL, never in the component).
  */
 
+import { NATIVE_ETH } from './chain';
+import type { Pool } from './data/types';
+
 /** $1.23B / $1.23M / $12.3K / $123 — the prototype's `fmt`. */
 export function usd(n: number): string {
   if (!Number.isFinite(n)) return '—';
@@ -92,4 +95,24 @@ export function inHours(seconds: number): string {
 
 export function shortWallet(hex: string): string {
   return `${hex.slice(0, 6)}…${hex.slice(-4)}`;
+}
+
+/**
+ * The quote side of a pool's pair, as the page names it: `NVDA / USDG`,
+ * `PONS / ETH`, `TSLA / WETH`.
+ *
+ * Every pair label used to be hardcoded `/ WETH`, which was the prototype's
+ * one quote and is wrong for a third of the live board: the tokenised stocks
+ * trade against USDG, and a v4 pool that holds ether holds it natively
+ * (lib/chain.ts, NATIVE_ETH), not as the wrapper. A v3 pool always holds the
+ * wrapper; a simulated pool has no key and keeps its nominal quote.
+ */
+export function quoteLabel(pool: Pick<Pool, 'quote' | 'key' | 'token' | 'protocol'>): string {
+  if (pool.quote !== 'ETH') return pool.quote;
+  if (pool.key) {
+    const tokenIsCurrency0 = pool.token.address.toLowerCase() === pool.key.currency0.toLowerCase();
+    const quoteSide = tokenIsCurrency0 ? pool.key.currency1 : pool.key.currency0;
+    return quoteSide.toLowerCase() === NATIVE_ETH ? 'ETH' : 'WETH';
+  }
+  return pool.protocol === 'v3' ? 'WETH' : 'ETH';
 }
