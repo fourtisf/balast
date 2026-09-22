@@ -315,6 +315,27 @@ else
       ;;
     *) bad "unexpected health body: ${BODY:0:160}" ;;
   esac
+
+  # The live market feed. A row reading `chain` is showing a day as old as the
+  # sync, so how many of the board's tokens an aggregator places is the
+  # difference between a current board and a two-month-old one — and when some
+  # are unplaced, WHICH ones is the difference between "nobody lists them" and
+  # "we are not asking" (§24).
+  MARKET=${BODY#*\"market\":}
+  M_FOLLOWED=$(printf '%s' "$MARKET" | grep -o '"followed":[0-9]*' | head -1 | cut -d: -f2)
+  M_QUOTED=$(printf '%s' "$MARKET" | grep -o '"quoted":[0-9]*' | head -1 | cut -d: -f2)
+  M_NOTE=$(printf '%s' "$MARKET" | grep -o '"note":"[^"]*"' | head -1 | cut -d'"' -f4)
+  M_UNKNOWN=$(printf '%s' "$MARKET" | grep -o '"unknownTokens":\[[^]]*\]' | head -1 | sed 's/.*\[//; s/\]//; s/"//g')
+  if [[ -n "${M_FOLLOWED:-}" && "${M_FOLLOWED:-0}" -gt 0 ]]; then
+    if [[ "${M_QUOTED:-0}" -eq 0 ]]; then
+      warn "live market: none of $M_FOLLOWED tokens quoted — every row shows the chain's own figures${M_NOTE:+ ($M_NOTE)}"
+      also "runuser -u $APP_USER -- npm run --prefix $APP_DIR market:probe -- <ticker>"
+    else
+      ok "live market: $M_QUOTED of $M_FOLLOWED tokens quoted${M_UNKNOWN:+ — no source has: $M_UNKNOWN}"
+    fi
+  elif [[ -n "${M_NOTE:-}" ]]; then
+    warn "live market: $M_NOTE"
+  fi
 fi
 
 # ------------------------------------------------------------------ nginx ---

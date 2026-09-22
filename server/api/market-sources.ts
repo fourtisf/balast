@@ -31,7 +31,7 @@
  */
 
 import type { MarketQuote, MarketSourceName } from '../../lib/data/types';
-import { CHAIN } from '../../lib/chain';
+import { CHAIN, CONTRACTS, isEther } from '../../lib/chain';
 import { USER_AGENT, type Fetch, type Log } from '../indexer/logo-sources';
 
 /** A token to quote, and the pool its row points at. */
@@ -40,6 +40,8 @@ export interface MarketAsk {
   address: string;
   /** Lowercase pool address (v3) or pool id (v4) — to report that pool's own liquidity. */
   pool: string;
+  /** The row's ticker, so a status can name the tokens no source placed. */
+  symbol?: string;
 }
 
 /** What a source answered. A token it does not know is simply absent from `quotes`. */
@@ -53,12 +55,33 @@ export interface SourceAnswer {
   refusal: string | null;
   /** Chain ids seen in the answer, for the health report and the DEXSCREENER_CHAIN hint. */
   chains?: string[];
+  /**
+   * Why this source answered nothing, when it did so without refusing — it
+   * does not know the chain, say. It becomes the source's `lastError` in
+   * `/api/health` and does NOT back the source off, because a source that
+   * cannot ask has not been refused.
+   */
+  note?: string | null;
 }
 
 export interface MarketSource {
   name: MarketSourceName;
   /** How many tokens one request may carry. */
   batch: number;
+  /**
+   * How many tokens this source tolerates being asked about ALONE in one
+   * refresh, when a batch came back without them.
+   *
+   * It is a rate-limit budget, so it belongs to the source rather than to
+   * the feed: DexScreener answers hundreds of requests a minute and needs
+   * the retries, because its batch answer is capped in pairs and the tokens
+   * at the back get nothing (§20). GeckoTerminal is keyless and allows a
+   * few dozen a minute, and its batch answer is per token rather than
+   * capped — what its token index does not carry is asked for by the pool
+   * instead, inside the same batch. A generous budget there would spend the
+   * whole minute's allowance on retries and earn a 429.
+   */
+  singles: number;
   quotes(asks: MarketAsk[], ctx: { fetch: Fetch; log: Log; now: () => number }): Promise<SourceAnswer>;
 }
 
@@ -116,7 +139,15 @@ export interface MarketPair {
   url: string;
   baseToken: string;
   quoteToken: string;
+  /** The BASE token's price. A source's `priceUsd` is always about the base. */
   priceUsd: number | null;
+  /**
+   * The QUOTE token's price, where the source reports it. Ether is the quote
+   * of most pairs on this chain, so without this the wrapper — which is how
+   * the masthead's ETH price is asked for (§24) — could be priced only from
+   * the rare pair it is the base of.
+   */
+  quotePriceUsd?: number | null;
   volume24hUsd: number;
   /** Null from a source that does not split trades. */
   buys24h: number | null;
@@ -139,6 +170,16 @@ export interface MarketPair {
  * over pairs would multiply it by the number of pools the token has.
  *
  * Null when no pair is on the wanted chain.
+ *
+ * A pair counts whichever side of it our token is on. A source names one
+ * side the base and the other the quote, and which way round it puts a pair
+ * is its own decision — so matching only the base silently dropped every
+ * pair where it chose the other way, and the row fell back to a figure two
+ * months old as though nobody listed the token. What such a pair may be read
+ * for is narrower, though: `priceUsd`, `fdv` and `marketCap` describe the
+ * BASE token, so a pair our token is the quote of contributes its volume,
+ * its trade split and its liquidity, and never a price or a cap. Taking
+ * those would have put another token's market cap on this row.
  */
 export function aggregate(
   pairs: MarketPair[],
@@ -157,7 +198,11 @@ export function aggregate(
   };
   // filter() copies, so this sorts the copy and never the caller's array.
   const candidates = pairs
-    .filter((p) => p.baseToken === address && (chain === null || p.chainId === chain))
+    .filter(
+      (p) =>
+        (p.baseToken === address || p.quoteToken === address) &&
+        (chain === null || p.chainId === chain),
+    )
     .sort(byDepth);
   if (candidates.length === 0) return null;
 
@@ -166,7 +211,25 @@ export function aggregate(
   // the deepest pair's chain decides, and /api/health reports every id seen
   // so the right one can be pinned.
   const deepest = candidates[0];
-  const mine = candidates.filter((p) => p.chainId === deepest.chainId);
+  const onChain = candidates.filter((p) => p.chainId === deepest.chainId);
+  // The pairs this token is the base of: the only ones whose price and cap
+  // are about it.
+  const based = onChain.filter((p) => p.baseToken === address);
+
+  // Which pairs count toward the quantities. Both sides, except for ether,
+  // which is the chain's quote asset: it quotes nearly every pair here, a
+  // source's answer is capped at a page of them, and summing that page would
+  // put "most of the chain's volume, as far as we were told" on the ether row
+  // as though it were a total. Ether's own markets are the pairs it is the
+  // base of; its PRICE still comes from the quote side below, which is the
+  // half of this that the masthead needs (§24).
+  const quoteAsset = isEther(address) || address === CONTRACTS.weth.toLowerCase();
+  const mine = quoteAsset && based.length > 0 ? based : onChain;
+  // The deepest pair worth reading a price off. Failing that, the deepest
+  // pair we are the QUOTE of, whose quote-side price is ours where the
+  // source reports one.
+  const priced = based[0] ?? null;
+  const asQuote = priced ? null : (onChain.find((p) => (p.quotePriceUsd ?? null) !== null) ?? null);
 
   let volume = 0;
   let buys: number | null = null;
@@ -185,9 +248,11 @@ export function aggregate(
   // different question.
   const own = pool ? mine.find((p) => p.pairAddress === pool.toLowerCase()) : undefined;
 
-  // A cap read off the deepest pair; if it has none, the deepest that does.
+  // A cap read off the deepest pair this token is the BASE of; if it has
+  // none, the deepest that does. Never off a pair it is the quote of: that
+  // cap belongs to the other token.
   const hasCap = (p: MarketPair): boolean => p.marketCapUsd !== null || p.fdvUsd !== null;
-  const withCap = hasCap(deepest) ? deepest : mine.find(hasCap);
+  const withCap = priced && hasCap(priced) ? priced : based.find(hasCap);
 
   return {
     source,
@@ -196,11 +261,13 @@ export function aggregate(
     dexId: deepest.dexId,
     pairAddress: deepest.pairAddress,
     url: deepest.url,
-    priceUsd: deepest.priceUsd,
+    priceUsd: priced ? priced.priceUsd : (asQuote?.quotePriceUsd ?? null),
     volume24hUsd: volume,
     buys24h: buys,
     sells24h: sells,
-    priceChange24hPct: deepest.priceChange24hPct,
+    // A pair's 24h change is the base token's, so it is read only from a
+    // pair this token is the base of.
+    priceChange24hPct: priced?.priceChange24hPct ?? null,
     liquidityUsd: liquidity,
     poolLiquidityUsd: own?.liquidityUsd ?? null,
     fdvUsd: withCap?.fdvUsd ?? null,
@@ -228,6 +295,12 @@ export function parsePairs(body: unknown): MarketPair[] {
     const baseToken = String(base?.address ?? '').toLowerCase();
     if (!pairAddress || !baseToken) continue;
     const txns = asRecord(asRecord(pair.txns)?.h24);
+    // DexScreener prices the BASE token two ways: in dollars and in the
+    // quote. One divided by the other is the QUOTE token's price in dollars,
+    // exactly — which is how the wrapper gets a price at all, since ether is
+    // the quote of almost every pair here and the base of almost none.
+    const usd = num(pair.priceUsd);
+    const native = num(pair.priceNative);
     out.push({
       chainId: String(pair.chainId ?? '').toLowerCase(),
       dexId: String(pair.dexId ?? ''),
@@ -235,7 +308,8 @@ export function parsePairs(body: unknown): MarketPair[] {
       url: typeof pair.url === 'string' ? pair.url : '',
       baseToken,
       quoteToken: String(quote?.address ?? '').toLowerCase(),
-      priceUsd: num(pair.priceUsd),
+      priceUsd: usd,
+      quotePriceUsd: usd !== null && native !== null && native > 0 ? usd / native : null,
       volume24hUsd: num(asRecord(pair.volume)?.h24) ?? 0,
       buys24h: txns ? Math.max(0, Math.round(num(txns.buys) ?? 0)) : null,
       sells24h: txns ? Math.max(0, Math.round(num(txns.sells) ?? 0)) : null,
@@ -260,6 +334,7 @@ export function dexscreener(options: { base?: string; chain?: string | null } = 
   return {
     name: 'dexscreener',
     batch: 10,
+    singles: 40,
     async quotes(asks, { fetch, now }) {
       const quotes = new Map<string, MarketQuote>();
       const answer = await get(fetch, `${base}/latest/dex/tokens/${asks.map((a) => a.address).join(',')}`, {});
@@ -347,6 +422,57 @@ export function parseGeckoTokens(body: unknown, network: string): MarketPair[] {
   return out;
 }
 
+/**
+ * The pools in a `/networks/{network}/pools/multi/{addresses}` answer.
+ *
+ * GeckoTerminal indexes POOLS first and derives its token pages from them,
+ * so a launchpad token missing from `/tokens/multi` can still have its pool
+ * here — which is the whole reason this second lookup exists. A pool answer
+ * also carries a trade split, which the token answer does not.
+ *
+ * Base and quote are whichever way round GeckoTerminal has the pool, which
+ * for a Uniswap pool follows the currencies' address order rather than which
+ * one anybody would call the token. `aggregate` matches either side.
+ */
+export function parseGeckoPools(body: unknown, network: string): MarketPair[] {
+  const record = asRecord(body);
+  const data = Array.isArray(record?.data) ? record!.data : [];
+  const out: MarketPair[] = [];
+  for (const item of data) {
+    const pool = asRecord(item);
+    const attrs = asRecord(pool?.attributes);
+    if (!attrs) continue;
+    const rel = asRecord(pool?.relationships);
+    const side = (key: string): string => {
+      const id = String(asRecord(asRecord(rel?.[key])?.data)?.id ?? '');
+      const address = (id.includes('_') ? id.slice(id.indexOf('_') + 1) : id).toLowerCase();
+      return /^0x[0-9a-f]{40}$/.test(address) ? address : '';
+    };
+    const baseToken = side('base_token');
+    if (!baseToken) continue;
+    const address = String(attrs.address ?? '').toLowerCase();
+    const txns = asRecord(asRecord(attrs.transactions)?.h24);
+    out.push({
+      chainId: network,
+      dexId: String(asRecord(asRecord(rel?.dex)?.data)?.id ?? ''),
+      pairAddress: address,
+      url: `https://www.geckoterminal.com/${network}/pools/${address}`,
+      baseToken,
+      quoteToken: side('quote_token'),
+      priceUsd: num(attrs.base_token_price_usd),
+      quotePriceUsd: num(attrs.quote_token_price_usd),
+      volume24hUsd: num(asRecord(attrs.volume_usd)?.h24) ?? 0,
+      buys24h: txns ? Math.max(0, Math.round(num(txns.buys) ?? 0)) : null,
+      sells24h: txns ? Math.max(0, Math.round(num(txns.sells) ?? 0)) : null,
+      priceChange24hPct: num(asRecord(attrs.price_change_percentage)?.h24),
+      liquidityUsd: num(attrs.reserve_in_usd),
+      fdvUsd: num(attrs.fdv_usd),
+      marketCapUsd: num(attrs.market_cap_usd),
+    });
+  }
+  return out;
+}
+
 /** The liquidity GeckoTerminal reports for one named pool, out of the same answer. */
 export function geckoPoolLiquidity(body: unknown, pool: string): number | null {
   const included = asRecord(body)?.included;
@@ -413,18 +539,36 @@ export function geckoterminal(
     name: 'geckoterminal',
     // The documented cap for /tokens/multi.
     batch: 30,
+    // Keyless, a few dozen calls a minute, and each single ask here costs
+    // two of them once the by-pool lookup runs. The batch answers per token
+    // and the pool lookup covers what its token index lacks, so this is an
+    // edge case — a token with no pool recorded — not the main path.
+    singles: 4,
     network: () => network,
     async quotes(asks, { fetch, log, now }) {
       const quotes = new Map<string, MarketQuote>();
       const id = await networkId(fetch, log, now);
-      if (!id) return { quotes, refusal: null };
+      // Not a refusal and not an answer: the source cannot ask until it
+      // knows the chain's id. Said out loud, because a source reporting no
+      // quotes, no error and no reason is the status that sends whoever
+      // reads it to the wrong place (§21).
+      if (!id) {
+        return {
+          quotes,
+          refusal: null,
+          note:
+            network === null
+              ? `GeckoTerminal does not list ${CHAIN.name}`
+              : 'GeckoTerminal: the network list did not answer; retrying shortly',
+        };
+      }
+      const at = new Date(now()).toISOString();
       const url = `${base}/networks/${id}/tokens/multi/${asks.map((a) => a.address).join(',')}?include=top_pools`;
       const answer = await get(fetch, url, headers);
       if (answer.status < 200 || answer.status >= 300) {
         return { quotes, refusal: refusalFor('GeckoTerminal', answer.status) };
       }
       const tokens = parseGeckoTokens(answer.body, id);
-      const at = new Date(now()).toISOString();
       for (const ask of asks) {
         const quote = aggregate(tokens, ask.address, ask.pool, id, 'geckoterminal', at);
         if (!quote) continue;
@@ -433,6 +577,40 @@ export function geckoterminal(
         quote.pairs = 0;
         quote.poolLiquidityUsd = geckoPoolLiquidity(answer.body, ask.pool);
         quotes.set(ask.address, quote);
+      }
+
+      // The tokens that answer did not place, asked for again BY THEIR POOL.
+      // GeckoTerminal indexes pools and derives its token pages from them, so
+      // a launchpad token its token index does not carry can still have its
+      // pool here — and a pool answer carries a trade split the token answer
+      // does not. One extra request per batch, and only when something was
+      // missed.
+      const missing = asks.filter((a) => a.pool && !quotes.has(a.address));
+      if (missing.length > 0) {
+        const byPool = await get(
+          fetch,
+          `${base}/networks/${id}/pools/multi/${missing.map((a) => a.pool).join(',')}`,
+          headers,
+        );
+        if (byPool.status < 200 || byPool.status >= 300) {
+          // A note, not a refusal. The token lookup answered, so the source
+          // is working; and how this chain's v4 pools are addressed here
+          // could not be checked from the session that wrote it, so a
+          // refusal would back the whole source off every refresh over a
+          // lookup that is only a fallback — losing the coverage it does
+          // have. It says what happened and the quotes it made stand.
+          return {
+            quotes,
+            refusal: null,
+            chains: [id],
+            note: `${refusalFor('GeckoTerminal', byPool.status)} when asked by pool`,
+          };
+        }
+        const pools = parseGeckoPools(byPool.body, id);
+        for (const ask of missing) {
+          const quote = aggregate(pools, ask.address, ask.pool, id, 'geckoterminal', at);
+          if (quote) quotes.set(ask.address, quote);
+        }
       }
       return { quotes, refusal: null, chains: [id] };
     },

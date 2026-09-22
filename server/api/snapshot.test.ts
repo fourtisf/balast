@@ -386,11 +386,18 @@ describe('the listing bar', () => {
     expect(second!.global.ethPriceUsd).toBe(4000);
     expect(second!.global.ethPriceBasis).toBe('live');
     expect(second!.global.ethPriceSource).toBe('dexscreener');
-    expect(quoted[0].market!.volume24hUsd).toBe(123_456);
-    expect(quoted[0].market!.buys24h).toBe(7);
-    expect(quoted[0].market!.priceChange24hPct).toBe(-2.5);
+    const row = quoted.find((p) => p.token.address.toLowerCase() !== WETH.toLowerCase())!;
+    expect(row.market!.volume24hUsd).toBe(123_456);
+    expect(row.market!.buys24h).toBe(7);
+    expect(row.market!.priceChange24hPct).toBe(-2.5);
     // The chain's own figure is still there, unchanged, beside it.
-    expect(quoted[0].volume24hUsd).not.toBe(123_456);
+    expect(row.volume24hUsd).not.toBe(123_456);
+    // Ether is this chain's quote asset, so its row is its own market rather
+    // than every pair it quotes: summing those would report most of the
+    // chain's day as ether's (§24). Its PRICE comes from the quote side,
+    // which is what the masthead reads and is asserted above.
+    const ether = quoted.find((p) => p.token.address.toLowerCase() === WETH.toLowerCase())!;
+    expect(ether.market!.volume24hUsd).toBe(123_456);
     expect(second!.pools.filter((p) => p.market === null).length).toBe(second!.pools.length - 2);
     feed.stop();
 

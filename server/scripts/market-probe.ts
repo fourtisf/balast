@@ -21,6 +21,26 @@ import { resolveTokens } from './resolve-tokens';
 
 const money = (n: number | null): string => (n === null ? '—' : `$${Math.round(n).toLocaleString()}`);
 
+/** Each token's deepest pool, or nothing at all if the database is not there. */
+async function deepestPools(addresses: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  try {
+    const { prisma } = await import('../db');
+    const rows = await prisma.$queryRaw<{ address: string; pool: string }[]>`
+      SELECT DISTINCT ON (t.address) t.address, p.address AS pool
+      FROM tokens t
+      JOIN pools p ON lower(p.token0) = lower(t.address) OR lower(p.token1) = lower(t.address)
+      LEFT JOIN pool_state ps ON ps.pool_id = p.id
+      WHERE lower(t.address) = ANY(${addresses.map((a) => a.toLowerCase())})
+      ORDER BY t.address, COALESCE(ps.tvl_usd, 0) DESC`;
+    for (const row of rows) out.set(row.address.toLowerCase(), row.pool.toLowerCase());
+  } catch {
+    // No database, or none reachable: the probe's whole point is the HTTP
+    // side, and it still answers without this.
+  }
+  return out;
+}
+
 /** The same fetch the feed uses, with every request and answer printed. */
 function loudFetch(): Fetch {
   return (async (url: string, init?: { headers?: Record<string, string>; signal?: AbortSignal }) => {
@@ -49,7 +69,16 @@ async function main(): Promise<void> {
 
   const chain = process.env.DEXSCREENER_CHAIN?.trim().toLowerCase() || null;
   const network = process.env.GECKOTERMINAL_NETWORK?.trim() || null;
-  const asks = addresses.map((address) => ({ address, pool: '' }));
+  // The row's own pool, best-effort: GeckoTerminal is asked by the pool for
+  // a token its token index does not carry, and without one the probe would
+  // not exercise the lookup the board depends on. A database that is not
+  // there costs nothing here — the probe still asks by address.
+  const pools = await deepestPools(addresses);
+  const asks = addresses.map((address) => ({ address, pool: pools.get(address) ?? '' }));
+  for (const address of addresses) {
+    const pool = pools.get(address);
+    if (pool) process.stdout.write(`  ${address} trades in ${pool}\n`);
+  }
   const ctx = { fetch: loudFetch(), log: (line: string) => process.stdout.write(`${line}\n`), now: Date.now };
 
   // --- DexScreener, raw, so the pairs behind the sum are visible -----------

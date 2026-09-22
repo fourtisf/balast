@@ -47,7 +47,7 @@ import {
 } from './market-sources';
 
 export type { MarketQuote };
-export { aggregate, parsePairs, parseGeckoTokens, dexscreener, geckoterminal } from './market-sources';
+export { aggregate, parsePairs, parseGeckoTokens, parseGeckoPools, dexscreener, geckoterminal } from './market-sources';
 
 export interface MarketSourceStatus {
   name: string;
@@ -63,6 +63,14 @@ export interface MarketStatus {
   quoted: number;
   /** Tokens no source answered for, alone; asked again after MISS_RETRY_MS. */
   unknown: number;
+  /**
+   * Which ones, by ticker, up to thirty.
+   *
+   * A count alone cannot tell "no aggregator lists these tokens" from "our
+   * feed is not asking about them", and those need opposite actions. Named,
+   * `npm run market:probe -- <symbol's address>` answers it in one command.
+   */
+  unknownTokens: string[];
   lastRefreshAt: string | null;
   lastError: string | null;
   /** Chain ids seen in answers; more than one means DEXSCREENER_CHAIN should be set. */
@@ -99,8 +107,6 @@ export interface MarketFeedOptions {
   now?: () => number;
 }
 
-/** Tokens re-asked alone per refresh, so a board of unknowns cannot turn one refresh into a hundred requests. */
-const SINGLES_PER_REFRESH = 40;
 /** How long a token no source knew stays unasked on its own. */
 export const MISS_RETRY_MS = 10 * 60_000;
 /** A quote older than this is not live; it is dropped rather than shown. */
@@ -181,7 +187,11 @@ export class MarketFeed {
       if (!/^0x[0-9a-f]{40}$/.test(address)) continue;
       const pool = t.pool.toLowerCase();
       const before = next.get(address);
-      next.set(address, { address, pool: pool || before?.pool || '' });
+      next.set(address, {
+        address,
+        pool: pool || before?.pool || '',
+        symbol: t.symbol || before?.symbol,
+      });
       if (!this.followed.has(address)) added = true;
     }
     this.followed = next;
@@ -212,13 +222,17 @@ export class MarketFeed {
   status(): MarketStatus {
     let quoted = 0;
     let unknown = 0;
+    const unknownTokens: string[] = [];
     const perSource = new Map<string, number>();
-    for (const address of this.followed.keys()) {
+    for (const [address, ask] of this.followed) {
       const q = this.quote(address);
       if (q) {
         quoted++;
         perSource.set(q.source, (perSource.get(q.source) ?? 0) + 1);
-      } else if (this.unknown.has(address)) unknown++;
+      } else if (this.unknown.has(address)) {
+        unknown++;
+        if (unknownTokens.length < 30) unknownTokens.push(ask.symbol || address);
+      }
     }
     const backoffUntil = this.states
       .map((s) => s.backoffUntil)
@@ -229,6 +243,7 @@ export class MarketFeed {
       followed: this.followed.size,
       quoted,
       unknown,
+      unknownTokens,
       lastRefreshAt: this.lastRefreshAt === null ? null : new Date(this.lastRefreshAt).toISOString(),
       lastError: this.lastError,
       chains: [...this.chains].sort(),
@@ -300,7 +315,6 @@ export class MarketFeed {
     const ctx = { fetch: this.fetch, log: this.log, now: this.now };
     let pending = [...this.followed.values()];
     let changed = 0;
-    let singles = 0;
     let answered = false;
     let lastRefusal: string | null = null;
     /**
@@ -336,6 +350,8 @@ export class MarketFeed {
       const name = state.source.name;
       const size = Math.max(1, state.source.batch);
       let refusal: string | null = null;
+      let note: string | null = null;
+      let singles = 0;
       const unanswered: MarketAsk[] = [];
 
       for (let i = 0; i < pending.length && !refusal; i += size) {
@@ -343,6 +359,7 @@ export class MarketFeed {
         const answer = await state.source.quotes(batch, ctx);
         for (const chain of answer.chains ?? []) if (chain) this.chains.add(chain);
         take(name, answer.quotes);
+        if (answer.note) note = answer.note;
         if (answer.refusal) {
           refusal = answer.refusal;
           break;
@@ -354,9 +371,9 @@ export class MarketFeed {
       // batch's answer can be capped in pairs, and that says nothing about
       // the token (§20). Only worth doing for a source that batches, and only
       // for a token THIS source has not recently drawn a blank on.
-      if (!refusal && size > 1) {
+      if (!refusal && size > 1 && state.source.singles > 0) {
         for (const ask of unanswered) {
-          if (singles >= SINGLES_PER_REFRESH) break;
+          if (singles >= state.source.singles) break;
           if (this.missedRecently(name, ask.address)) continue;
           singles++;
           const answer = await state.source.quotes([ask], ctx);
@@ -382,7 +399,9 @@ export class MarketFeed {
         );
       } else {
         answered = true;
-        state.lastError = null;
+        // A note is not a refusal: the source is not backed off for it, and
+        // it stands as the reason under a source quoting nothing.
+        state.lastError = note;
         state.backoffMs = 0;
         state.backoffUntil = 0;
       }

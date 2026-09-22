@@ -3670,3 +3670,84 @@ rest.
 money here", like the other two bars. What it cannot fix is the sync: the
 chain figures on that board are a day in July (§21), and a token busy today
 but quiet then is judged on the quiet day until the backfill reaches head.
+
+### The rows that read `chain`: a pair counts whichever side the token is on
+
+ALFA, on the next board: *beberapa token masih tidak baca real volnya
+fixkan*. Rows 39 to 44 read `vol · 24h · chain` — YSMN, WISHBONE, MYSTERY,
+WTF, NVR — while HOOD and STONKS beside them read `live`. A chain figure
+during this sync is a day in July, so those rows were showing a day two
+months old while their neighbours showed today.
+
+Four faults, and the first is the one that would have hidden the others.
+
+**A pair was only counted when the token was its base.** `aggregate` filtered
+`p.baseToken === address`, and which side a source calls the base is the
+source's own decision: for a Uniswap pool it follows the currencies' address
+order, not which one anybody would call the token. So for roughly half the
+board — every token whose address sorts below its quote's — every pair came
+back the other way round and was dropped, the token looked unlisted, and the
+row fell back to the chain. A pair now counts whichever side our token is on,
+and what may be read from it narrows with the side: `priceUsd`, `fdv` and
+`marketCap` describe the BASE token, so a pair our token is the quote of
+contributes its volume, its trade split and its liquidity, and never a price
+or a cap. Taking those would have put another token's market cap on the row.
+
+**And ether had no price of its own.** Ether is the quote of nearly every
+pair here and the base of almost none, so under the old rule the wrapper —
+which is how the masthead's ETH price is asked for (§24) — could be priced
+only from the rare pair it is the base of. A source prices the base twice,
+in dollars and in the quote, and one over the other is the quote's price in
+dollars exactly. `MarketPair.quotePriceUsd` carries it, and a token that is
+only ever a quote is priced from it.
+
+Ether is also the one exception to the rule above, for the same reason it
+needed that price: it is the chain's quote asset rather than a token with
+markets of its own. A source answers with a page of the pairs it quotes, so
+summing them would report most of the chain's day as ether's own total. Where
+ether is the base of something, those are its markets; everywhere else it
+takes only the price. An ordinary token counts both sides.
+
+**GeckoTerminal is asked by the pool for what its token index does not
+carry.** It indexes pools and derives its token pages from them, so a
+launchpad token missing from `/tokens/multi` can still have its pool in
+`/pools/multi` — and a pool answer carries a trade split the token answer
+does not. One extra request per batch, only when something was missed, and
+its failure is a note rather than a refusal: how this chain's v4 pools are
+addressed there could not be checked from here, and a refusal would back the
+whole source off every refresh over a fallback, losing the coverage it has.
+
+**The singles budget was shared between the sources.** A token a batch came
+back empty for is asked about alone, because a long batch's answer can be
+capped in pairs (§20), and there were forty such asks per refresh. Shared,
+the first source's misses spent all forty and the second — asked precisely
+because the first does not list these tokens — got none. The source most
+likely to have the answer was the one that never got to ask.
+
+The budget belongs to the source now, because it is a rate-limit budget:
+DexScreener answers hundreds of calls a minute and keeps its forty;
+GeckoTerminal is keyless at a few dozen a minute, its batch answers per
+token rather than capped, and what its token index lacks is asked for by the
+pool inside the same batch — so it takes four, for the edge case of a token
+with no pool recorded. A generous budget there would spend the whole
+minute's allowance on retries and earn the 429 that leaves every row reading
+`chain`, which is the fault this section is about arriving by another road.
+
+**A source that cannot ask now says so.** GeckoTerminal with no network id
+answered no quotes, no error and no reason, which is the status §21 already
+called out as sending whoever reads it to the wrong place. `SourceAnswer.note`
+carries the explanation into `/api/health` without backing the source off,
+because a source that could not ask has not been refused. And `market.unknownTokens`
+lists, by ticker, the board's tokens no source placed — a count alone cannot
+tell "no aggregator lists these" from "our feed is not asking", and those
+need opposite actions. `npm run market:probe -- <ticker>` then answers it in
+one command, and passes the token's deepest pool so it exercises the
+by-pool lookup the board depends on. `deploy/doctor.sh` prints the same
+line — how many of the board's tokens are quoted, and which ones no source
+has — because a board reading `chain` is a board showing a day as old as
+the sync, and nothing else on the box said so.
+
+What none of this changes: a token genuinely absent from both aggregators
+keeps the chain's figure, labelled as the chain's, and that figure is as old
+as the sync. The backfill reaching head is the only thing that fixes it for
+every token rather than for the ones an aggregator happens to carry.

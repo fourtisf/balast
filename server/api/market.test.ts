@@ -121,18 +121,99 @@ describe("summing a token's pairs", () => {
     expect(q.volume24hUsd).toBe(21_018_000);
   });
 
-  it('only counts pairs where the token is the base, and only on the configured chain', () => {
+  it('counts a pair whichever side the token is on, and only on the configured chain', () => {
+    // Which side a source calls the base is its own decision, and for a
+    // Uniswap pool it follows the currencies' address order rather than
+    // which one anybody would call the token. Matching only the base dropped
+    // every pair that came back the other way round, and the row read the
+    // chain's two-month-old figure as though nobody listed the token (§24).
     const mixed = parsePairs({
       pairs: [
         pair({ pairAddress: '0x1', chainId: 'ethereum', liquidity: { usd: 9e9 }, volume: { h24: 7 } }),
-        pair({ pairAddress: '0x2', chainId: 'robinhood', liquidity: { usd: 5 }, volume: { h24: 11 } }),
-        pair({ pairAddress: '0x3', baseToken: { address: OTHER }, quoteToken: { address: TOKEN }, liquidity: { usd: 9e9 }, volume: { h24: 13 } }),
+        pair({ pairAddress: '0x2', chainId: 'robinhood', liquidity: { usd: 5 }, volume: { h24: 11 }, priceUsd: '3', priceNative: '1.5', marketCap: 500, priceChange: { h24: 4 } }),
+        pair({ pairAddress: '0x3', baseToken: { address: OTHER }, quoteToken: { address: TOKEN }, liquidity: { usd: 9e9 }, volume: { h24: 13 }, priceUsd: '8', priceNative: '4', marketCap: 9_000_000, priceChange: { h24: -70 } }),
       ],
     });
-    // 0x3 is the deepest by far and TOKEN is only its quote: never counted.
-    expect(aggregate(mixed, TOKEN, '', 'robinhood', 'dexscreener', 'x')!.volume24hUsd).toBe(11);
+    const q = aggregate(mixed, TOKEN, '', 'robinhood', 'dexscreener', 'x')!;
+    expect(q.volume24hUsd).toBe(24);
+    expect(q.liquidityUsd).toBe(9e9 + 5);
+    // 0x3 is the deepest, and TOKEN is its QUOTE — so its price, its change
+    // and its market cap are the OTHER token's and are not read here. Taking
+    // them would have put another token's $9M cap on this row.
+    expect(q.marketCapUsd).toBe(500);
+    expect(q.priceChange24hPct).toBe(4);
+    expect(q.priceUsd).toBe(3);
+
     expect(aggregate(mixed, OTHER, '', null, 'dexscreener', 'x')!.volume24hUsd).toBe(13);
     expect(aggregate(mixed, OTHER, '', 'ethereum', 'dexscreener', 'x')).toBeNull();
+  });
+
+  it('does not sum every pair ether quotes onto the ether row', () => {
+    // Ether is this chain's quote asset, not a token with markets of its
+    // own. A source answers with a page of the pairs it quotes, so summing
+    // them would put most of the chain's volume on that row as though it
+    // were a total. Where ether is the base of something, that is its market.
+    const WETH = '0x0bd7d308f8e1639fab988df18a8011f41eacad73';
+    const around = parsePairs({
+      pairs: [
+        pair({ pairAddress: '0xa', baseToken: { address: WETH }, quoteToken: { address: OTHER }, liquidity: { usd: 10 }, volume: { h24: 5 }, priceUsd: '4000', priceNative: '1' }),
+        pair({ pairAddress: '0xb', baseToken: { address: TOKEN }, quoteToken: { address: WETH }, liquidity: { usd: 9e9 }, volume: { h24: 1_000_000 }, priceUsd: '8', priceNative: '0.002' }),
+        pair({ pairAddress: '0xc', baseToken: { address: OTHER }, quoteToken: { address: WETH }, liquidity: { usd: 9e9 }, volume: { h24: 2_000_000 }, priceUsd: '8', priceNative: '0.002' }),
+      ],
+    });
+    const eth = aggregate(around, WETH, '', null, 'dexscreener', 'x')!;
+    expect(eth.volume24hUsd).toBe(5);
+    expect(eth.priceUsd).toBe(4000);
+    // An ordinary token is not treated that way: both sides count.
+    const other = aggregate(around, OTHER, '', null, 'dexscreener', 'x')!;
+    expect(other.volume24hUsd).toBe(2_000_005);
+  });
+
+  it('does not sum every pair ether quotes onto the ether row', () => {
+    // Ether is this chain's quote asset, not a token with markets of its
+    // own. A source answers with a page of the pairs it quotes, so summing
+    // them would put most of the chain's volume on that row as though it
+    // were a total. Where ether is the base of something, that is its market.
+    const ETHER = '0x0bd7d308f8e1639fab988df18a8011f41eacad73';
+    const around = parsePairs({
+      pairs: [
+        pair({ pairAddress: '0xa', baseToken: { address: ETHER }, quoteToken: { address: OTHER }, liquidity: { usd: 10 }, volume: { h24: 5 }, priceUsd: '4000', priceNative: '1' }),
+        pair({ pairAddress: '0xb', baseToken: { address: TOKEN }, quoteToken: { address: ETHER }, liquidity: { usd: 9e9 }, volume: { h24: 1000000 } }),
+        pair({ pairAddress: '0xc', baseToken: { address: OTHER }, quoteToken: { address: ETHER }, liquidity: { usd: 9e9 }, volume: { h24: 2000000 } }),
+      ],
+    });
+    const eth = aggregate(around, ETHER, '', null, 'dexscreener', 'x')!;
+    expect(eth.volume24hUsd).toBe(5);
+    expect(eth.priceUsd).toBe(4000);
+    // An ordinary token is not treated that way: both sides count.
+    const other = aggregate(around, OTHER, '', null, 'dexscreener', 'x')!;
+    expect(other.volume24hUsd).toBe(2000005);
+  });
+  it('prices a token that is only ever the quote, from the pair it is the quote of', () => {
+    // Ether is the quote of nearly every pair on this chain and the base of
+    // almost none, and the masthead's ETH price is the wrapper's quote
+    // (§24). A source prices the BASE two ways — in dollars and in the quote
+    // — and one over the other is the quote's price in dollars, exactly.
+    const only = parsePairs({
+      pairs: [
+        pair({
+          pairAddress: '0x9',
+          baseToken: { address: OTHER },
+          quoteToken: { address: TOKEN },
+          liquidity: { usd: 1_000 },
+          volume: { h24: 40 },
+          priceUsd: '9',
+          priceNative: '3',
+          marketCap: 9_000_000,
+        }),
+      ],
+    });
+    const q = aggregate(only, TOKEN, '', null, 'dexscreener', 'x')!;
+    expect(q.priceUsd).toBe(3);
+    expect(q.volume24hUsd).toBe(40);
+    // Still not the other token's cap, and no change, which is the base's.
+    expect(q.marketCapUsd).toBeNull();
+    expect(q.priceChange24hPct).toBeNull();
   });
 
   it('never sums across chains, even with no chain configured', () => {
@@ -219,6 +300,104 @@ describe('parsing GeckoTerminal', () => {
     const [t] = parseGeckoTokens({ data: [{ attributes: { address: TOKEN } }] }, 'x');
     expect(t.volume24hUsd).toBe(0);
     expect(t.marketCapUsd).toBeNull();
+  });
+
+  it('asks by the pool for a token its token index does not carry', async () => {
+    // GeckoTerminal indexes POOLS and derives its token pages from them, so
+    // a launchpad token missing from /tokens/multi can still have its pool.
+    // On the board that was rows reading `chain` beside rows reading `live`,
+    // with nothing wrong anywhere (§24).
+    const urls: string[] = [];
+    const fetch = fakeFetch((url) => {
+      urls.push(url);
+      if (url.includes('/networks?')) {
+        return { status: 200, body: { data: [{ id: 'robinhood', attributes: { name: 'Robinhood Chain' } }] } };
+      }
+      if (url.includes('/tokens/multi/')) return { status: 200, body: { data: [] } };
+      return {
+        status: 200,
+        body: {
+          data: [
+            {
+              id: 'robinhood_pool',
+              type: 'pool',
+              attributes: {
+                address: POOL,
+                base_token_price_usd: '0.5',
+                quote_token_price_usd: '4000',
+                reserve_in_usd: '81000',
+                volume_usd: { h24: '26500' },
+                price_change_percentage: { h24: '15.2' },
+                transactions: { h24: { buys: 41, sells: 38 } },
+                fdv_usd: '1270000',
+                market_cap_usd: '1220000',
+              },
+              relationships: {
+                base_token: { data: { id: `robinhood_${TOKEN}` } },
+                quote_token: { data: { id: `robinhood_${OTHER}` } },
+                dex: { data: { id: 'uniswap-v4' } },
+              },
+            },
+          ],
+        },
+      };
+    });
+    const source = geckoterminal();
+    const answer = await source.quotes([{ address: TOKEN, pool: POOL }], { fetch, log: () => {}, now: Date.now });
+    const q = answer.quotes.get(TOKEN)!;
+    expect(q.volume24hUsd).toBe(26_500);
+    expect(q.buys24h).toBe(41);
+    expect(q.sells24h).toBe(38);
+    expect(q.liquidityUsd).toBe(81_000);
+    expect(q.marketCapUsd).toBe(1_220_000);
+    expect(q.priceChange24hPct).toBe(15.2);
+    expect(urls.some((u) => u.includes('/pools/multi/'))).toBe(true);
+  });
+
+  it('keeps its token quotes when the by-pool lookup is refused, rather than backing off', async () => {
+    // How this chain's v4 pools are addressed on GeckoTerminal could not be
+    // checked from here, so a 404 there must not cost the coverage the token
+    // lookup does have: the fallback failing is a note, not a refusal.
+    const fetch = fakeFetch((url) => {
+      if (url.includes('/networks?')) {
+        return { status: 200, body: { data: [{ id: 'robinhood', attributes: { name: 'Robinhood Chain' } }] } };
+      }
+      if (url.includes('/pools/multi/')) return { status: 404, body: null };
+      return { status: 200, body };
+    });
+    const source = geckoterminal();
+    const answer = await source.quotes(
+      [{ address: TOKEN, pool: POOL }, { address: OTHER, pool: POOL }],
+      { fetch, log: () => {}, now: Date.now },
+    );
+    expect(answer.quotes.has(TOKEN)).toBe(true);
+    expect(answer.refusal).toBeNull();
+    expect(answer.note).toMatch(/by pool/);
+  });
+
+  it('does not ask by the pool when the token lookup answered', async () => {
+    const urls: string[] = [];
+    const fetch = fakeFetch((url) => {
+      urls.push(url);
+      if (url.includes('/networks?')) {
+        return { status: 200, body: { data: [{ id: 'robinhood', attributes: { name: 'Robinhood Chain' } }] } };
+      }
+      return { status: 200, body };
+    });
+    const source = geckoterminal();
+    const answer = await source.quotes([{ address: TOKEN, pool: POOL }], { fetch, log: () => {}, now: Date.now });
+    expect(answer.quotes.has(TOKEN)).toBe(true);
+    expect(urls.some((u) => u.includes('/pools/multi/'))).toBe(false);
+  });
+
+  it('says why it has no quotes when it cannot learn the chain, rather than answering nothing', async () => {
+    // A source reporting no quotes, no error and no reason is the status
+    // that sends whoever reads it to the wrong place (§21).
+    const source = geckoterminal();
+    const fetch = fakeFetch(() => ({ status: 200, body: { data: [{ id: 'eth', attributes: { name: 'Ethereum' } }] } }));
+    const answer = await source.quotes([{ address: TOKEN, pool: POOL }], { fetch, log: () => {}, now: Date.now });
+    expect(answer.refusal).toBeNull();
+    expect(answer.note).toMatch(/does not list/);
   });
 
   it('discovers the network id by name and disables itself when the chain is absent', async () => {
@@ -418,6 +597,45 @@ describe('the feed', () => {
     feed.stop();
   });
 
+  it('gives each source its own budget of single asks', async () => {
+    // The budget was shared, so the first source's misses spent all of it
+    // and the second — the one asked precisely because the first does not
+    // list these tokens — got none. The source most likely to have the
+    // answer was the one that never got to ask. It is each source's own
+    // now, and sized to what that source's rate limit allows.
+    //
+    // DexScreener lists nothing here; GeckoTerminal lists every token, but
+    // only when asked about it alone, which is what a batch answer capped in
+    // pairs looks like (§20).
+    const tokens = Array.from(
+      { length: 60 },
+      (_, i) => `0x${(i + 1).toString(16).padStart(40, '0')}`,
+    );
+    const fetch = fakeFetch((url) => {
+      if (url.includes('/latest/dex/tokens/')) return { status: 200, body: { pairs: [] } };
+      if (url.includes('/networks?page=')) {
+        return { status: 200, body: { data: [{ id: 'robinhood', attributes: { name: 'Robinhood Chain' } }] } };
+      }
+      const asked = url.split('/tokens/multi/')[1]?.split('?')[0] ?? '';
+      if (asked.includes(',')) return { status: 200, body: { data: [] } };
+      return {
+        status: 200,
+        body: { data: [{ attributes: { address: asked, price_usd: '1', volume_usd: { h24: '500' } } }] },
+      };
+    });
+    const feed = new MarketFeed({ fetch });
+    feed.follow(tokens.map((address) => ({ address, pool: '' })));
+    await feed.refresh();
+
+    // Its own budget, small because it is keyless, rather than none at all.
+    const gecko = geckoterminal();
+    expect(feed.status().sources.find((s) => s.name === 'geckoterminal')!.quoted).toBe(gecko.singles);
+    expect(gecko.singles).toBeGreaterThan(0);
+    // And far below DexScreener's, which answers hundreds of calls a minute.
+    expect(gecko.singles).toBeLessThan(dexscreener().singles);
+    feed.stop();
+  });
+
   it('asks the second source again on the next refresh, not once its quote goes stale', async () => {
     // A token last answered by the second source still holds a fresh quote
     // when the first source's turn comes round again. Filtering the second
@@ -543,7 +761,16 @@ describe('the feed', () => {
     expect(feed.status().quoted).toBe(20);
     expect(feed.status().unknown).toBe(10);
 
-    // Refreshes two through six: the same cost, every time.
+    // Each source asks alone only within its own budget, so the ten tokens
+    // nobody lists take a few refreshes to be marked off — GeckoTerminal's
+    // budget is small because it is keyless. Let that settle first: the
+    // invariant is about the steady state, not the first minute.
+    for (let i = 0; i < 3; i++) {
+      clock += 30_000;
+      await feed.refresh();
+    }
+
+    // And from there: the same cost, every time.
     const costs: number[] = [];
     for (let i = 0; i < 5; i++) {
       const before = fetch.calls.length;

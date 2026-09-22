@@ -714,8 +714,8 @@ export async function buildSnapshot(
     // liquidity beside the token's.
     const etherRow = pools.find((p) => isEther(p.token.address));
     options.market.follow([
-      ...pools.map((p) => ({ address: p.token.address, pool: p.address })),
-      { address: CONTRACTS.weth, pool: etherRow?.address ?? '' },
+      ...pools.map((p) => ({ address: p.token.address, pool: p.address, symbol: p.token.symbol })),
+      { address: CONTRACTS.weth, pool: etherRow?.address ?? '', symbol: 'ETH' },
     ]);
   }
   const router = await queryRouter(pools);
