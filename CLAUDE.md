@@ -4323,3 +4323,100 @@ day or a busy one moves the figure a long way, which is what §1 was
 protecting against. The tooltip says so on every figure. If the noise reads
 badly once the backfill nears head, the trailing-7d figure is one line
 away and both are already computed.
+
+---
+
+## 28. The ether pair was a v3 pool, and v3 was never the obstacle
+
+ALFA, for the third time, on VIRTUAL: *mengapa pairnya cmn usdg ga ada
+paired with eth robinhood*. The page answered its own question — *VIRTUAL
+also trades in 1 Uniswap v3 pool (ETH). Balast mints through Uniswap v4,
+so it is listed but not offered here* — and the answer was wrong about
+why.
+
+**Uniswap's v3 NonfungiblePositionManager is deployed on this chain**, at
+`0x73991a25C818Bf1f1128dEAaB1492D45638DE0D3`, from the same registry entry
+that §20 verified every other address against (`ROBINHOOD_ADDRESSES` in
+`sdks/sdk-core/src/addresses.ts`, chainId 4663, which the registry also
+confirms is `ROBINHOOD` and a supported chain). So a token's ether market
+being a v3 pool was never a fact about Robinhood Chain. It was a gap in
+what Balast had built, and it had been answering three rounds of questions
+on ALFA's behalf.
+
+`/positions` mints into v3 pools now. `lib/v3/mint.ts` plans one, and
+everything above the encoding is shared with the v4 planner — the same
+range ticks, the same tick-spacing split, the same shape weights, the same
+liquidity maths — so a shape means the same thing in either venue. What
+differs is the call, and each difference is a place to get it wrong:
+
+- v3 `mint` takes **desired amounts and minimums**, not a liquidity figure.
+  Each bin's own amounts become its own caps, as the v4 plan caps each
+  position.
+- Several bins are several `mint` calls through the periphery's own
+  `multicall`.
+- A v3 pool holds **wrapped** ether, never native — and the manager is
+  payable and wraps what it is sent, so the person still pays in ETH, which
+  is what ALFA asked for in §27. `refundETH` is the last call in the batch
+  and is not optional: without it the unspent ether stays in the manager.
+  The wrapped balance is spent when it covers the mint, since that costs no
+  ether and needs no wrapping; ether pays when it does not.
+
+### The arithmetic is Uniswap's, not something close to it
+
+Two numbers reach a v3 `mint` and the first draft had both subtly wrong.
+
+**`amountDesired` rounds up.** It is what the manager may pull to reach the
+target liquidity; the indexer's `amountsForLiquidity` rounds down, because
+it exists to sum a pool's reserves. Off by one wei, and silently short.
+
+**`amountMin` is not a flat percentage off the desired.** The guard has to
+be *what would this liquidity need if the price moved against it by the
+tolerance*, which Uniswap computes by pricing the same position at both
+ends of the tolerance and taking the smaller amount from each end. At 3%
+the honest figure came out well **below** `desired × 0.97` — so a flat
+figure would have reverted mints that were perfectly fine, and, in other
+configurations, guarded less than it claimed.
+
+So `lib/v3/amounts.ts` ports `mintAmounts`, `maxLiquidityForAmounts` (the
+**imprecise** form, which is the one the v3 periphery itself uses — core's
+more precise form would plan a position the router cannot create),
+`ratiosAfterSlippage` and `mintAmountsWithSlippage`, exactly.
+
+**`lib/v3/mint.test.ts` compares the encoded bytes with Uniswap's own SDK**
+building the same position, and asserts the desired and minimum amounts
+against `Position.mintAmounts` and `Position.mintAmountsWithSlippage`. That
+is §20's discipline, and it is what makes an un-fork-tested money path
+defensible: the first draft's two faults both failed there, as bytes that
+did not match, rather than as a bad fill on chain. The SDK stays a dev
+dependency — it carries ethers v5 and JSBI and would double the page.
+
+### What else moved
+
+- **Every live pool has a `key` now**, v3 included; `protocol` is what the
+  flow branches on. `isMintable` is back to meaning what it says.
+- **`useMintFlow` has a venue.** The price comes from the pool's own
+  `slot0()` rather than StateView; the approval goes **straight to the
+  manager**, since v3's periphery does not use Permit2; the dry run and the
+  send target the other manager. The §27 wrap step does not apply to v3 at
+  all — its manager wraps inside the mint, so a separate transaction would
+  only cost a signature.
+- **A tier pill says what separates two pools at the same tier.** A v3 and
+  a v4 pool at 0.3% in the same currency are entirely different pools, so
+  the protocol is named; the wrapper is named only when two v4 pools differ
+  in how they hold ether, as before.
+- The copy that told people a v3 pair was listed but not offerable is gone
+  from the builder and the drawer. What is left there is the one reason
+  that still stands: a hook Balast has not verified (§20).
+
+### Unverified from here, and it matters more than usual
+
+The sandbox reaches no RPC, so **no v3 mint has been sent**. What stands
+behind it is the byte-comparison with Uniswap's SDK, the node's dry run
+before any signature, and the per-position caps. As §20 said of the first
+v4 mint and §27 of the first wrap: **the first v3 mint on the live site
+should be a small one, watched on the explorer.** It is the first path here
+that pays a pool in ether through a wrapping manager, so the thing to check
+on the explorer is that the refund came back.
+
+**Verified**: typecheck, lint, 455 unit tests — the seven new v3 cases
+among them — the production build and 40 Playwright tests. All green.

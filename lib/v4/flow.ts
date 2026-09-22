@@ -180,10 +180,12 @@ export async function sendCall(provider: Eip1193Provider, owner: Address, call: 
   });
 }
 
-export const simulateMint = (client: PublicClient, owner: Address, plan: MintPlan): Promise<bigint> =>
+// Typed on the call rather than on `MintPlan`: both are a target, calldata
+// and a value, and the caller branches on which manager it is sending to.
+export const simulateMint = (client: PublicClient, owner: Address, plan: PositionCall): Promise<bigint> =>
   simulateCall(client, owner, plan);
 
-export const sendMint = (provider: Eip1193Provider, owner: Address, plan: MintPlan, gas?: bigint): Promise<Hex> =>
+export const sendMint = (provider: Eip1193Provider, owner: Address, plan: PositionCall, gas?: bigint): Promise<Hex> =>
   sendCall(provider, owner, plan, gas);
 
 const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';

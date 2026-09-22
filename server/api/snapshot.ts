@@ -480,19 +480,21 @@ function toPool(row: PoolQueryRow): Pool {
     quote: (row.quote_symbol ?? 'ETH') as Quote,
     // Pool fees are in hundredths of a bip on chain; the UI wants bips.
     feeTierBps: Math.round(row.fee_tier / 100),
-    // The on-chain key, so /positions can mint into the pool (v4 only).
-    key:
-      row.protocol === 'v4'
-        ? {
-            currency0: row.token0,
-            currency1: row.token1,
-            fee: row.fee_tier,
-            tickSpacing: row.tick_spacing,
-            hooks: row.hooks ?? NATIVE_ETH,
-            decimals0: row.decimals0,
-            decimals1: row.decimals1,
-          }
-        : undefined,
+    // The on-chain key, so /positions can mint into the pool.
+    //
+    // Both protocols now: Balast mints v4 through the PositionManager and
+    // v3 through Uniswap's NonfungiblePositionManager, which is deployed on
+    // this chain. A v3 pool has no hook, which is what the zero address
+    // means in a v4 key too, and `protocol` is what the flow branches on.
+    key: {
+      currency0: row.token0,
+      currency1: row.token1,
+      fee: row.fee_tier,
+      tickSpacing: row.tick_spacing,
+      hooks: row.hooks ?? NATIVE_ETH,
+      decimals0: row.decimals0,
+      decimals1: row.decimals1,
+    },
     protocol: row.protocol === 'v3' ? 'v3' : 'v4',
     stakeable: row.stakeable,
     ageHours: row.age_hours,

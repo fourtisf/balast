@@ -10,7 +10,7 @@
  * constant shows up there rather than as a wrong TVL on the site.
  */
 
-const Q96 = 2n ** 96n;
+export const Q96 = 2n ** 96n;
 const Q128 = 2n ** 128n;
 const MAX_U256 = 2n ** 256n - 1n;
 

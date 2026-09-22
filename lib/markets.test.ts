@@ -44,15 +44,24 @@ function pool(over: Partial<Pool> & { quoteSide?: string; keyed?: boolean }): Po
 
 describe('isMintable', () => {
   /**
-   * Balast mints through Uniswap v4's PositionManager and deploys no contract
-   * of its own (§20), so a v3 pool — no key — cannot be minted into here. It
-   * used to be offered anyway, which put the builder in its simulated branch
-   * on the live site: a stand-in balance and a Mint button that minted
-   * nothing.
+   * A keyless pool on live data is nothing the site can mint into, and it
+   * used to be offered anyway — which put the builder in its simulated
+   * branch on the live site: a stand-in balance and a Mint button that
+   * minted nothing.
    */
   it('refuses a keyless pool on live data', () => {
     expect(isMintable(pool({ keyed: false }), true)).toBe(false);
     expect(isMintable(pool({ keyed: true }), true)).toBe(true);
+  });
+
+  /**
+   * A v3 pool is mintable: Uniswap's NonfungiblePositionManager is deployed
+   * on this chain, and a token's ether market here is often a v3 pool.
+   */
+  it('offers a Uniswap v3 pool, which is where many ether pairs are', () => {
+    const v3 = pool({ keyed: true });
+    (v3 as { protocol: string }).protocol = 'v3';
+    expect(isMintable(v3, true)).toBe(true);
   });
 
   it('keeps every simulated pool, which has no key by design', () => {

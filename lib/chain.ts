@@ -51,6 +51,17 @@ export const CONTRACTS = {
   multicall3: '0xcA11bde05977b3631167028862bE2a173976CA11',
   /** Uniswap v3 factory on this chain, per the same registry (§14, §15). */
   v3Factory: '0x1F7d7550B1B028f7571E69A784071F0205fd2Efa',
+  /**
+   * Uniswap v3's own NonfungiblePositionManager, from the same registry
+   * entry as every address above (`ROBINHOOD_ADDRESSES` in
+   * sdks/sdk-core/src/addresses.ts, chainId 4663).
+   *
+   * It is here because a token's ether market on this chain is often a v3
+   * pool — VIRTUAL's is — and the builder could only mint through v4, so
+   * that pair was listed, traded, and not offerable. That was a gap in what
+   * Balast had built, never a fact about the chain.
+   */
+  v3PositionManager: '0x73991a25C818Bf1f1128dEAaB1492D45638DE0D3',
 } as const;
 
 export type ContractName = keyof typeof CONTRACTS;

@@ -77,9 +77,14 @@ const SHAPE_ICONS: Record<ShapeId, number[]> = {
  */
 function tierLabel(market: Pool, siblings: Pool[]): string {
   const base = feeTierLabel(market.feeTierBps);
-  if (!quoteIsWrappedEther(market)) return base;
   const clash = siblings.some((m) => m.id !== market.id && feeTierLabel(m.feeTierBps) === base);
-  return clash ? `${base} · wrapped` : base;
+  if (!clash) return base;
+  // Two pools at one tier in one currency: say what separates them. The
+  // protocol first, since a v3 and a v4 pool at the same tier are entirely
+  // different pools; then the wrapper, for two v4 pools that differ only in
+  // how they hold ether.
+  if (siblings.some((m) => m.protocol !== market.protocol)) return `${base} · ${market.protocol}`;
+  return quoteIsWrappedEther(market) ? `${base} · wrapped` : base;
 }
 
 export function ShapeBuilder() {
@@ -91,20 +96,15 @@ export function ShapeBuilder() {
   const everyPool = useMemo(() => [...pools, ...(otherPools ?? [])], [pools, otherPools]);
   const stakeablePools = everyPool.filter((p) => isMintable(p, live));
   if (stakeablePools.length === 0) {
-    const listedButNotV4 = live && everyPool.some((p) => p.stakeable && !p.key);
     return (
       <div className="card">
         <div className="empty">
           <b>{everyPool.length === 0 ? 'Nothing to mint into yet' : 'No pool is offered for minting'}</b>
           {everyPool.length === 0
             ? 'No pool is listed yet. The builder opens on the first one the indexer lists.'
-            : listedButNotV4
-              ? 'Every pool that clears the listing bar is a Uniswap v3 pool. Balast mints through ' +
-                'v4\u2019s PositionManager, so a v3 pool is listed and traded but cannot be minted ' +
-                'into here.'
-              : 'Every listed pool runs a hook Balast has not verified. A hook can refuse liquidity ' +
-                'or take most of every trade as its fee, so none is offered until someone has looked ' +
-                '(STAKEABLE_HOOKS).'}
+            : 'Every listed pool runs a hook Balast has not verified. A hook can refuse liquidity ' +
+              'or take most of every trade as its fee, so none is offered until someone has looked ' +
+              '(STAKEABLE_HOOKS).'}
         </div>
       </div>
     );
@@ -450,11 +450,11 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
               ? ` This pool holds its ether as aeWETH — one token per ether, the same asset — so the mint wraps what your wallet is short of and spends that.`
               : ''}
             {token.unmintable.length > 0 &&
-              ` ${token.symbol} also trades in ${token.unmintable.length} Uniswap v3 pool${
+              ` ${token.unmintable.length} more ${token.symbol} pool${
                 token.unmintable.length === 1 ? '' : 's'
-              } (${[...new Set(token.unmintable.map((m) => quoteLabel(m)))].join(', ')}). Balast mints through Uniswap v4, so ${
-                token.unmintable.length === 1 ? 'it is' : 'they are'
-              } listed but not offered here.`}
+              } (${[...new Set(token.unmintable.map((m) => quoteLabel(m)))].join(', ')}) ${
+                token.unmintable.length === 1 ? 'runs a hook' : 'run hooks'
+              } Balast has not verified, so ${token.unmintable.length === 1 ? 'it is' : 'they are'} listed but not offered here.`}
           </p>
         </div>
 

@@ -14,15 +14,18 @@ import { quoteIsNativeEther, quoteLabel } from './format';
 /**
  * A pool this site can actually mint a position into.
  *
- * Balast deploys no contract of its own and mints through Uniswap v4's
- * PositionManager (§20), so only a v4 pool — one with a `key` — can be
- * minted into. `key` is absent for a v3 pool and for a simulated one, and
- * the two were treated alike: on the live site, picking a token's v3 market
- * dropped the builder into its simulated branch, showing a stand-in balance
- * of "Max 4.18" over a wallet it had never read and a Mint button whose only
- * effect was a toast saying nothing had been minted. A fabricated balance
- * and a button that does nothing is what §7 exists to prevent, and on
- * mainnet it is worse than an empty state.
+ * Balast deploys no contract of its own (§20) and mints through Uniswap's
+ * own periphery — v4 through the PositionManager, **v3 through the
+ * NonfungiblePositionManager**, both deployed on this chain. So a pool needs
+ * a key, which every live pool now has, and a hook Balast has verified.
+ *
+ * v3 was excluded for one commit, and it was a gap in what had been built
+ * rather than a fact about the chain: a token's ether market here is often a
+ * v3 pool, so VIRTUAL and CASHCAT were offered their USDG market and nothing
+ * else. Before that the two were not even distinguished from a simulated
+ * pool, which dropped the builder into its simulated branch on the live
+ * site — a stand-in balance over a wallet it had never read, and a Mint
+ * button whose only effect was a toast saying nothing had been minted.
  *
  * `live` is false for simulated data, where no pool has a key and the
  * builder's own simulated branch is the honest one.

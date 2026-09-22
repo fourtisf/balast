@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Address } from 'viem';
+import type { Address, Hex } from 'viem';
 import { useUi } from '@/components/providers/UiProvider';
 import { useWalletChainId } from '@/components/providers/useWalletChainId';
 import { CHAIN, CONTRACTS, NATIVE_ETH } from '@/lib/chain';
@@ -27,6 +27,15 @@ import {
 import { amount as fmtAmount, toRaw } from '@/lib/v4/format';
 import { planMint, type MintPlan } from '@/lib/v4/mint';
 import { priceFromSqrt, toPoolKey, type PoolKey } from '@/lib/v4/pool';
+import {
+  approveV3,
+  readV3Slot0,
+  sendV3Mint,
+  simulateV3Mint,
+  v3ApprovalsNeeded,
+  waitForV3Mint,
+} from '@/lib/v3/flow';
+import { planV3Mint } from '@/lib/v3/mint';
 import { describeWalletError, ensureChain } from '@/lib/wallet';
 
 /** Reads refresh on this cadence: the price for the plan, the balances for the check. */
@@ -155,6 +164,17 @@ export function useMintFlow(args: {
   const key = stable.current.key;
   const info = stable.current.info;
   const tokenAddress = pool.token.address.toLowerCase();
+  /**
+   * Which of Uniswap's position managers this pool is minted through.
+   *
+   * A token's ether market on this chain is often a v3 pool — VIRTUAL's is —
+   * and for three rounds of questions the builder answered by not offering
+   * it. v3's NonfungiblePositionManager is deployed here; the planner and
+   * the encoder for it are byte-compared with Uniswap's own SDK in
+   * `lib/v3/mint.test.ts`.
+   */
+  const venue: 'v3' | 'v4' = pool.protocol === 'v3' ? 'v3' : 'v4';
+  const v3Pool = pool.address as Address;
 
   const sides = useMemo<MintSides | null>(() => {
     if (!key || !info) return null;
@@ -195,7 +215,7 @@ export function useMintFlow(args: {
     const client = readClient(readVia);
     const tick = async () => {
       try {
-        const slot0 = await readSlot0(client, key);
+        const slot0 = venue === 'v3' ? await readV3Slot0(client, v3Pool) : await readSlot0(client, key);
         if (cancelled) return;
         const p = priceFromSqrt(slot0.sqrtPriceX96, info.decimals0, info.decimals1);
         setLive({ ...slot0, tokenPriceInQuote: sides.tokenIsCurrency0 ? p : 1 / p });
@@ -210,7 +230,7 @@ export function useMintFlow(args: {
       cancelled = true;
       clearInterval(id);
     };
-  }, [key, sides, info, readVia, refreshTick]);
+  }, [key, sides, info, readVia, refreshTick, venue, v3Pool]);
 
   // Balances, when there is a wallet to read for.
   useEffect(() => {
@@ -242,31 +262,62 @@ export function useMintFlow(args: {
 
   // The plan, at the live price. Owner is only stamped in at send time.
   const depositRaw = sides ? toRaw(deposit, sides.quoteDecimals) : 0n;
+
+  /**
+   * Whether a v3 mint pays its wrapped-ether side in ether.
+   *
+   * The manager is payable and wraps what it is sent, all of it or none —
+   * `_pay` cannot mix a balance with a wrap — so this is one decision for
+   * the whole side. The wrapped balance is spent when it covers the mint,
+   * because that costs no ether and needs no wrapping; ether pays when it
+   * does not, which is what lets a wallet holding only ETH enter a v3 pair
+   * at all (§27).
+   */
+  const v3PaysEther = useMemo(() => {
+    if (venue !== 'v3' || !sides || !balances) return null;
+    const wrapped = CONTRACTS.weth.toLowerCase();
+    if (sides.quoteCurrency.toLowerCase() !== wrapped) return null;
+    return balances.quote >= depositRaw ? null : (CONTRACTS.weth as Address);
+  }, [venue, sides, balances, depositRaw]);
+
   const { plan, planError } = useMemo(() => {
     if (!key || !sides || !live || !valid || depositRaw <= 0n) return { plan: null, planError: null };
+    const common = {
+      sqrtPriceX96: live.sqrtPriceX96,
+      tick: live.tick,
+      tokenIsCurrency0: sides.tokenIsCurrency0,
+      depositQuote: depositRaw,
+      minPct,
+      maxPct,
+      bins,
+      shape,
+      fullRange,
+      owner: (owner ?? PLACEHOLDER_OWNER) as Address,
+      slippageBps,
+      deadline: BigInt(Math.floor(Date.now() / 1000) + DEADLINE_SECONDS),
+    };
     try {
-      return {
-        plan: planMint({
-          key,
-          sqrtPriceX96: live.sqrtPriceX96,
-          tick: live.tick,
-          tokenIsCurrency0: sides.tokenIsCurrency0,
-          depositQuote: depositRaw,
-          minPct,
-          maxPct,
-          bins,
-          shape,
-          fullRange,
-          owner: (owner ?? PLACEHOLDER_OWNER) as Address,
-          slippageBps,
-          deadline: BigInt(Math.floor(Date.now() / 1000) + DEADLINE_SECONDS),
-        }),
-        planError: null,
-      };
+      if (venue === 'v3' && info) {
+        const v3 = planV3Mint({
+          ...common,
+          pool: {
+            address: v3Pool,
+            token0: key.currency0,
+            token1: key.currency1,
+            fee: key.fee,
+            tickSpacing: key.tickSpacing,
+            decimals0: info.decimals0,
+            decimals1: info.decimals1,
+          },
+          payWithEtherFor: v3PaysEther ?? undefined,
+        });
+        return { plan: { ...v3, unlockData: '0x' as Hex }, planError: null };
+      }
+      return { plan: planMint({ ...common, key }), planError: null };
     } catch (e) {
       return { plan: null, planError: (e as Error).message };
     }
-  }, [key, sides, live, valid, depositRaw, minPct, maxPct, bins, shape, fullRange, owner, slippageBps]);
+  }, [key, info, sides, live, valid, depositRaw, minPct, maxPct, bins, shape, fullRange, owner, slippageBps, venue, v3Pool, v3PaysEther]);
 
   const needs = useMemo(() => {
     if (!plan || !sides) return null;
@@ -286,13 +337,16 @@ export function useMintFlow(args: {
    * for the mint that follows it.
    */
   const wrap = useMemo(() => {
+    // Not for v3: its manager is payable and wraps what it is sent, in the
+    // mint itself, so a separate transaction would only cost a signature.
+    if (venue === 'v3') return null;
     if (!sides || !needs || !balances) return null;
     if (sides.quoteCurrency.toLowerCase() !== CONTRACTS.weth.toLowerCase()) return null;
     if (balances.quote >= needs.quote) return null;
     const shortfall = needs.quote - balances.quote;
     if (balances.native < shortfall + WRAP_GAS_RESERVE_WEI) return null;
     return { shortfall };
-  }, [sides, needs, balances]);
+  }, [venue, sides, needs, balances]);
 
   /** One "your balance" for an ether market, whichever way the pool holds it. */
   const quoteSpendable = useMemo(() => {
@@ -313,11 +367,29 @@ export function useMintFlow(args: {
     const client = readClient(readVia);
     void (async () => {
       try {
-        const steps = await approvalsNeeded(client, owner, key, plan, Math.floor(Date.now() / 1000));
+        const steps =
+          venue === 'v3'
+            ? (
+                await v3ApprovalsNeeded(
+                  client,
+                  owner,
+                  {
+                    token0: key.currency0,
+                    token1: key.currency1,
+                    amount0: plan.amount0,
+                    amount1: plan.amount1,
+                  },
+                  v3PaysEther,
+                )
+              ).map((a) => ({ kind: 'erc20' as const, token: a.token }))
+            : await approvalsNeeded(client, owner, key, plan, Math.floor(Date.now() / 1000));
         if (cancelled) return;
         setApprovals(steps);
         if (steps.length === 0 && !wrap) {
-          const estimate = await simulateMint(client, owner, plan);
+          const estimate =
+            venue === 'v3'
+              ? await simulateV3Mint(client, owner, plan)
+              : await simulateMint(client, owner, plan);
           if (!cancelled) {
             setGas(estimate);
             setError(null);
@@ -330,7 +402,7 @@ export function useMintFlow(args: {
     return () => {
       cancelled = true;
     };
-  }, [plan, owner, key, readVia, onChain, wrap]);
+  }, [plan, owner, key, readVia, onChain, wrap, venue, v3PaysEther]);
 
   const step: MintStep = !key
     ? 'simulated'
@@ -411,14 +483,22 @@ export function useMintFlow(args: {
         const next = approvals[0];
         const symbol = next.token.toLowerCase() === sides.tokenCurrency.toLowerCase() ? pool.token.symbol : quoteLabel(pool);
         setBusyLabel('Approve in the wallet…');
-        const hash = await approve(provider, owner, next, Math.floor(Date.now() / 1000));
+        const hash =
+          venue === 'v3'
+            ? await approveV3(provider, owner, { token: next.token, spender: CONTRACTS.v3PositionManager as Address })
+            : await approve(provider, owner, next, Math.floor(Date.now() / 1000));
         recordTx({
           hash,
           kind: 'approve',
           wallet: owner,
           at: Date.now(),
           status: 'pending',
-          label: next.kind === 'erc20' ? `Approve ${symbol} for Permit2` : `Allow PositionManager to use ${symbol}`,
+          label:
+            venue === 'v3'
+              ? `Approve ${symbol} for Uniswap v3`
+              : next.kind === 'erc20'
+                ? `Approve ${symbol} for Permit2`
+                : `Allow PositionManager to use ${symbol}`,
           poolId: pool.id,
         });
         setBusyLabel('Waiting for the approval…');
@@ -431,8 +511,7 @@ export function useMintFlow(args: {
       }
       setBusyLabel('Checking with the chain…');
       // Re-plan at send time with a fresh deadline and the real owner.
-      const fresh = planMint({
-        key,
+      const common = {
         sqrtPriceX96: live!.sqrtPriceX96,
         tick: live!.tick,
         tokenIsCurrency0: sides.tokenIsCurrency0,
@@ -445,10 +524,30 @@ export function useMintFlow(args: {
         owner,
         slippageBps,
         deadline: BigInt(Math.floor(Date.now() / 1000) + DEADLINE_SECONDS),
-      });
-      const estimate = await simulateMint(client, owner, fresh);
+      };
+      const fresh =
+        venue === 'v3' && info
+          ? planV3Mint({
+              ...common,
+              pool: {
+                address: v3Pool,
+                token0: key.currency0,
+                token1: key.currency1,
+                fee: key.fee,
+                tickSpacing: key.tickSpacing,
+                decimals0: info.decimals0,
+                decimals1: info.decimals1,
+              },
+              payWithEtherFor: v3PaysEther ?? undefined,
+            })
+          : planMint({ ...common, key });
+      const estimate =
+        venue === 'v3' ? await simulateV3Mint(client, owner, fresh) : await simulateMint(client, owner, fresh);
       setBusyLabel('Confirm in the wallet…');
-      const hash = await sendMint(provider, owner, fresh, estimate);
+      const hash =
+        venue === 'v3'
+          ? await sendV3Mint(provider, owner, fresh, estimate)
+          : await sendMint(provider, owner, fresh, estimate);
       recordTx({
         hash,
         kind: 'mint',
@@ -461,7 +560,7 @@ export function useMintFlow(args: {
         poolId: pool.id,
       });
       setBusyLabel('Minting…');
-      const done = await waitForMint(client, hash, owner);
+      const done = venue === 'v3' ? await waitForV3Mint(client, hash, owner) : await waitForMint(client, hash, owner);
       updateTx(hash, done.ok ? 'success' : 'reverted');
       if (!done.ok) throw new Error('The transaction reverted on chain.');
       // The outcome stays on screen: the re-read below refreshes the price
@@ -479,7 +578,7 @@ export function useMintFlow(args: {
     } finally {
       setBusyLabel(null);
     }
-  }, [step, plan, owner, provider, key, sides, onChain, approvals, wrap, live, depositRaw, minPct, maxPct, bins, shape, fullRange, slippageBps, pool, refreshChainId, showToast, openWallet]);
+  }, [step, plan, owner, provider, key, info, sides, onChain, approvals, wrap, live, depositRaw, minPct, maxPct, bins, shape, fullRange, slippageBps, pool, venue, v3Pool, v3PaysEther, refreshChainId, showToast, openWallet]);
 
   return { key, sides, live, liveError, plan, planError, needs, balances, wrap, quoteSpendable, step, busyLabel, approvals, gas, error, result, run };
 }

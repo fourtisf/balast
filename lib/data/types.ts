@@ -149,9 +149,10 @@ export interface Pool {
   quote: Quote;
   feeTierBps: number;
   /**
-   * Present for a live v4 pool, so /positions can mint into it through
-   * Uniswap's PositionManager. Absent for v3 pools and for simulated ones,
-   * which have nothing on chain to mint into.
+   * Present for any live pool, so /positions can mint into it — v4 through
+   * Uniswap's PositionManager, v3 through its NonfungiblePositionManager,
+   * both deployed on this chain. `protocol` says which. Absent only for a
+   * simulated pool, which has nothing on chain to mint into.
    */
   key?: PoolKeyInfo;
   protocol: Protocol;

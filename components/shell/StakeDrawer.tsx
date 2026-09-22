@@ -41,12 +41,11 @@ export function StakeDrawer() {
    * Which market the Stake button actually opens.
    *
    * The row's pool is the token's deepest (§20), and the deepest can be a
-   * Uniswap v3 pool — which Balast cannot mint into, since it mints through
-   * v4's PositionManager and deploys nothing of its own (§20). The token's
-   * other markets ride beside the board (§26), so the button opens the best
-   * one it can mint into: this chain's own ether first, then the deepest.
-   * Nothing is substituted silently — when the target is not the row, the
-   * drawer says which pool it will open and why.
+   * pool running a hook Balast has not verified, which is not offered (§20).
+   * The token's other markets ride beside the board (§26), so the button
+   * opens the best one it can mint into. Nothing is substituted silently —
+   * when the target is not the row, the drawer says which pool it will open
+   * and why.
    */
   const stakeTarget = useMemo(() => {
     if (!pool) return null;
@@ -342,11 +341,8 @@ export function StakeDrawer() {
                   </div>
                   {stakeTarget && stakeTarget.id !== pool.id && (
                     <p className="hint" style={{ marginTop: 12 }}>
-                      This row is {pool.token.symbol}&rsquo;s deepest market, and it is{' '}
-                      {pool.protocol === 'v3'
-                        ? 'a Uniswap v3 pool'
-                        : 'a pool running a hook Balast has not verified'}
-                      . Balast mints through Uniswap v4, so staking opens{' '}
+                      This row is {pool.token.symbol}&rsquo;s deepest market, and it runs a hook
+                      Balast has not verified. Staking opens{' '}
                       <b>
                         {pool.token.symbol} / {quoteLabel(stakeTarget)} · {feeTierLabel(stakeTarget.feeTierBps)}
                       </b>{' '}
@@ -366,7 +362,7 @@ export function StakeDrawer() {
                       ? `${pool.token.symbol} is still on its ${pool.token.launchpad} curve, and pre-graduation liquidity cannot be staked until the pool graduates.`
                       : !pool.stakeable
                         ? `This pool runs a hook${hook ? ` (${hook.slice(0, 6)}…${hook.slice(-4)})` : ''} that Balast has not verified. A hook can refuse liquidity, price it on its own curve, or take most of every trade as its fee — one on this chain takes about 98%. It is not offered until someone has looked.`
-                        : `This is a Uniswap v3 pool, and ${pool.token.symbol} has no Uniswap v4 market that clears the listing bar. Balast deploys no contract of its own and mints through v4's PositionManager, so a v3 pool is listed and traded here but cannot be staked into.`}
+                        : `No ${pool.token.symbol} market that clears the listing bar runs a hook Balast has verified, so none is offered for staking yet.`}
                   </p>
                 </div>
               )}
