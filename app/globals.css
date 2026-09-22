@@ -212,6 +212,10 @@ h1 em{font-style:italic;color:var(--ac)}
 .seg button{padding:6px 13px;border-radius:99px;font-size:12.5px;font-weight:500;color:var(--fg-2);transition:var(--t-hover);white-space:nowrap}
 .seg button:hover{color:var(--fg);background:var(--raise-2)}
 .seg button.on{background:var(--ac-dim);color:var(--ac-3);font-weight:600}
+/* A token can have several markets — a different quote, a different fee tier
+   — and they are one row of choices, not a scrollbar. Wrapping keeps them all
+   visible in a 232px panel and off the horizontal axis at 360px. */
+.seg.wrap{display:flex;flex-wrap:wrap;border-radius:14px}
 
 .up{color:var(--ac)}.down{color:var(--red)}
 .muted{color:var(--fg-3)}

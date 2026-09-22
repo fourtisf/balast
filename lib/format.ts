@@ -98,6 +98,15 @@ export function shortWallet(hex: string): string {
 }
 
 /**
+ * A pool's fee tier as a percentage, without trailing zeroes: `0.3%`, `1%`,
+ * `6.9%`. The tier is what a position earns on every trade, so it names a
+ * market as much as the pair does.
+ */
+export function feeTierLabel(feeTierBps: number): string {
+  return `${(feeTierBps / 100).toFixed(2).replace(/\.?0+$/, '')}%`;
+}
+
+/**
  * The quote side of a pool's pair, as the page names it: `NVDA / USDG`,
  * `PONS / ETH`, `TSLA / WETH`.
  *

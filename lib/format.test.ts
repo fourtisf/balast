@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ageLabel, countdown, duration, inHours, price, signedPct, usd, usdExact, weth } from './format';
+import { ageLabel, countdown, duration, feeTierLabel, inHours, price, signedPct, usd, usdExact, weth } from './format';
 
 describe('usd', () => {
   it('scales to B / M / K / plain', () => {
@@ -85,5 +85,18 @@ describe('duration', () => {
     expect(duration(125)).toBe('2m 5s');
     expect(duration(42)).toBe('42s');
     expect(duration(-3)).toBe('0s');
+  });
+});
+
+describe('feeTierLabel', () => {
+  it('names a fee tier without trailing zeroes', () => {
+    // The tier is part of what names a market in the builder's picker, and a
+    // token on this chain has several: 0.05%, 0.3%, 1%, and a launchpad
+    // curve's 6.9%.
+    expect(feeTierLabel(30)).toBe('0.3%');
+    expect(feeTierLabel(100)).toBe('1%');
+    expect(feeTierLabel(500)).toBe('5%');
+    expect(feeTierLabel(690)).toBe('6.9%');
+    expect(feeTierLabel(5)).toBe('0.05%');
   });
 });

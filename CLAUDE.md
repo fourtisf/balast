@@ -3889,6 +3889,37 @@ board; it now also proves the other pool survives, carries its key and its
 fee tier, is absent from the board, and duplicates nothing that would make a
 total count twice.
 
+### And then the picker was every pool on the chain
+
+Sending the other markets fixed the data and made the control worse. The
+select became one flat, alphabetical list of every pool Balast lists:
+`TENOV / WETH · 1%`, `TENOV / WETH · 3%`, `TENOV / USDG · 6.9%`, `TISM /
+WETH`, `TSLA / ETH · 5%`, and somewhere further down the one the person came
+for. ALFA, exactly: *kan tokennya udah VIRTUAL, harusnya ada paired-nya ETH,
+bukan malah referensi token lain.*
+
+Which is right. There are two questions and the control was asking one
+compound one. The **token** is what a person arrives with. The **market** —
+the quote currency and the fee tier — is what they choose once they have it,
+and it is a real choice: the currency decides whether their wallet can enter
+at all, and the tier decides what the position earns.
+
+So the token select names tokens and nothing else, and a second control, the
+same segmented pills as Slippage beside it, lists that token's markets. It
+shows even when there is one, so what you are in is on screen rather than
+implied, with a line saying it is the only one that clears the listing bar.
+Picking a token selects its deepest market, which is the pool the board's own
+row is.
+
+Two things fell out of it. A ticker is not unique here — there are two
+CASHCATs (§24) — so a repeated symbol carries the last four characters of its
+own address, which is the only honest way to tell them apart. And moving
+between a token's USDG market and its ether one used to carry the deposit
+figure across: a hundred is a sensible first deposit in USDG and a hundred
+ether is not, so the amount re-defaults when the currency changes and the
+builder no longer opens on "above your balance" (§22's fault, by another
+door). A figure the person typed themselves is theirs and is kept.
+
 **What this does not do** is offer a pool below the listing bar. A pool with
 no real money behind it (§24's backing test) stays unlisted everywhere,
 including here, because minting into one is not a thing to offer. So a token

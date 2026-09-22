@@ -8,7 +8,7 @@ import { BinChart } from '@/components/positions/BinChart';
 import { DEFAULT_SLIPPAGE_BPS, useMintFlow } from '@/components/positions/useMintFlow';
 import { CHAIN, EXPLORER_URL, NATIVE_ETH } from '@/lib/chain';
 import type { Pool, ShapeId } from '@/lib/data/types';
-import { price as fmtPrice, quoteLabel } from '@/lib/format';
+import { feeTierLabel, price as fmtPrice, quoteLabel } from '@/lib/format';
 import { MAX_BINS, MIN_BINS, SHAPES, shapeWeights } from '@/lib/shapes';
 import { amount as fmtAmount, num } from '@/lib/v4/format';
 import { yieldPct } from '@/lib/yield';
@@ -17,6 +17,17 @@ import { yieldPct } from '@/lib/yield';
 const MAX_DEPOSIT_ETH = 4.18;
 /** Ether to leave behind for gas when the deposit is in ether. */
 const GAS_RESERVE_WEI = 500_000_000_000_000n; // 0.0005 ETH
+/**
+ * A first deposit a wallet is likely to hold: a tenth of an ether, or a
+ * hundred dollars for a pool quoted in USDG. The old flat default of 2.5
+ * opened the drawer's hand-off on "above your balance" for most wallets
+ * (§22). A simulated pool keeps the ether figure: its balance is the
+ * prototype's few ether whatever the quote says.
+ */
+function defaultDeposit(pool: Pool): string {
+  return pool.key && pool.quote === 'USDG' ? '100' : '0.1';
+}
+
 /** Slippage tolerances offered, in basis points. */
 const SLIPPAGE_CHOICES = [50, 100, 300] as const;
 
@@ -69,15 +80,9 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
   const [poolId, setPoolId] = useState(
     () => stakeablePools.find((p) => p.id === wantedPool)?.id ?? stakeablePools[0].id,
   );
-  // A first deposit a wallet is likely to hold: a tenth of an ether, or a
-  // hundred dollars for a pool quoted in USDG. The old default of 2.5 opened
-  // the drawer's hand-off on "above your balance" for most wallets (§22).
-  // Simulated pools keep the ether figure: their balance is the prototype's
-  // few ether whatever the quote says.
-  const [amount, setAmount] = useState(() => {
-    const first = stakeablePools.find((p) => p.id === wantedPool) ?? stakeablePools[0];
-    return first.key && first.quote === 'USDG' ? '100' : '0.1';
-  });
+  const [amount, setAmount] = useState(() =>
+    defaultDeposit(stakeablePools.find((p) => p.id === wantedPool) ?? stakeablePools[0]),
+  );
   const [slippageBps, setSlippageBps] = useState(DEFAULT_SLIPPAGE_BPS);
   const [shape, setShape] = useState<ShapeId>('spot');
   const [minPct, setMinPct] = useState(-15);
@@ -91,22 +96,66 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
 
   const pool = stakeablePools.find((p) => p.id === poolId) ?? stakeablePools[0];
 
-  // The select's entries, deepest first within a token, and the tier named
-  // only where a token offers more than one pool.
-  const options = useMemo(() => {
-    const perToken = new Map<string, number>();
+  /**
+   * Switch market, and re-default the deposit when the currency changes.
+   *
+   * A hundred is a sensible first deposit in USDG and a hundred ether is not.
+   * Left alone, moving from a token's USDG market to its ether one carried
+   * the number across and opened on "above your balance" — the same fault
+   * §22 fixed for the drawer's hand-off, arriving by another door. A figure
+   * the person typed themselves is theirs and is kept.
+   */
+  const choose = (id: string): void => {
+    const next = stakeablePools.find((p) => p.id === id);
+    if (!next) return;
+    if (amount === defaultDeposit(pool) && defaultDeposit(next) !== defaultDeposit(pool)) {
+      setAmount(defaultDeposit(next));
+    }
+    setPoolId(id);
+  };
+
+  /**
+   * The two questions, asked separately: which token, then which of its
+   * markets.
+   *
+   * One flat list of every pool answered neither. Choosing VIRTUAL meant
+   * scrolling past TENOV, TISM, TSLA and VEX to find it, and once found its
+   * other markets were somewhere else in the same alphabet rather than in
+   * front of you. The token is the thing a person came here with; the pair
+   * and the fee tier are what they choose once they have it.
+   */
+  const tokens = useMemo(() => {
+    const byToken = new Map<string, Pool[]>();
     for (const p of stakeablePools) {
       const key = p.token.address.toLowerCase();
-      perToken.set(key, (perToken.get(key) ?? 0) + 1);
+      const list = byToken.get(key);
+      if (list) list.push(p);
+      else byToken.set(key, [p]);
     }
-    return stakeablePools
-      .slice()
-      .sort(
-        (a, b) =>
-          a.token.symbol.localeCompare(b.token.symbol) || b.tvlUsd - a.tvlUsd || a.feeTierBps - b.feeTierBps,
-      )
-      .map((p) => ({ pool: p, withTier: (perToken.get(p.token.address.toLowerCase()) ?? 0) > 1 }));
+    // A ticker is not unique on this chain — there are two CASHCATs (§24) —
+    // so a repeated symbol carries the end of its own address, which is the
+    // only honest way to tell two of them apart.
+    const perSymbol = new Map<string, number>();
+    for (const [, list] of byToken) {
+      const symbol = list[0].token.symbol.toUpperCase();
+      perSymbol.set(symbol, (perSymbol.get(symbol) ?? 0) + 1);
+    }
+    return [...byToken.entries()]
+      .map(([address, list]) => {
+        const markets = list.slice().sort((a, b) => b.tvlUsd - a.tvlUsd || a.feeTierBps - b.feeTierBps);
+        const symbol = markets[0].token.symbol;
+        const ambiguous = (perSymbol.get(symbol.toUpperCase()) ?? 0) > 1;
+        return {
+          address,
+          symbol,
+          label: ambiguous ? `${symbol} · ${address.slice(-4)}` : symbol,
+          markets,
+        };
+      })
+      .sort((a, b) => a.symbol.localeCompare(b.symbol) || a.address.localeCompare(b.address));
   }, [stakeablePools]);
+
+  const token = tokens.find((t) => t.markets.some((m) => m.id === pool.id)) ?? tokens[0];
   const shapeMeta = SHAPES.find((s) => s.id === shape)!;
   const weights = useMemo(() => (fullRange ? [1] : shapeWeights(shape, bins)), [shape, bins, fullRange]);
 
@@ -243,19 +292,51 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
         <div className="field">
           <label htmlFor="b-token">Token</label>
           <div className="inp" style={{ height: 46 }}>
-            <select id="b-token" value={poolId} onChange={(e) => setPoolId(e.target.value)}>
-              {/* A token has several markets — a different quote currency, a
-                  different fee tier — and they are different pools to be in.
-                  The tier is named only where a token has more than one, so
-                  the common case stays a pair and nothing else. */}
-              {options.map(({ pool: p, withTier }) => (
-                <option key={p.id} value={p.id}>
-                  {p.token.symbol} / {quoteLabel(p)}
-                  {withTier ? ` · ${(p.feeTierBps / 100).toFixed(2).replace(/\.?0+$/, '')}%` : ''}
+            <select
+              id="b-token"
+              value={token.address}
+              onChange={(e) => {
+                // Its deepest market, which is the one the board's row is.
+                const picked = tokens.find((t) => t.address === e.target.value);
+                if (picked) choose(picked.markets[0].id);
+              }}
+            >
+              {tokens.map((t) => (
+                <option key={t.address} value={t.address}>
+                  {t.label}
                 </option>
               ))}
             </select>
           </div>
+        </div>
+
+        {/* This token's markets. A pair is a different pool to be in: the
+            quote currency decides whether a wallet can enter at all, and the
+            fee tier decides what the position earns. Shown even when there is
+            one, so what you are in is on screen rather than implied. */}
+        <div className="field">
+          <span className="lbl" id="market-label">
+            Market
+          </span>
+          <div className="seg wrap" role="group" aria-labelledby="market-label">
+            {token.markets.map((m) => (
+              <button
+                key={m.id}
+                className={m.id === pool.id ? 'on' : undefined}
+                aria-pressed={m.id === pool.id}
+                onClick={() => choose(m.id)}
+              >
+                {quoteLabel(m)}
+                {token.markets.length > 1 ? ` · ${feeTierLabel(m.feeTierBps)}` : ''}
+              </button>
+            ))}
+          </div>
+          {token.markets.length === 1 && (
+            <p className="hint">
+              The only market for {token.symbol} that clears the listing bar. A pool with no real
+              money behind it is not offered here.
+            </p>
+          )}
         </div>
 
         <div className="field">

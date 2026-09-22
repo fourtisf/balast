@@ -23,6 +23,36 @@ test.describe('shape builder', () => {
     await expect(page.locator('.sum .num').first()).not.toHaveText('');
   });
 
+  test('picks a token, then one of its markets', async ({ page }) => {
+    // Two questions, asked separately (§26). One flat list of every pool on
+    // the chain answered neither: choosing VIRTUAL meant scrolling past
+    // TENOV, TISM and TSLA, and its other markets sat elsewhere in the same
+    // alphabet rather than in front of you.
+    await page.goto('/positions', { waitUntil: 'networkidle' });
+
+    const token = page.locator('#b-token');
+    await expect(token).toBeVisible();
+    // The token select names tokens, not pairs: no slash in an option.
+    const labels = await token.locator('option').allTextContents();
+    expect(labels.length).toBeGreaterThan(0);
+    for (const label of labels) expect(label).not.toContain('/');
+
+    // And the markets for the chosen one are their own control.
+    const markets = page.getByRole('group', { name: 'Market' }).getByRole('button');
+    await expect(markets.first()).toBeVisible();
+    await expect(markets.first()).toHaveAttribute('aria-pressed', 'true');
+
+    // Switching token keeps exactly one market selected.
+    if (labels.length > 1) {
+      await token.selectOption({ index: 1 });
+      await expect(markets.filter({ has: page.locator('[aria-pressed="true"]') })).toHaveCount(0);
+      const pressed = await markets.evaluateAll((els) =>
+        els.filter((el) => el.getAttribute('aria-pressed') === 'true').length,
+      );
+      expect(pressed).toBe(1);
+    }
+  });
+
   test('refuses an inverted range instead of drawing nonsense', async ({ page }) => {
     await page.goto('/positions', { waitUntil: 'networkidle' });
     const mint = page.getByRole('button', { name: 'Mint position' });
