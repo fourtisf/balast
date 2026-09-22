@@ -77,7 +77,7 @@ export function VaultGrid() {
             <div className={`apr num${none ? ' none' : ''}`} title={feeYieldTitle(pool.feeYield)}>
               {feeYieldValue(pool.feeYield)}
               {qualifier && <span className="est">{qualifier}</span>}
-              <small>{FEE_YIELD_LABEL} · paid in WETH</small>
+              <small>{FEE_YIELD_LABEL} · paid in ETH</small>
             </div>
 
             <div className="meta">

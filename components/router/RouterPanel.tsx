@@ -26,7 +26,7 @@ export function RouterPanel() {
 
   // Until `BalastRouter` exists (P4) nothing has accrued and nothing has been
   // routed. The figures that describe a fee stream are then not shown as
-  // zeros — "0.00 WETH → +$0 depth" is a claim about a stream that does not
+  // zeros — "0.00 ETH → +$0 depth" is a claim about a stream that does not
   // exist (§7) — and the projection is not drawn from nothing.
   const hasSource = router.feeSourceAddress !== '—' && router.feeSourceAddress !== '';
   const accrued = router.accruedWeth > 0;
@@ -68,7 +68,7 @@ export function RouterPanel() {
           </div>
           <p className="hint">
             {accrued
-              ? `Accrued so far: ${router.accruedWeth.toFixed(2)} WETH · ${usdExact(router.accruedUsd)}`
+              ? `Accrued so far: ${router.accruedWeth.toFixed(2)} ETH · ${usdExact(router.accruedUsd)}`
               : 'Nothing accrued yet. The router has not been enabled for this token.'}
           </p>
         </div>
@@ -215,11 +215,11 @@ export function RouterPanel() {
               <small>keeper</small>
             </div>
             <div>
-              Accrued WETH is split, half swapped to {router.tokenSymbol} at{' '}
+              Accrued ETH is split, half swapped to {router.tokenSymbol} at{' '}
               {router.twapMinutes}-min TWAP, both sides added to the pool.
               <div className="st">
                 {router.firstRouteWeth > 0
-                  ? `Est. first route: ${router.firstRouteWeth.toFixed(2)} WETH → +${usd(
+                  ? `Est. first route: ${router.firstRouteWeth.toFixed(2)} ETH → +${usd(
                       router.firstRouteDepthUsd,
                     )} liquidity`
                   : 'The first route is sized from whatever has accrued by then.'}

@@ -147,7 +147,7 @@ export function AwaitingIndexer() {
         ? 'The API is not answering'
         : health?.status === 'misconfigured'
           ? 'The indexer is misconfigured'
-          : // Indexing, but no WETH/USDG pool found yet, so nothing has a
+          : // Indexing, but no ETH/USDG pool found yet, so nothing has a
             // dollar figure. Transient and self-healing: it resolves itself
             // the moment that pool is indexed.
             health?.status === 'no-anchor'
@@ -172,7 +172,7 @@ export function AwaitingIndexer() {
         <span className="eyebrow">{eyebrow}</span>
         <p>
           {health?.status === 'no-anchor'
-            ? 'Blocks are being indexed, but no WETH/USDG pool has turned up yet, ' +
+            ? 'Blocks are being indexed, but no ETH/USDG pool has turned up yet, ' +
               'so nothing has a dollar figure. This resolves itself as soon as one ' +
               'is indexed — no placeholder numbers in the meantime.'
             : health?.status === 'syncing' || health?.status === 'behind' || health?.status === 'ok'

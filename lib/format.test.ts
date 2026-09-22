@@ -11,11 +11,11 @@ import {
   quoteCurrencyOf,
   quoteIsNativeEther,
   quoteIsWrappedEther,
+  ether,
   quoteLabel,
   signedPct,
   usd,
   usdExact,
-  weth,
 } from './format';
 
 describe('usd', () => {
@@ -86,10 +86,10 @@ describe('inHours', () => {
   });
 });
 
-describe('weth and usdExact', () => {
+describe('ether and usdExact', () => {
   it('formats to a fixed number of places', () => {
-    expect(weth(2.183)).toBe('2.183 WETH');
-    expect(weth(0.88, 2)).toBe('0.88 WETH');
+    expect(ether(2.183)).toBe('2.183 ETH');
+    expect(ether(0.88, 2)).toBe('0.88 ETH');
     expect(usdExact(5_142_908)).toBe('$5,142,908');
     expect(usdExact(2521.08, 2)).toBe('$2,521.08');
   });
@@ -172,19 +172,33 @@ describe('the quote side of a pair', () => {
     expect(quoteIsWrappedEther(tokenIsCurrency0)).toBe(true);
   });
 
-  it('labels the two apart, and says nothing about a pool it has no key for', () => {
+  /**
+   * One name for one asset (§27). aeWETH mints one token per ether, so the
+   * pair is ETH whichever way the pool holds it; what the wrapper changes is
+   * what the wallet must hold, and that is `quoteIsWrappedEther`'s job.
+   */
+  it('names an ether pair ETH however the pool holds it', () => {
     expect(quoteLabel(market(NATIVE_ETH))).toBe('ETH');
-    expect(quoteLabel(market(CONTRACTS.weth))).toBe('WETH');
-    // No key: a v3 pool always holds the wrapper, a simulated one is nominal.
+    expect(quoteLabel(market(CONTRACTS.weth))).toBe('ETH');
+    expect(quoteLabel(market(NATIVE_ETH, 'v3', false))).toBe('ETH');
+    expect(quoteLabel(market(NATIVE_ETH, 'v4', false))).toBe('ETH');
+  });
+
+  it('still knows which pools hold the wrapper, including the keyless v3 ones', () => {
+    // No key: Uniswap v3 has no native-ether pool, so a v3 ether pair is
+    // always the wrapper; a simulated pool has nothing on chain either way.
     expect(quoteCurrencyOf(market(NATIVE_ETH, 'v3', false))).toBeNull();
     expect(quoteIsNativeEther(market(NATIVE_ETH, 'v3', false))).toBe(false);
-    expect(quoteLabel(market(NATIVE_ETH, 'v3', false))).toBe('WETH');
-    expect(quoteLabel(market(NATIVE_ETH, 'v4', false))).toBe('ETH');
+    expect(quoteIsWrappedEther(market(NATIVE_ETH, 'v3', false))).toBe(true);
+    expect(quoteIsWrappedEther(market(NATIVE_ETH, 'v4', false))).toBe(false);
   });
 
   it('leaves a pair quoted in anything else alone', () => {
     const usdg: QuoteSided = { ...market(CONTRACTS.weth), quote: 'USDG' };
     expect(quoteLabel(usdg)).toBe('USDG');
     expect(quoteIsNativeEther(usdg)).toBe(false);
+    // A USDG pool is not "the wrapper" even though the address matches the
+    // fixture's: the quote decides first.
+    expect(quoteIsWrappedEther(usdg)).toBe(false);
   });
 });

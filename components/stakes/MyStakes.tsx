@@ -3,7 +3,7 @@
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { TokenBadge } from '@/components/ui/TokenBadge';
-import { countdown, quoteLabel, usd, usdExact, weth } from '@/lib/format';
+import { countdown, quoteLabel, usd, usdExact, ether } from '@/lib/format';
 
 export function MyStakes() {
   const { portfolio, pools, global } = useMarket();
@@ -49,7 +49,7 @@ export function MyStakes() {
       >
         <h2 className="sect-h">Your stakes</h2>
         <span className="pill weth">
-          Claimable {portfolio.claimableWeth.toFixed(3)} WETH ·{' '}
+          Claimable {portfolio.claimableWeth.toFixed(3)} ETH ·{' '}
           {usdExact(portfolio.claimableWeth * global.ethPriceUsd)}
         </span>
       </div>
@@ -87,7 +87,7 @@ export function MyStakes() {
                     {usd(stake.stakedUsd)}
                   </td>
                   <td className="r num up" data-label="Earned">
-                    {weth(stake.earnedWeth, 2)}
+                    {ether(stake.earnedWeth, 2)}
                   </td>
                   <td style={{ minWidth: 180 }} data-label="Stream">
                     <div

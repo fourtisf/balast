@@ -1,12 +1,12 @@
 'use client';
 
-import { weth } from '@/lib/format';
+import { ether } from '@/lib/format';
 
 /** The grid is 14 columns wide, matching the prototype. */
 const DAYS_PER_ROW = 14;
 
 /**
- * Eight weeks of daily WETH fees. Brighter green = more fees.
+ * Eight weeks of daily ether fees. Brighter green = more fees.
  *
  * The grid itself is decorative — every value it encodes is also written out
  * in the summary below it, which is where a screen reader reads the data from.
@@ -37,14 +37,14 @@ export function FeeHeatmap({ values }: { values: number[] }) {
                         12 + intensity * 88,
                       )}%, var(--raise))`,
               }}
-              title={weth(v)}
+              title={ether(v)}
             />
           );
         })}
       </div>
 
       <p className="hint">
-        {weth(total)} over {values.length} days · best day {weth(best)}
+        {ether(total)} over {values.length} days · best day {ether(best)}
       </p>
 
       {/* A block wrapper does the clipping: overflow:hidden is ignored on a
@@ -59,7 +59,7 @@ export function FeeHeatmap({ values }: { values: number[] }) {
                   Days {w * DAYS_PER_ROW + 1}–{w * DAYS_PER_ROW + week.length}
                 </th>
                 {week.map((v, d) => (
-                  <td key={d}>{weth(v)}</td>
+                  <td key={d}>{ether(v)}</td>
                 ))}
               </tr>
             ))}

@@ -44,8 +44,13 @@ export function count(n: number): string {
   return Math.round(n).toLocaleString('en-US');
 }
 
-export function weth(n: number, digits = 3): string {
-  return `${n.toFixed(digits)} WETH`;
+/**
+ * An amount of ether, for reading. Named for the asset the page names
+ * (`quoteLabel`), not for the wrapper it may be held in: one aeWETH is one
+ * ether, so the fees a position has earned are ether either way.
+ */
+export function ether(n: number, digits = 3): string {
+  return `${n.toFixed(digits)} ETH`;
 }
 
 /** Token prices swing over orders of magnitude; sub-$1 tokens need 4 places. */
@@ -108,19 +113,29 @@ export function feeTierLabel(feeTierBps: number): string {
 
 /**
  * The quote side of a pool's pair, as the page names it: `NVDA / USDG`,
- * `PONS / ETH`, `TSLA / WETH`.
+ * `PONS / ETH`, `TSLA / ETH`.
+ *
+ * **An ether pair is named ETH, whether the pool holds ether natively or as
+ * the aeWETH wrapper.** ALFA's rule, and it is a statement about the
+ * wrapper rather than a convenience: aeWETH mints one token per ether
+ * deposited and burns one per ether withdrawn, so one aeWETH *is* one ether
+ * (§18, which already treats them as one asset for pricing and says why
+ * that is exact rather than an approximation). Two names for one asset put
+ * a currency on the page that nobody holds a separate opinion about, and
+ * asked a person to tell apart a difference that only exists inside a
+ * contract.
+ *
+ * The difference the wrapper does make is what a wallet has to hold, and
+ * that is answered where it matters — `quoteIsWrappedEther` below, which
+ * the builder uses to wrap the person's ether as part of the mint and to
+ * say so — not by renaming the asset on every row.
  *
  * Every pair label used to be hardcoded `/ WETH`, which was the prototype's
  * one quote and is wrong for a third of the live board: the tokenised stocks
- * trade against USDG, and a v4 pool that holds ether holds it natively
- * (lib/chain.ts, NATIVE_ETH), not as the wrapper. A v3 pool always holds the
- * wrapper; a simulated pool has no key and keeps its nominal quote.
+ * trade against USDG.
  */
 export function quoteLabel(pool: QuoteSided): string {
-  if (pool.quote !== 'ETH') return pool.quote;
-  const currency = quoteCurrencyOf(pool);
-  if (currency) return currency === NATIVE_ETH ? 'ETH' : 'WETH';
-  return pool.protocol === 'v3' ? 'WETH' : 'ETH';
+  return pool.quote !== 'ETH' ? pool.quote : 'ETH';
 }
 
 type QuoteSided = Pick<Pool, 'quote' | 'key' | 'token' | 'protocol'>;
@@ -153,7 +168,21 @@ export function quoteIsNativeEther(pool: QuoteSided): boolean {
   return quoteCurrencyOf(pool) === NATIVE_ETH;
 }
 
-/** Quoted in aeWETH: the same asset, one token per ether, held as an ERC-20. */
+/**
+ * Quoted in aeWETH: the same asset and the same name on the page, held as an
+ * ERC-20 rather than natively.
+ *
+ * The page calls both ETH (see `quoteLabel`); this is the one fact that
+ * still follows from the difference — such a market is entered with the
+ * wrapped token, so the builder wraps the person's ether as part of the
+ * mint and says that it did.
+ *
+ * A pool with no key is a v3 pool or a simulated one. Uniswap v3 has no
+ * native-ether pool at all, so a v3 ether pair always holds the wrapper; a
+ * simulated pool has nothing on chain either way.
+ */
 export function quoteIsWrappedEther(pool: QuoteSided, weth: string = CONTRACTS.weth): boolean {
-  return quoteCurrencyOf(pool) === weth.toLowerCase();
+  if (pool.quote !== 'ETH') return false;
+  const currency = quoteCurrencyOf(pool);
+  return currency === null ? pool.protocol === 'v3' : currency === weth.toLowerCase();
 }

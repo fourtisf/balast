@@ -25,7 +25,7 @@ export function LivePayouts() {
             <div className="lv" key={p.id}>
               <TokenBadge token={pool.token} />
               <span>{pool.token.symbol} / {quoteLabel(pool)}</span>
-              <span className="a num">+{p.weth.toFixed(3)} WETH</span>
+              <span className="a num">+{p.weth.toFixed(3)} ETH</span>
               <span className="w num">{p.wallet}…</span>
             </div>
           );

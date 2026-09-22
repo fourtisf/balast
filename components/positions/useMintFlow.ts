@@ -77,6 +77,16 @@ export interface MintFlow {
    * whatever it wraps.
    */
   wrap: { shortfall: bigint } | null;
+  /**
+   * The ether this wallet could put into this market, as one figure.
+   *
+   * The page names both a native and a wrapped market ETH, because one
+   * aeWETH is one ether (§18), so "your balance" has to mean the same thing
+   * on both. For a wrapped market that is the wrapped balance plus the
+   * ether that could be wrapped for it, less the gas the mint still has to
+   * pay for. Null until the balances have been read.
+   */
+  quoteSpendable: bigint | null;
   step: MintStep;
   busyLabel: string | null;
   approvals: ApprovalStep[];
@@ -284,6 +294,14 @@ export function useMintFlow(args: {
     return { shortfall };
   }, [sides, needs, balances]);
 
+  /** One "your balance" for an ether market, whichever way the pool holds it. */
+  const quoteSpendable = useMemo(() => {
+    if (!sides || !balances) return null;
+    if (sides.quoteCurrency.toLowerCase() !== CONTRACTS.weth.toLowerCase()) return balances.quote;
+    const wrappable = balances.native > WRAP_GAS_RESERVE_WEI ? balances.native - WRAP_GAS_RESERVE_WEI : 0n;
+    return balances.quote + wrappable;
+  }, [sides, balances]);
+
   // Approvals and a dry run, whenever the plan or the wallet changes — and
   // only on this chain: an allowance read or an estimate on another network
   // is an answer about a different contract.
@@ -379,7 +397,7 @@ export function useMintFlow(args: {
           wallet: owner,
           at: Date.now(),
           status: 'pending',
-          label: `Wrap ${fmtAmount(wrap.shortfall, 18)} ETH to WETH`,
+          label: `Wrap ${fmtAmount(wrap.shortfall, 18)} ETH to aeWETH`,
           poolId: pool.id,
         });
         setBusyLabel('Wrapping…');
@@ -463,5 +481,5 @@ export function useMintFlow(args: {
     }
   }, [step, plan, owner, provider, key, sides, onChain, approvals, wrap, live, depositRaw, minPct, maxPct, bins, shape, fullRange, slippageBps, pool, refreshChainId, showToast, openWallet]);
 
-  return { key, sides, live, liveError, plan, planError, needs, balances, wrap, step, busyLabel, approvals, gas, error, result, run };
+  return { key, sides, live, liveError, plan, planError, needs, balances, wrap, quoteSpendable, step, busyLabel, approvals, gas, error, result, run };
 }

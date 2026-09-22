@@ -122,7 +122,7 @@ export function PositionList({ fees, actions }: { fees: LiveFeesState; actions: 
                 </div>
               ) : (
                 <div className="up num" style={{ fontSize: 12 }}>
-                  +{(position.feesWeth ?? 0).toFixed(2)} WETH fees
+                  +{(position.feesWeth ?? 0).toFixed(2)} ETH fees
                 </div>
               )}
               {lp && (
@@ -187,7 +187,7 @@ export function PositionList({ fees, actions }: { fees: LiveFeesState; actions: 
                 {usdExact(stake.stakedUsd)}
               </div>
               <div className="up num" style={{ fontSize: 12 }}>
-                +{stake.earnedWeth.toFixed(2)} WETH fees
+                +{stake.earnedWeth.toFixed(2)} ETH fees
               </div>
             </div>
           </div>

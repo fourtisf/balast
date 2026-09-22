@@ -4059,3 +4059,59 @@ yield* is still a forward-looking figure §1 sits awkwardly against — but
 it is now scaled by arithmetic on the person's own inputs rather than by
 a constant somebody guessed, which is the least a projected number owes
 the reader.
+
+### One name for one asset: an ether pair is ETH
+
+ALFA, on reading the above: *maksud saya jangan weth pairednya tpi eth* —
+the pair itself should be ETH, not WETH. Wrapping the person's ether for a
+wrapped pool answered "what do I pay with"; it did not answer what the pair
+is called, and that was the question.
+
+**`quoteLabel` now returns `ETH` for every ether pair**, whether the pool
+holds ether natively, as aeWETH, or is a v3 pool (which has no native-ether
+pool at all, so its ether pair is always the wrapper). It is one line, and
+it changes every pair label on the site at once, because it is the one
+function that names a pair — the board, the drawer, the builder, the vault
+cards, the stakes table, the portfolio and the transaction labels.
+
+This is a statement about the wrapper rather than a convenience, and §18
+had already made it for pricing: aeWETH mints one token per ether deposited
+and burns one per ether withdrawn, so one aeWETH **is** one ether, and
+pricing a native pool through the wrapped anchor is exact rather than an
+approximation. Two names for one asset put a currency on the page that
+nobody holds a separate opinion about and asked a reader to tell apart a
+difference that exists only inside a contract.
+
+What the wrapper does change is what a wallet must hold, and that is
+answered where it matters rather than by renaming the asset on every row:
+
+- `quoteIsWrappedEther` is the one place that asks, and the builder uses it
+  to wrap the shortfall as part of the mint and to say that it did.
+- **The deposit shows one balance.** A wrapped market used to show its
+  wrapped balance alone — a zero beside a wallet full of ether, which reads
+  as "you cannot do this". `quoteSpendable` is the wrapped balance plus the
+  ether that could be wrapped for it, less the gas the mint still has to
+  pay; the tooltip carries the split, and the same figure is what the
+  "above your balance" message names.
+- **A clash is marked, and only a clash.** A token with both a native and a
+  wrapped pool at the same fee tier would show one label twice, so the
+  wrapper carries `· wrapped` in that case. Naming it everywhere would put
+  the distinction back on every row, which is the thing the one name
+  removed.
+
+The `weth()` formatter is `ether()` and prints `ETH`, and the hardcoded
+`WETH` in the vault, stake, portfolio, payout and router copy went with
+it — a site that names the pair ETH and the fees WETH contradicts itself.
+`e2e/forms.spec.ts` asserts no `WETH` appears on the board or in the
+builder, so the two names cannot drift back apart.
+
+One thing the same screenshot showed: **`0.1 USDG · Max 4.18`**. The
+simulated wallet is 4.18 ether and was printed against whatever unit the
+market used, so over a USDG market it claimed the wallet held four dollars.
+The prototype had one quote and never met this; the stand-in is stated in
+the market's own quote now, and the end-to-end test reads the figure off
+the field rather than assuming a number.
+
+**Verified**: typecheck, lint, 432 unit tests, the production build and 37
+Playwright tests, all green, and the builder checked by screenshot at
+1280px on both an ether and a USDG market.

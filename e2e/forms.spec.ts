@@ -50,6 +50,22 @@ test.describe('shape builder', () => {
     await expect(estimate).not.toHaveText(bidaskEst);
   });
 
+  test('names an ether pair ETH, never WETH', async ({ page }) => {
+    // ALFA's rule (§27): one aeWETH is one ether, so the page names one
+    // asset. The wrapper is a fact about how a pool holds it, not a second
+    // currency for a person to tell apart.
+    await page.goto('/pools', { waitUntil: 'networkidle' });
+    await expect(page.locator('main')).not.toContainText('WETH');
+
+    await page.goto('/positions', { waitUntil: 'networkidle' });
+    const markets = page.getByRole('group', { name: 'Market' });
+    await expect(markets).toBeVisible();
+    for (const label of await markets.getByRole('button').allTextContents()) {
+      expect(label).not.toMatch(/\bWETH\b/);
+    }
+    await expect(page.locator('main')).not.toContainText(/\bWETH\b/);
+  });
+
   test('picks a token, then one of its markets', async ({ page }) => {
     // Two questions, asked separately (§26). One flat list of every pool on
     // the chain answered neither: choosing VIRTUAL meant scrolling past
@@ -95,7 +111,12 @@ test.describe('shape builder', () => {
 
   test('refuses a deposit above the balance', async ({ page }) => {
     await page.goto('/positions', { waitUntil: 'networkidle' });
-    await page.locator('#b-amount').fill('999');
+    // Read the balance off the field rather than assuming a number: the
+    // simulated wallet is stated in the market's own quote, so it is 4.18
+    // over an ether market and its value in USDG over a USDG one.
+    const max = Number((await page.locator('.inp .max').first().innerText()).replace(/[^\d.]/g, ''));
+    expect(max).toBeGreaterThan(0);
+    await page.locator('#b-amount').fill(String(Math.ceil(max) + 1));
     await expect(page.getByRole('button', { name: 'Mint position' })).toBeDisabled();
     await expect(page.locator('.builder p[role="alert"]')).toContainText('above your balance');
 

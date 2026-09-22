@@ -9,7 +9,7 @@ import { DEFAULT_SLIPPAGE_BPS, useMintFlow } from '@/components/positions/useMin
 import { CHAIN, EXPLORER_URL, NATIVE_ETH } from '@/lib/chain';
 import { DATA_SOURCE } from '@/lib/data';
 import type { Pool, ShapeId } from '@/lib/data/types';
-import { feeTierLabel, price as fmtPrice, quoteIsNativeEther, quoteLabel } from '@/lib/format';
+import { feeTierLabel, price as fmtPrice, quoteIsWrappedEther, quoteLabel } from '@/lib/format';
 import { byEntryCurrency, isMintable } from '@/lib/markets';
 import { densityAtPrice, MAX_BINS, MIN_BINS, SHAPES, shapeWeights } from '@/lib/shapes';
 import { amount as fmtAmount, num } from '@/lib/v4/format';
@@ -17,17 +17,28 @@ import { yieldPct } from '@/lib/yield';
 
 /** Simulated data has no wallet, so the spendable balance is a fixed stand-in. */
 const MAX_DEPOSIT_ETH = 4.18;
+
+/**
+ * The simulated wallet's balance, in the currency the chosen market is
+ * quoted in.
+ *
+ * It is 4.18 ether; over a USDG market the field read `0.1 USDG · Max 4.18`,
+ * which says the wallet holds four dollars. The prototype had one quote and
+ * never met this. Live data reads the wallet instead and never comes here.
+ */
+function simulatedMax(pool: Pool, ethPriceUsd: number): number {
+  return pool.quote === 'USDG' ? MAX_DEPOSIT_ETH * ethPriceUsd : MAX_DEPOSIT_ETH;
+}
 /** Ether to leave behind for gas when the deposit is in ether. */
 const GAS_RESERVE_WEI = 500_000_000_000_000n; // 0.0005 ETH
 /**
  * A first deposit a wallet is likely to hold: a tenth of an ether, or a
  * hundred dollars for a pool quoted in USDG. The old flat default of 2.5
  * opened the drawer's hand-off on "above your balance" for most wallets
- * (§22). A simulated pool keeps the ether figure: its balance is the
- * prototype's few ether whatever the quote says.
+ * (§22).
  */
 function defaultDeposit(pool: Pool): string {
-  return pool.key && pool.quote === 'USDG' ? '100' : '0.1';
+  return pool.quote === 'USDG' ? '100' : '0.1';
 }
 
 /** Slippage tolerances offered, in basis points. */
@@ -46,6 +57,25 @@ const SHAPE_ICONS: Record<ShapeId, number[]> = {
  * an empty listing and, on a listing with no verified pool, quietly offered
  * an unverified one that the select could not even show.
  */
+/**
+ * A market's name among its siblings: the quote, then the fee tier when the
+ * token has more than one market.
+ *
+ * An ether pair is named ETH however the pool holds it (§27), so a token
+ * with both a native and a wrapped pool at the same tier would show one
+ * label twice. The wrapper is marked in that case, and only in that case —
+ * naming it everywhere would put the distinction back on every row, which
+ * is the thing the one name removed.
+ */
+function marketLabel(market: Pool, siblings: Pool[]): string {
+  const base = quoteLabel(market) + (siblings.length > 1 ? ` · ${feeTierLabel(market.feeTierBps)}` : '');
+  if (!quoteIsWrappedEther(market)) return base;
+  const clash = siblings.some(
+    (m) => m.id !== market.id && quoteLabel(m) + (siblings.length > 1 ? ` · ${feeTierLabel(m.feeTierBps)}` : '') === base,
+  );
+  return clash ? `${base} · wrapped` : base;
+}
+
 export function ShapeBuilder() {
   const { pools, otherPools } = useMarket();
   const live = DATA_SOURCE === 'live';
@@ -198,8 +228,10 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
 
   // The inputs, before anything the chain has to say.
   const problems: string[] = [];
+  const simMax = simulatedMax(pool, global.ethPriceUsd);
   if (!Number.isFinite(eth) || eth <= 0) problems.push('Enter a deposit amount.');
-  else if (!onChain && eth > MAX_DEPOSIT_ETH) problems.push(`Deposit is above your balance of ${MAX_DEPOSIT_ETH} ETH.`);
+  else if (!onChain && eth > simMax)
+    problems.push(`Deposit is above your balance of ${num(simMax)} ${quoteLabel(pool)}.`);
   if (!fullRange) {
     if (maxPct <= minPct) problems.push('Max must be above Min.');
     if (minPct > 0) problems.push('Min must be at or below the current price.');
@@ -221,17 +253,25 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
 
   const quoteSymbol = quoteLabel(pool);
   const tokenSymbol = pool.token.symbol;
+  // The pool holds its ether as aeWETH rather than natively. The page calls
+  // both ETH (§27); this is the one thing that still follows from it — the
+  // mint spends the wrapped token, so the wallet's ether is wrapped first.
+  // Only asserted of a pool that exists: a simulated one has no key, and
+  // saying what its mint would wrap is a claim about nothing.
+  const wrapped = onChain && quoteIsWrappedEther(pool);
 
   // What the chain says: the plan's two sides against the wallet's balances.
   if (onChain && inputsValid) {
     if (flow.planError) problems.push(flow.planError);
     if (flow.needs && flow.balances && flow.sides) {
       const reserve = flow.sides.quoteCurrency.toLowerCase() === NATIVE_ETH ? GAS_RESERVE_WEI : 0n;
-      // Short of the wrapper but holding the ether to cover it is not a
-      // problem to report: it is the wrap step, and the button offers it.
-      if (!flow.wrap && flow.balances.quote < flow.needs.quote + reserve) {
+      // One balance for an ether market, whichever way the pool holds it:
+      // a wrapped one counts the ether that would be wrapped for it, since
+      // the page calls both ETH and the mint wraps what is missing.
+      const spendable = flow.quoteSpendable ?? flow.balances.quote;
+      if (spendable < flow.needs.quote + reserve) {
         problems.push(
-          `Deposit is above your balance of ${fmtAmount(flow.balances.quote, flow.sides.quoteDecimals)} ${quoteSymbol}` +
+          `Deposit is above your balance of ${fmtAmount(spendable, flow.sides.quoteDecimals)} ${quoteSymbol}` +
             (reserve > 0n ? ', keeping a little for gas.' : '.'),
         );
       }
@@ -313,7 +353,7 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
             : flow.step === 'busy'
               ? flow.busyLabel
               : flow.step === 'wrap'
-                ? `Wrap ${fmtAmount(flow.wrap!.shortfall, 18)} ETH to ${quoteSymbol}`
+                ? `Wrap ${fmtAmount(flow.wrap!.shortfall, 18)} ETH for this pool`
               : flow.step === 'approve'
                 ? nextApproval.kind === 'erc20'
                   ? `Approve ${approvalSymbol}`
@@ -380,8 +420,7 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
                 aria-pressed={m.id === pool.id}
                 onClick={() => choose(m.id)}
               >
-                {quoteLabel(m)}
-                {token.markets.length > 1 ? ` · ${feeTierLabel(m.feeTierBps)}` : ''}
+                {marketLabel(m, token.markets)}
               </button>
             ))}
           </div>
@@ -389,11 +428,9 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
             {token.markets.length === 1
               ? `The only market for ${token.symbol} this builder can mint into. A pool with no real money behind it is not offered here.`
               : 'The quote currency decides what your wallet needs; the fee tier decides what the position earns.'}
-            {quoteIsNativeEther(pool)
-              ? ` ETH is this chain\u2019s own ether — the balance your wallet already shows.`
-              : quoteSymbol === 'WETH'
-                ? ` WETH is wrapped ether (aeWETH), one token per ether. The mint spends the wrapped token, and anything missing is wrapped from your ETH first.`
-                : ''}
+            {wrapped
+              ? ` This pool holds its ether as aeWETH — one token per ether, the same asset — so the mint wraps what your wallet is short of and spends that.`
+              : ''}
             {token.unmintable.length > 0 &&
               ` ${token.symbol} also trades in ${token.unmintable.length} Uniswap v3 pool${
                 token.unmintable.length === 1 ? '' : 's'
@@ -416,16 +453,22 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
             />
             <span className="unit">{quoteSymbol}</span>
             {!onChain ? (
-              <span className="max">Max {MAX_DEPOSIT_ETH}</span>
+              <span className="max">Max {num(simMax)}</span>
             ) : flow.balances && flow.sides ? (
-              <span className="max">
-                Balance {fmtAmount(flow.balances.quote, flow.sides.quoteDecimals)}
-                {/* A wrapped market's balance of zero beside a wallet full of
-                    ether reads as "you cannot do this". The ether is what
-                    pays for it, so it is on the line too. */}
-                {quoteSymbol === 'WETH' && !quoteIsNativeEther(pool)
-                  ? ` · ${fmtAmount(flow.balances.native, 18)} ETH`
-                  : ''}
+              /* One figure, because the page calls both ways of holding ether
+                 ETH and the mint wraps what is missing. A wrapped market used
+                 to show its wrapped balance alone — a zero beside a wallet
+                 full of ether, which reads as "you cannot do this". */
+              <span
+                className="max"
+                title={
+                  wrapped
+                    ? `${fmtAmount(flow.balances.quote, flow.sides.quoteDecimals)} held as aeWETH, ` +
+                      `${fmtAmount(flow.balances.native, 18)} held natively`
+                    : undefined
+                }
+              >
+                Balance {fmtAmount(flow.quoteSpendable ?? flow.balances.quote, flow.sides.quoteDecimals)}
               </span>
             ) : null}
           </div>
@@ -599,7 +642,7 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
               ? flow.step === 'wrong-chain'
                 ? `The wallet is on another network. Nothing is sent until it is on ${CHAIN.name}; the price shown is read from the chain's public RPC.`
                 : flow.step === 'wrap'
-                ? `This market is quoted in wrapped ether. One transaction turns ${fmtAmount(flow.wrap!.shortfall, 18)} of your ETH into the same amount of ${quoteSymbol} — one token per ether, no price and nothing to slip — and the mint follows it.`
+                ? `This pool holds its ether as aeWETH. One transaction wraps ${fmtAmount(flow.wrap!.shortfall, 18)} of your ETH into the same amount of it — one token per ether, no price and nothing to slip — and the mint follows.`
               : flow.step === 'approve'
                 ? `${flow.approvals.length} approval${flow.approvals.length === 1 ? '' : 's'} first, then one transaction to mint. Nothing is held by Balast.`
                 : `One transaction through Uniswap's PositionManager${flow.plan ? `: ${flow.plan.positions.length} position${flow.plan.positions.length === 1 ? '' : 's'}, each an NFT in your wallet` : ''}. Nothing is held by Balast.`

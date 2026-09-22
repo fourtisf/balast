@@ -8,7 +8,7 @@ import { TxHistory } from '@/components/portfolio/TxHistory';
 import { feesUsd, useLiveFees } from '@/components/portfolio/useLiveFees';
 import { usePositionActions } from '@/components/portfolio/usePositionActions';
 import { getProvider } from '@/lib/data';
-import { signedPct, usdExact, weth } from '@/lib/format';
+import { signedPct, usdExact, ether } from '@/lib/format';
 
 export function PortfolioBody() {
   const { portfolio } = useMarket();
@@ -86,7 +86,7 @@ export function PortfolioBody() {
         ) : (
           <div className="card stat">
             <div className="k">Fees earned</div>
-            <div className="v num">{empty || portfolio.feesEarnedWeth === null ? '—' : weth(portfolio.feesEarnedWeth)}</div>
+            <div className="v num">{empty || portfolio.feesEarnedWeth === null ? '—' : ether(portfolio.feesEarnedWeth)}</div>
             <div className="d">
               {empty ? why : portfolio.feesEarnedUsd === null ? 'not tracked' : usdExact(portfolio.feesEarnedUsd)}
             </div>
@@ -132,7 +132,7 @@ export function PortfolioBody() {
             <h2 className="sect-h">Daily fees · 8 weeks</h2>
             {hasHeatmap && (
               <span className="muted" style={{ fontSize: 12 }}>
-                deeper green = more WETH
+                deeper green = more ETH
               </span>
             )}
           </div>
