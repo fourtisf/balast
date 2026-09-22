@@ -3751,3 +3751,101 @@ What none of this changes: a token genuinely absent from both aggregators
 keeps the chain's figure, labelled as the chain's, and that figure is as old
 as the sync. The backfill reaching head is the only thing that fixes it for
 every token rather than for the ones an aggregator happens to carry.
+
+---
+
+## 25. Today, from the chain: a second reader at the head
+
+ALFA, on a board where every row read `chain`: *vol masih kecil atau tidak
+real buat realtime data*. The volume is small, or not real; make it real time.
+The top bar said `Indexer 73d 19h behind`, and it had said `73d 18h` the day
+before — so the backfill was not gaining on the chain, and every figure on the
+board was a day in July.
+
+Three sections of this document have now tried to patch over that with an
+aggregator (§20, §21, §24), and each time the answer was the same shape: the
+tokens DexScreener and GeckoTerminal happen to list get today's figure and
+the rest keep a two-month-old one. On a launchpad chain that is most of the
+board. The patch was never going to cover it.
+
+### Why the backfill cannot simply be made faster
+
+It reads in order from `START_BLOCK` because a pool's reserves are the sum of
+its whole event history, and a sum with a hole in it is not a smaller number,
+it is a wrong one (§14). Everything else follows from that: the liquidity
+figure, the fee yield's divisor, and §9's proof that a replay produces
+byte-identical rows. Reading the recent blocks first and the old ones later
+would make every one of those wrong, quietly, in the flattering direction.
+
+So the answer is not to reorder the backfill. It is to read the other end of
+the chain separately, and to keep it sealed off from everything the backfill
+owns.
+
+### What the head reader is
+
+`server/indexer/head.ts` follows the last `HEAD_WINDOW_HOURS` of blocks
+(default 24), decodes the same swap logs with the same decoders, and writes
+them to `recent_swaps` — a table nothing else in the pipeline reads. It runs
+in the indexer process, before each backfill pass; once its window is whole it
+costs a handful of blocks a pass, and its failure is its own, because a site
+with an honest old figure beats a site with none.
+
+`server/api/recent.ts` turns those rows into the day. The arithmetic mirrors
+`rebuildFeeHourly` line for line — volume is the side that entered the pool at
+its USD price, a token is priced from whichever side of its pool is the quote,
+ether through the anchor and USDG at a dollar, a buy is the swap whose input
+was the quote — so a pool's figure now and the same pool's figure once the
+backfill arrives are one number reached two ways. The anchor price comes from
+the anchor pool's own recent swaps, so the query needs nothing from the
+indexer's aggregates, which is exactly what lets it be current while they are
+weeks behind.
+
+**What it is not allowed to touch** is the point. Reserves, liquidity, the fee
+yield, the sparkline and the market cap are sums over a pool's whole history,
+and a window of recent blocks with a gap behind it cannot contribute to them.
+`server/indexer/head.test.ts` snapshots `swap_events`, `pool_flow_hourly`,
+`pool_fee_hourly` and `pool_state` as text around a head pass and asserts not
+one value moved. That test is the design.
+
+### What the board shows now
+
+`Pool.now` sits beside `Pool.market`, and `lib/market-figures.ts` makes the
+choice once, as it does for every other figure: **the chain's own head first,
+an aggregator second, the backfill's indexed day last**. The head's figure is
+this pool's own swaps, derived the way the rest of the site derives
+everything, and current; an aggregator's is the token across its pairs and
+comes from outside (§4). The row's cap says which of the three in one word —
+`now`, `live` or `chain` — because they are weeks apart and the reader should
+not have to guess. The split is the head's dollars, which sum to the volume
+beside them; the aggregator's trade counts never could.
+
+The ranking follows the same rule: `isCurrent` is what decides the tier, and
+both the head's figure and an aggregator's describe today where the
+backfill's, during a first sync, does not.
+
+The masthead's ETH price gains a third basis for the same reason, `chain-now`:
+the anchor pool's price at the head, which is the site's own derivation over
+blocks minutes old rather than an aggregator's quote or a price from July.
+
+`/api/health` carries `head` — how many swaps it holds and how old the newest
+is — and `deploy/doctor.sh` prints it before the market feed's line, because
+"every row reads chain" is answered there first.
+
+### What this does not fix
+
+The liquidity figure, the fee yield and the market cap are still the
+backfill's, and still as old as it is. They are sums over a history, and
+nothing short of the backfill reaching head makes them current. The top bar's
+lag still describes that, honestly, and should be read as being about those
+figures rather than about the day's volume beside them.
+
+`HEAD_WINDOW_HOURS=0` turns the reader off and the board goes back to the
+backfill's day, labelled as such.
+
+### Unverified from here
+
+The sandbox reaches no RPC endpoint, so the reader has been proven against the
+fixture chain and not against Robinhood Chain. The first thing to look at on
+the box is `/api/health`'s `head`: a `swaps` of zero means it has written
+nothing, and `pm2 logs balast-indexer` carries a `head` line per pass saying
+how far from head it still is.

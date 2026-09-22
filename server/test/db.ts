@@ -21,6 +21,10 @@ const TABLES = [
   'pool_state',
   'swap_events',
   'liquidity_events',
+  // The head reader's own table (§25). It has no foreign key to `pools`, so
+  // CASCADE does not reach it and a suite that ran before would leave its
+  // rows in the next one's board.
+  'recent_swaps',
   'indexer_cursors',
   'indexer_state',
   'pools',

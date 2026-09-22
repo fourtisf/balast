@@ -27,6 +27,7 @@ import { readWork } from '../indexer/working';
 import { busKind, subscribeTicks } from './bus';
 import { MarketFeed } from './market';
 import { buildPortfolio } from './portfolio';
+import { recentHead } from './recent';
 import { buildSnapshot, nextRevision } from './snapshot';
 import { agedSnapshot, isServable, loadPersistedSnapshot, persistSnapshot } from './snapshot-store';
 
@@ -100,6 +101,24 @@ function syncingNote(args: {
  * 503 so a monitor still catches it, and `/api/snapshot` refuses with the
  * same reason, which the waiting page then shows the operator.
  */
+/**
+ * The head reader's state (§25): how many swaps it holds and how old the
+ * newest is. A board reading `chain` on every row is answered here — either
+ * the reader has written nothing, or its newest block is stale, and those
+ * need different things done about them.
+ */
+async function headStatus(): Promise<{ swaps: number; at: string | null; seconds: number | null }> {
+  const [count, newest] = await Promise.all([
+    prisma.recentSwap.count(),
+    recentHead(),
+  ]);
+  return {
+    swaps: count,
+    at: newest === null ? null : newest.toISOString(),
+    seconds: newest === null ? null : Math.max(0, Math.round((Date.now() - newest.getTime()) / 1000)),
+  };
+}
+
 function configurationProblem(): string | null {
   // An UNSET address is no longer a problem: the anchor is discovered from
   // the chain's own tokens. A malformed one still is — someone meant to pin a
@@ -537,6 +556,13 @@ export async function buildServer(
             lastPass,
           }
         : null,
+      /**
+       * The chain's head, read beside the backfill (§25). `at` is the newest
+       * swap it has; `seconds` how old that is in wall time. This is what
+       * makes the board's volume current while `indexed` above is weeks
+       * behind, so a board reading `chain` everywhere is answered here.
+       */
+      head: await headStatus(),
       /** The stage in progress that writes no block, with its heartbeat; null between stages. */
       working:
         work && working

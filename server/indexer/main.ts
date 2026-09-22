@@ -23,6 +23,7 @@ import { findDeploymentBlock } from '../chain/deployment';
 import { env } from '../env';
 import { prisma } from '../db';
 import { publishTick } from '../api/bus';
+import { HeadFollower } from './head';
 import { Poller, type PassResult } from './poller';
 import { ViemLogSource } from './viem-source';
 
@@ -85,6 +86,25 @@ async function main(): Promise<void> {
     log,
   });
 
+  // The chain's head, in parallel with the backfill above (§25). The backfill
+  // must read in order — reserves are the sum of a pool's whole history — and
+  // on this chain that costs days, for all of which the board's volume is a
+  // day two months old. This reads the last day of blocks into a table of its
+  // own, so "what traded today" is answered from the chain rather than from an
+  // aggregator, for every pool. It touches nothing the backfill owns.
+  const headFollower = env.headWindowHours > 0
+    ? new HeadFollower({
+        source: new ViemLogSource(log),
+        windowHours: env.headWindowHours,
+        blockMs: env.chainBlockMs,
+        blockRange: BigInt(env.blockRange),
+        concurrency: env.fetchConcurrency,
+        log,
+      })
+    : null;
+  if (!headFollower) log('HEAD_WINDOW_HOURS=0 — the board shows the backfill\'s own day only');
+  let headSaid = false;
+
   let backoffMs = 1_000;
   let shuttingDown = false;
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
@@ -95,6 +115,31 @@ async function main(): Promise<void> {
   }
 
   while (!shuttingDown) {
+    // The head first, and it is cheap once its window is whole: a handful of
+    // blocks a pass. Its failure is its own — the backfill runs either way,
+    // because a site with an honest old figure beats a site with none.
+    if (headFollower) {
+      try {
+        const head = await headFollower.pass();
+        if (head.swapsWritten > 0 || head.behind > 0n) {
+          log(
+            `  head ${head.fromBlock}-${head.toBlock} of ${head.headBlock}: ` +
+              `+${head.swapsWritten} swaps` +
+              (head.pruned > 0 ? `, -${head.pruned} past the window` : '') +
+              (head.behind > 0n ? `, ${head.behind.toLocaleString()} blocks to go` : ' · following head'),
+          );
+        }
+        headSaid = false;
+      } catch (error) {
+        // Once per stretch of failures: the backfill's own log is the noisy
+        // one and this must not drown it.
+        if (!headSaid) {
+          headSaid = true;
+          log(`  head reader failed: ${(error as Error).message} — the board keeps the backfill's day`);
+        }
+      }
+    }
+
     try {
       const result = await poller.runPass();
       backoffMs = 1_000;

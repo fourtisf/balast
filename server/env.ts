@@ -79,6 +79,30 @@ export const env = {
   pollIntervalMs: int('INDEXER_POLL_MS', 1_000),
 
   /**
+   * How many hours of the chain's HEAD a second reader keeps, beside the
+   * backfill (§25).
+   *
+   * The backfill reads in order from `START_BLOCK`, because reserves are the
+   * sum of a pool's whole history and a sum with a hole in it is not a
+   * smaller number but a wrong one. On sixty million blocks that ordering
+   * costs days, and for all of them the board's volume is a day two months
+   * old. This window is read from the other end, into a table nothing else
+   * in the pipeline touches, and answers the one question that has to be
+   * current: what traded today.
+   *
+   * 24 matches the board's own figures. Larger costs a longer first
+   * catch-up and more rows; 0 turns it off and the board shows the
+   * backfill's day, labelled as such.
+   */
+  headWindowHours: Math.max(0, int('HEAD_WINDOW_HOURS', 24)),
+  /**
+   * Chain milliseconds per block, for turning those hours into a block
+   * count. Robinhood Chain is about 100ms (§2); a wrong value here only
+   * makes the head window wider or narrower than a day, never wrong.
+   */
+  chainBlockMs: Math.max(1, int('CHAIN_BLOCK_MS', 100)),
+
+  /**
    * Minimum fully diluted value, in USD, for a pool's token to be listed.
    *
    * A young chain's PoolManager is mostly dust — thousands of launchpad

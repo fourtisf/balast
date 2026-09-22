@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { NATIVE_ETH } from './chain';
-import type { MarketQuote, Pool } from './data/types';
+import type { ChainNow, MarketQuote, Pool } from './data/types';
 import { RANK_MIN_VOLUME_USD, capKey, rankByCap, rankByVolume, rankTier, shownCap, shownChange, shownLiquidity, shownSplit, shownVolume } from './market-figures';
 
 function quote(overrides: Partial<MarketQuote> = {}): MarketQuote {
@@ -28,6 +28,21 @@ function quote(overrides: Partial<MarketQuote> = {}): MarketQuote {
     poolLiquidityUsd: 25_500,
     fdvUsd: 22_530_000,
     marketCapUsd: 22_920_000,
+    at: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function chainNow(overrides: Partial<ChainNow> = {}): ChainNow {
+  return {
+    volume24hUsd: 500_000,
+    trades24h: 120,
+    buys24h: 70,
+    sells24h: 50,
+    buyVolume24hUsd: 300_000,
+    sellVolume24hUsd: 200_000,
+    priceUsd: 2,
+    change24hPct: 12.5,
     at: new Date().toISOString(),
     ...overrides,
   };
@@ -225,5 +240,51 @@ describe('the buy/sell split', () => {
     expect(shownSplit(pool({ volume24hUsd: 459_700 }))).toBeNull();
     // A genuinely quiet day is $0 and $0, not a dash.
     expect(shownSplit(pool({ volume24hUsd: 0 }))).toMatchObject({ buys: 0, sells: 0, unit: 'usd' });
+  });
+});
+
+describe("today, from the chain's own head", () => {
+  // §25. The backfill reads in order and is weeks behind; a second reader
+  // keeps the last day of blocks. It is this pool's own swaps, derived the
+  // way every other figure here is derived, and current — so it outranks an
+  // aggregator, which is the token across its pairs and comes from outside.
+  it('shows the head over an aggregator, and an aggregator over the backfill', () => {
+    const both = pool({ now: chainNow(), market: quote(), volume24hUsd: 42 });
+    expect(shownVolume(both)).toEqual({ value: 500_000, basis: 'chain-now', scope: 'pool' });
+    expect(shownChange(both).basis).toBe('chain-now');
+
+    const aggregator = pool({ now: null, market: quote(), volume24hUsd: 42 });
+    expect(shownVolume(aggregator).basis).toBe('live');
+
+    const indexed = pool({ now: null, market: null, volume24hUsd: 42 });
+    expect(shownVolume(indexed)).toEqual({ value: 42, basis: 'chain', scope: 'pool' });
+  });
+
+  it("splits the head's day in dollars, and it sums to the volume beside it", () => {
+    const split = shownSplit(pool({ now: chainNow(), market: quote() }))!;
+    expect(split).toEqual({
+      buys: 300_000,
+      sells: 200_000,
+      unit: 'usd',
+      basis: 'chain-now',
+      scope: 'pool',
+    });
+    expect(split.buys + split.sells).toBe(shownVolume(pool({ now: chainNow() })).value);
+  });
+
+  it('ranks a head figure among the projects, as it does a live one', () => {
+    // The tier is about whether a figure describes TODAY. Both of these do;
+    // the backfill's, during a first sync, does not.
+    expect(rankTier(pool({ now: chainNow({ volume24hUsd: RANK_MIN_VOLUME_USD }), market: null }))).toBe(0);
+    expect(rankTier(pool({ now: chainNow({ volume24hUsd: 1 }), market: null }))).toBe(1);
+    expect(rankTier(pool({ now: null, market: null, volume24hUsd: 9_999_999 }))).toBe(1);
+  });
+
+  it('leaves liquidity, the yield and the cap to the indexer', () => {
+    // A day of blocks cannot say what a pool holds: reserves are a sum over
+    // its whole history (§14). The head reader never touches them.
+    const p = pool({ now: chainNow(), market: null, tvlUsd: 250_000 });
+    expect(shownLiquidity(p)).toEqual({ value: 250_000, basis: 'chain', scope: 'pool' });
+    expect(shownCap(p).basis).toBe('chain');
   });
 });

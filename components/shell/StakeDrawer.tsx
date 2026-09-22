@@ -165,12 +165,15 @@ export function StakeDrawer() {
                   <div className="k">Volume 24h</div>
                   <div className="v num">{usd(volume.value)}</div>
                   <div className="k" style={{ marginTop: 6 }}>
-                    {volume.basis === 'live'
-                      ? (split && split.unit === 'trades'
-                          ? `${(split.buys + split.sells).toLocaleString()} trades · `
-                          : '') + `the token, via ${source}`
-                      : `${pool.trades24h} trade${pool.trades24h === 1 ? '' : 's'} · this pool` +
-                        (pool.market === null ? ', from the chain' : '')}
+                    {volume.basis === 'chain-now'
+                      ? `${pool.now!.trades24h} trade${pool.now!.trades24h === 1 ? '' : 's'} · this pool, ` +
+                        "from the chain's head"
+                      : volume.basis === 'live'
+                        ? (split && split.unit === 'trades'
+                            ? `${(split.buys + split.sells).toLocaleString()} trades · `
+                            : '') + `the token, via ${source}`
+                        : `${pool.trades24h} trade${pool.trades24h === 1 ? '' : 's'} · this pool` +
+                          (pool.market === null ? ', from the chain' : '')}
                   </div>
                 </div>
               </div>
@@ -207,7 +210,7 @@ export function StakeDrawer() {
                         {split.unit === 'trades' ? split.buys.toLocaleString() : usd(split.buys)}
                       </b>{' '}
                       <span className="muted num">
-                        {split.unit === 'trades' ? 'trades' : `· ${pool.buys24h}`}
+                        {split.unit === 'trades' ? 'trades' : `· ${split.basis === 'chain-now' ? pool.now!.buys24h : pool.buys24h}`}
                       </span>
                     </span>
                     <span style={{ textAlign: 'right' }}>
@@ -216,13 +219,20 @@ export function StakeDrawer() {
                         {split.unit === 'trades' ? split.sells.toLocaleString() : usd(split.sells)}
                       </b>{' '}
                       <span className="muted num">
-                        {split.unit === 'trades' ? 'trades' : `· ${pool.sells24h}`}
+                        {split.unit === 'trades' ? 'trades' : `· ${split.basis === 'chain-now' ? pool.now!.sells24h : pool.sells24h}`}
                       </span>
                     </span>
                   </div>
                   <div className="split-bar" aria-hidden="true">
                     <i style={{ width: `${buyShare(split.buys, split.sells)}%` }} />
                   </div>
+                  {split.basis === 'chain-now' && (
+                    <p className="hint" style={{ marginTop: 8 }}>
+                      Volume, the split and the 24h change here are this pool&rsquo;s own swaps over the
+                      last 24 hours, read from the chain&rsquo;s head. Fees, yield and liquidity are sums
+                      over its whole history and come from the indexer, which is still catching up.
+                    </p>
+                  )}
                   {split.basis === 'live' && (
                     <p className="hint" style={{ marginTop: 8 }}>
                       Volume, trades and the 24h change here are {source}&rsquo;s live figures for the

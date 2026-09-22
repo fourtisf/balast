@@ -19,7 +19,17 @@
 import { isEther } from './chain';
 import type { Pool } from './data/types';
 
-export type Basis = 'live' | 'chain';
+/**
+ * Where a figure came from.
+ *
+ *   chain-now  the chain's own head: the last day of swaps, read by a second
+ *              reader while the backfill is still weeks behind (§25). The
+ *              chain's arithmetic, current.
+ *   live       an aggregator's quote for the token (§20, §21).
+ *   chain      the indexer's own tables, measured back from the last block it
+ *              has read — during a first sync, a day weeks ago.
+ */
+export type Basis = 'live' | 'chain' | 'chain-now';
 export type Scope = 'token' | 'pool';
 
 export interface Shown<T> {
@@ -33,6 +43,11 @@ export interface Shown<T> {
  * lists on this chain; from the chain, it is this pool's indexed swaps.
  */
 export function shownVolume(pool: Pool): Shown<number> {
+  // The chain's own head first, and deliberately: it is this pool's swaps,
+  // derived the way every other figure on the site is derived, and current.
+  // An aggregator's figure is the token across its pairs and comes from
+  // outside (§4); it fills in for a pool the head reader has not seen trade.
+  if (pool.now) return { value: pool.now.volume24hUsd, basis: 'chain-now', scope: 'pool' };
   return pool.market
     ? { value: pool.market.volume24hUsd, basis: 'live', scope: 'token' }
     : { value: pool.volume24hUsd, basis: 'chain', scope: 'pool' };
@@ -40,6 +55,7 @@ export function shownVolume(pool: Pool): Shown<number> {
 
 /** The 24h price change, from the same source as the volume beside it. */
 export function shownChange(pool: Pool): Shown<number | null> {
+  if (pool.now) return { value: pool.now.change24hPct, basis: 'chain-now', scope: 'pool' };
   return pool.market
     ? { value: pool.market.priceChange24hPct, basis: 'live', scope: 'token' }
     : { value: pool.change24hPct, basis: 'chain', scope: 'pool' };
@@ -160,6 +176,17 @@ export interface ShownSplit {
  * not a $0 beside a volume that says otherwise.
  */
 export function shownSplit(pool: Pool): ShownSplit | null {
+  // The head's split is this pool's own dollars, and it sums to the volume
+  // beside it — which the aggregator's trade counts cannot.
+  if (pool.now) {
+    return {
+      buys: pool.now.buyVolume24hUsd,
+      sells: pool.now.sellVolume24hUsd,
+      unit: 'usd',
+      basis: 'chain-now',
+      scope: 'pool',
+    };
+  }
   const live = pool.market;
   if (live && live.buys24h !== null && live.sells24h !== null) {
     return { buys: live.buys24h, sells: live.sells24h, unit: 'trades', basis: 'live', scope: 'token' };
@@ -219,9 +246,19 @@ export const RANK_MIN_VOLUME_USD = 10_000;
  */
 export function rankTier(pool: Pool): 0 | 1 | 2 {
   const volume = shownVolume(pool);
-  if (volume.basis === 'live' && volume.value >= RANK_MIN_VOLUME_USD) return 0;
+  if (isCurrent(volume.basis) && volume.value >= RANK_MIN_VOLUME_USD) return 0;
   if (volume.value > 0) return 1;
   return 2;
+}
+
+/**
+ * Whether a figure describes TODAY. The chain's own head and an aggregator's
+ * quote both do; the backfill's last indexed day, during a first sync, does
+ * not — and a ranking that mixes the two orders today's markets by a figure
+ * from two months ago.
+ */
+export function isCurrent(basis: Basis): boolean {
+  return basis === 'chain-now' || basis === 'live';
 }
 
 /** The market-cap ranking, as a list: by tier, then by cap, then by depth. */
@@ -235,7 +272,7 @@ export function rankByCap(pools: Pool[]): Pool[] {
  * and today's is what a volume ranking claims to show.
  */
 export function rankByVolume(pools: Pool[]): Pool[] {
-  const live = (p: Pool): number => (shownVolume(p).basis === 'live' ? 0 : 1);
+  const live = (p: Pool): number => (isCurrent(shownVolume(p).basis) ? 0 : 1);
   return pools.slice().sort((a, b) => live(a) - live(b) || shownVolume(b).value - shownVolume(a).value);
 }
 

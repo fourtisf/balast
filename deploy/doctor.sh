@@ -316,6 +316,21 @@ else
     *) bad "unexpected health body: ${BODY:0:160}" ;;
   esac
 
+  # The chain's head, read beside the backfill (§25). This is what makes the
+  # board's volume current while the backfill is still weeks behind, so a
+  # board reading `chain` on every row is answered here first.
+  HEAD=${BODY#*\"head\":}
+  H_SWAPS=$(printf '%s' "$HEAD" | grep -o '"swaps":[0-9]*' | head -1 | cut -d: -f2)
+  H_SECS=$(printf '%s' "$HEAD" | grep -o '"seconds":[0-9]*' | head -1 | cut -d: -f2)
+  if [[ -z "${H_SECS:-}" ]]; then
+    warn "head reader: nothing written yet — the board's volume is the backfill's day"
+    also "runuser -u $APP_USER -- pm2 logs balast-indexer --lines 30 --nostream"
+  elif [[ "${H_SECS:-0}" -gt 1800 ]]; then
+    warn "head reader: newest swap is $(( H_SECS / 60 ))m old — the board's volume is going stale"
+  else
+    ok "head reader: ${H_SWAPS:-0} swaps, newest ${H_SECS}s old — the board's volume is current"
+  fi
+
   # The live market feed. A row reading `chain` is showing a day as old as the
   # sync, so how many of the board's tokens an aggregator places is the
   # difference between a current board and a two-month-old one — and when some

@@ -113,6 +113,30 @@ model Pool {
 // Upserted by (tx_hash, log_index). Re-scanning the last 32 blocks every pass
 // (§4.1) therefore costs nothing and changes nothing.
 
+/// The last day of swaps, from the chain's head, while the backfill is still
+/// weeks behind it (§25). Deliberately outside the indexer's pipeline: a
+/// window of recent blocks with a gap behind it cannot contribute to reserves
+/// or to §9's replay proof, so these rows feed the day's volume, its trade
+/// split and the 24h move, and nothing else. No relation to Pool: the head
+/// meets pools the backfill has not created yet.
+model RecentSwap {
+  txHash    String   @map("tx_hash")
+  logIndex  Int      @map("log_index")
+  poolId    String   @map("pool_id")
+  blockNum  BigInt   @map("block_num")
+  blockTime DateTime @map("block_time")
+  amount0   Decimal  @db.Decimal(78, 0)
+  amount1   Decimal  @db.Decimal(78, 0)
+  sqrtPrice Decimal  @map("sqrt_price_x96") @db.Decimal(78, 0)
+  feeAmount Decimal  @map("fee_amount") @db.Decimal(78, 0)
+  feeToken  Int      @map("fee_token")
+
+  @@id([txHash, logIndex])
+  @@index([blockTime])
+  @@index([poolId, blockTime])
+  @@map("recent_swaps")
+}
+
 model SwapEvent {
   txHash    String   @map("tx_hash")
   logIndex  Int      @map("log_index")

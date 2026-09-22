@@ -39,6 +39,7 @@ import { resolveUsdg } from '../indexer/anchor';
 import { indexedAsOf } from '../indexer/as-of';
 import { isEtherSql, tradedSide } from '../indexer/aggregate';
 import { POOL_MANAGER_CURSOR } from '../indexer/poller';
+import { recentEthPrice, recentMarket } from './recent';
 
 /** Buckets in a row's fee sparkline, and therefore hours per bucket. */
 const SPARK_BUCKETS = 14;
@@ -707,6 +708,14 @@ export async function buildSnapshot(
   ]);
 
   const pools = onePoolPerToken(rows.map(toPool));
+
+  // Today, from the chain's own head (recent.ts). The figures above are
+  // measured back from the last block the backfill indexed, which during a
+  // first sync is weeks ago; this is the same arithmetic over the last day of
+  // blocks, for every pool rather than only the ones an aggregator lists.
+  const now = await recentMarket(anchor.address);
+  if (now.size > 0) for (const pool of pools) pool.now = now.get(pool.id) ?? null;
+
   if (options.market) {
     for (const pool of pools) pool.market = options.market.quote(pool.token.address);
     // And the wrapper, for the masthead's ETH price: with the ether market's
@@ -766,6 +775,10 @@ export async function buildSnapshot(
   // every dollar on the site; this only decides what the ETH row reads, and
   // the row says which it is.
   const liveEth = options.market?.ethPrice() ?? null;
+  // Failing an aggregator, the anchor pool's own price at the chain's head,
+  // which is the same derivation as the row below over blocks minutes old
+  // rather than weeks (§25).
+  const nowEth = liveEth ? null : await recentEthPrice(anchor.address);
   return {
     pools,
     vaults,
@@ -774,10 +787,10 @@ export async function buildSnapshot(
       totalPositions: totals?.positions ?? 0,
       totalFeesUsd: totals?.fees_usd ?? 0,
       tvlUsd,
-      ethPriceUsd: liveEth?.usd ?? ethRow?.price_usd ?? 0,
-      ethPriceBasis: liveEth ? 'live' : 'chain',
+      ethPriceUsd: liveEth?.usd ?? nowEth?.usd ?? ethRow?.price_usd ?? 0,
+      ethPriceBasis: liveEth ? 'live' : nowEth ? 'chain-now' : 'chain',
       ethPriceSource: liveEth?.source,
-      ethPriceAt: liveEth?.at ?? asOf.toISOString(),
+      ethPriceAt: liveEth?.at ?? nowEth?.at ?? asOf.toISOString(),
     },
     featured: {
       fees24hUsd,

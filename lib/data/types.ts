@@ -105,6 +105,32 @@ export interface MarketQuote {
 
 export type MarketSourceName = 'dexscreener' | 'geckoterminal';
 
+/**
+ * Today, from the chain (§25).
+ *
+ * Every other figure on a row is measured back from the last block the
+ * backfill indexed, which during a first sync is weeks ago. A second reader
+ * follows the chain's head and keeps the last day of swaps, so the one
+ * question that has to be current — what traded today — is answered from the
+ * chain rather than from an aggregator, for every pool, not only the ones an
+ * aggregator lists.
+ *
+ * Only what a day of swaps can say is here. Liquidity, the fee yield and the
+ * sparkline are sums over a pool's whole history and stay the indexer's.
+ */
+export interface ChainNow {
+  volume24hUsd: number;
+  trades24h: number;
+  buys24h: number;
+  sells24h: number;
+  buyVolume24hUsd: number;
+  sellVolume24hUsd: number;
+  priceUsd: number | null;
+  change24hPct: number | null;
+  /** Chain time of the newest swap behind these figures, ISO. */
+  at: string;
+}
+
 export interface Pool {
   id: string;
   address: string;
@@ -180,6 +206,8 @@ export interface Pool {
   volumeHistory: number[];
   /** See MarketQuote. */
   market?: MarketQuote | null;
+  /** See ChainNow. */
+  now?: ChainNow | null;
   feeYield: FeeYield;
 }
 
@@ -285,12 +313,13 @@ export interface GlobalStats {
   tvlUsd: number;
   ethPriceUsd: number;
   /**
-   * Where the ETH figure came from: an aggregator's quote for the wrapper,
-   * live, or the chain's anchor price at the last indexed block. Absent on
-   * simulated data. The masthead labels it, because during a sync the two
-   * are weeks apart (§7).
+   * Where the ETH figure came from: an aggregator's quote for the wrapper
+   * (`live`), the anchor pool's own price at the chain's head (`chain-now`,
+   * §25), or the anchor price at the last block the backfill indexed
+   * (`chain`). Absent on simulated data. The masthead labels it, because
+   * during a sync those are weeks apart (§7).
    */
-  ethPriceBasis?: 'live' | 'chain';
+  ethPriceBasis?: 'live' | 'chain' | 'chain-now';
   ethPriceSource?: MarketSourceName;
   /** When that price was read, ISO. */
   ethPriceAt?: string;

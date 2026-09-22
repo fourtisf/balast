@@ -249,19 +249,25 @@ function Row({
       <div
         className="lb-fig lb-vol"
         title={
-          volume.basis === 'live'
-            ? `Volume over the last 24 hours from ${quoted}${across}` +
-              (pool.market && pool.market.pairs > 0
-                ? ` (deepest: ${pool.market.dexId || 'pair'} ${pool.market.pairAddress.slice(0, 10)}…)`
-                : '')
-            : pool.market === null
-              ? "Volume over the last 24 hours of chain time in this pool, from indexed swaps. No aggregator has a fresh quote for this token."
-              : 'Volume over the last 24 hours of chain time in this pool, from indexed swaps.'
+          volume.basis === 'chain-now'
+            ? "Volume over the last 24 hours in this pool, from the chain's own head — the same arithmetic as every other figure here, over blocks minutes old rather than the backfill's."
+            : volume.basis === 'live'
+              ? `Volume over the last 24 hours from ${quoted}${across}` +
+                (pool.market && pool.market.pairs > 0
+                  ? ` (deepest: ${pool.market.dexId || 'pair'} ${pool.market.pairAddress.slice(0, 10)}…)`
+                  : '')
+              : pool.market === null
+                ? "Volume over the last 24 hours of chain time in this pool, from indexed swaps. Neither the chain's head nor an aggregator has anything newer."
+                : 'Volume over the last 24 hours of chain time in this pool, from indexed swaps.'
         }
       >
         <Flash as="div" className="big num" text={usd(volume.value)} />
+        {/* Three words, because there are three answers and they are weeks
+            apart: `now` is the chain's own head, `live` an aggregator, and
+            `chain` the backfill's last indexed day (§25). */}
         <span className="cap">
-          vol · 24h{volume.basis === 'live' ? ' · live' : pool.market === null ? ' · chain' : ''}
+          vol · 24h
+          {volume.basis === 'chain-now' ? ' · now' : volume.basis === 'live' ? ' · live' : ' · chain'}
         </span>
       </div>
 
@@ -294,7 +300,10 @@ function Row({
               split.unit === 'trades'
                 ? `${split.buys.toLocaleString()} buys and ${split.sells.toLocaleString()} sells over 24h ` +
                   `from ${quoted}${across}. The feed splits the day into trades, not dollars.`
-                : `${usd(split.buys)} bought and ${usd(split.sells)} sold over 24h in this pool, from indexed swaps`
+                : `${usd(split.buys)} bought and ${usd(split.sells)} sold over 24h in this pool, ` +
+                  (split.basis === 'chain-now'
+                    ? "from the chain's own head. It sums to the volume beside it."
+                    : 'from indexed swaps')
             }
           >
             <span className="lb-side">
@@ -338,9 +347,11 @@ function Row({
         className="lb-chg"
         text={change.value === null ? '—' : change.value.toFixed(1)}
         title={
-          change.basis === 'live'
-            ? `24h price change from ${quoted}, on the deepest pair`
-            : '24h price change from indexed swaps, in this pool'
+          change.basis === 'chain-now'
+            ? "24h price change in this pool, from the chain's own head"
+            : change.basis === 'live'
+              ? `24h price change from ${quoted}, on the deepest pair`
+              : '24h price change from indexed swaps, in this pool'
         }
       >
         <Change pct={change.value} />
