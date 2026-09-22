@@ -3849,3 +3849,50 @@ fixture chain and not against Robinhood Chain. The first thing to look at on
 the box is `/api/health`'s `head`: a `swaps` of zero means it has written
 nothing, and `pm2 logs balast-indexer` carries a `head` line per pass saying
 how far from head it still is.
+
+---
+
+## 26. A token has more than one market
+
+ALFA, on `/positions` with VIRTUAL / USDG selected and `Balance 0` beside the
+deposit box: *mengapa tidak ada pilihan paired dengan / ETH*. Why is there no
+option for the ether pair.
+
+Because the page had never been sent one. §19 made the board a token listing
+and §20 made a token's row its deepest pool, and `onePoolPerToken` did that by
+**dropping** the others from the snapshot entirely. So the client held exactly
+one pool per token, and the builder's select could only ever offer that one.
+A wallet holding ether was shown a token's USDG market, a balance of zero, and
+no way to reach the ether market that had been indexed all along.
+
+That is right for the board and wrong for the builder, and the difference is
+what each is for. The board answers "which tokens are worth looking at", and
+one row per token is what makes it readable — and what makes the masthead's
+totals sum to the rows beneath them (§12). The builder answers "which market
+do I want to be in", and there the pair is most of the question: the quote
+currency decides whether a wallet can enter at all, and the fee tier decides
+what the position earns.
+
+So the snapshot carries both. `pools` is the board, unchanged, and every total
+is still summed from it alone. `otherPools` is the rest of a listed token's
+pools — a different quote, a different fee tier — on the board's own listing
+terms, in no total, and with their sparklines stripped, since nothing draws
+one for them and fourteen buckets apiece over a few hundred pools is payload
+the page polls for nothing.
+
+The builder reads both, and its select names the fee tier only where a token
+offers more than one pool, so the common case stays a pair and nothing else.
+The entries are sorted by ticker, which is how a person looks for one.
+
+`server/api/one-per-token.test.ts` had proved a token appears once on the
+board; it now also proves the other pool survives, carries its key and its
+fee tier, is absent from the board, and duplicates nothing that would make a
+total count twice.
+
+**What this does not do** is offer a pool below the listing bar. A pool with
+no real money behind it (§24's backing test) stays unlisted everywhere,
+including here, because minting into one is not a thing to offer. So a token
+whose ether market is dust still shows only its USDG market — and a token
+with no ether pool on this chain shows only what exists. Those two look the
+same from the page, and telling them apart is `npm run market:probe` and the
+explorer.

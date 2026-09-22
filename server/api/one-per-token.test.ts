@@ -78,4 +78,30 @@ describe('a token with two pools', () => {
     const symbols = snapshot!.pools.map((p) => p.token.address);
     expect(new Set(symbols).size).toBe(symbols.length);
   });
+
+  it('keeps the shallower pool, off the board, for the builder to offer', async () => {
+    // Collapsed away entirely, a person choosing where to provide liquidity
+    // was offered whichever pool happened to be deepest and nothing else —
+    // so a wallet holding ether saw a token's USDG pool with "Balance 0"
+    // beside the deposit box and no way to pick the ether market (§26). The
+    // board stays one row per token; the other markets ride beside it.
+    const snapshot = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0 });
+    const board = snapshot!.pools.filter((p) => p.token.symbol === 'NVDA');
+    const rest = (snapshot!.otherPools ?? []).filter((p) => p.token.symbol === 'NVDA');
+    expect(board).toHaveLength(1);
+    expect(rest).toHaveLength(1);
+    expect(rest[0].id).not.toBe(board[0].id);
+
+    // A pool worth minting into: it carries its key and its fee tier.
+    expect(rest[0].feeTierBps).not.toBe(board[0].feeTierBps);
+    expect(rest[0].key).toBeDefined();
+
+    // And nothing on the board is repeated in it, so no total counts twice.
+    const boardIds = new Set(snapshot!.pools.map((p) => p.id));
+    for (const p of snapshot!.otherPools ?? []) expect(boardIds.has(p.id)).toBe(false);
+
+    // No sparkline: nothing draws one for these, and the page polls.
+    expect(rest[0].feeHistory).toEqual([]);
+    expect(rest[0].volumeHistory).toEqual([]);
+  });
 });

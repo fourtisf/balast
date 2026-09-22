@@ -359,7 +359,24 @@ export interface RouterPlan {
 }
 
 export interface MarketSnapshot {
+  /**
+   * The board: one row per token, its deepest pool (§20). Every total the
+   * masthead shows is summed from these, so the header cannot disagree with
+   * the table beneath it (§12) — which is why a token's other pools are not
+   * in here.
+   */
   pools: Pool[];
+  /**
+   * A listed token's OTHER pools: the same token quoted in a different
+   * currency, or at a different fee tier.
+   *
+   * Not on the board, and not in any total. They are here because choosing
+   * where to provide liquidity is choosing a market, and which currency it
+   * is quoted in decides whether a wallet can enter it at all — a wallet
+   * holding ether was offered a token's USDG pool and nothing else, with
+   * "Balance 0" beside the deposit box (§26). Absent on simulated data.
+   */
+  otherPools?: Pool[];
   vaults: Vault[];
   portfolio: Portfolio;
   global: GlobalStats;

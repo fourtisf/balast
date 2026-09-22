@@ -34,14 +34,18 @@ const SHAPE_ICONS: Record<ShapeId, number[]> = {
  * an unverified one that the select could not even show.
  */
 export function ShapeBuilder() {
-  const { pools } = useMarket();
-  const stakeablePools = pools.filter((p) => p.stakeable);
+  const { pools, otherPools } = useMarket();
+  // The board keeps one pool per token (§20); a token's other markets ride
+  // beside it. Here they matter: the pair is what a person is choosing, and
+  // which currency it is quoted in decides whether their wallet can enter it.
+  const everyPool = useMemo(() => [...pools, ...(otherPools ?? [])], [pools, otherPools]);
+  const stakeablePools = everyPool.filter((p) => p.stakeable);
   if (stakeablePools.length === 0) {
     return (
       <div className="card">
         <div className="empty">
-          <b>{pools.length === 0 ? 'Nothing to mint into yet' : 'No pool is offered for minting'}</b>
-          {pools.length === 0
+          <b>{everyPool.length === 0 ? 'Nothing to mint into yet' : 'No pool is offered for minting'}</b>
+          {everyPool.length === 0
             ? 'No pool is listed yet. The builder opens on the first one the indexer lists.'
             : 'Every listed pool runs a hook Balast has not verified. A hook can refuse liquidity ' +
               'or take most of every trade as its fee, so none is offered until someone has looked ' +
@@ -50,7 +54,7 @@ export function ShapeBuilder() {
       </div>
     );
   }
-  return <Builder pools={pools} stakeablePools={stakeablePools} />;
+  return <Builder pools={everyPool} stakeablePools={stakeablePools} />;
 }
 
 function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Pool[] }) {
@@ -86,6 +90,23 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
   }, [wantedPool, pools.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pool = stakeablePools.find((p) => p.id === poolId) ?? stakeablePools[0];
+
+  // The select's entries, deepest first within a token, and the tier named
+  // only where a token offers more than one pool.
+  const options = useMemo(() => {
+    const perToken = new Map<string, number>();
+    for (const p of stakeablePools) {
+      const key = p.token.address.toLowerCase();
+      perToken.set(key, (perToken.get(key) ?? 0) + 1);
+    }
+    return stakeablePools
+      .slice()
+      .sort(
+        (a, b) =>
+          a.token.symbol.localeCompare(b.token.symbol) || b.tvlUsd - a.tvlUsd || a.feeTierBps - b.feeTierBps,
+      )
+      .map((p) => ({ pool: p, withTier: (perToken.get(p.token.address.toLowerCase()) ?? 0) > 1 }));
+  }, [stakeablePools]);
   const shapeMeta = SHAPES.find((s) => s.id === shape)!;
   const weights = useMemo(() => (fullRange ? [1] : shapeWeights(shape, bins)), [shape, bins, fullRange]);
 
@@ -223,9 +244,14 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
           <label htmlFor="b-token">Token</label>
           <div className="inp" style={{ height: 46 }}>
             <select id="b-token" value={poolId} onChange={(e) => setPoolId(e.target.value)}>
-              {stakeablePools.map((p) => (
+              {/* A token has several markets — a different quote currency, a
+                  different fee tier — and they are different pools to be in.
+                  The tier is named only where a token has more than one, so
+                  the common case stays a pair and nothing else. */}
+              {options.map(({ pool: p, withTier }) => (
                 <option key={p.id} value={p.id}>
-                  {p.token.symbol} / {p.quote === 'ETH' ? 'ETH' : p.quote}
+                  {p.token.symbol} / {quoteLabel(p)}
+                  {withTier ? ` · ${(p.feeTierBps / 100).toFixed(2).replace(/\.?0+$/, '')}%` : ''}
                 </option>
               ))}
             </select>

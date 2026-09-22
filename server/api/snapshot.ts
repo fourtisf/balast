@@ -642,16 +642,20 @@ async function queryRouter(pools: Pool[]): Promise<RouterPlan> {
  *
  * Rows arrive ordered by TVL descending, so the first seen per token wins.
  */
-function onePoolPerToken(pools: Pool[]): Pool[] {
+function onePoolPerToken(pools: Pool[]): { board: Pool[]; rest: Pool[] } {
   const seen = new Set<string>();
-  const kept: Pool[] = [];
+  const board: Pool[] = [];
+  const rest: Pool[] = [];
   for (const pool of pools) {
     const key = pool.token.address.toLowerCase();
-    if (seen.has(key)) continue;
+    if (seen.has(key)) {
+      rest.push(pool);
+      continue;
+    }
     seen.add(key);
-    kept.push(pool);
+    board.push(pool);
   }
-  return kept;
+  return { board, rest };
 }
 
 /**
@@ -707,17 +711,37 @@ export async function buildSnapshot(
     queryPortfolio(options.wallet ?? null),
   ]);
 
-  const pools = onePoolPerToken(rows.map(toPool));
+  // The board is a token listing — one row per token, its deepest pool (§20).
+  // The token's OTHER pools are kept rather than dropped: a person choosing
+  // where to provide liquidity is choosing a market, and which currency it is
+  // quoted in decides whether they can enter it at all. Collapsed away, a
+  // wallet holding ether was offered a token's USDG pool and nothing else,
+  // with "Balance 0" beside the deposit box and no way to pick the ether
+  // market that was indexed all along.
+  const { board: pools, rest: otherPools } = onePoolPerToken(rows.map(toPool));
+  // No sparklines on the ones that are not on the board: nothing draws them,
+  // and fourteen buckets apiece over a few hundred pools is payload the page
+  // polls every twenty seconds for nothing.
+  for (const pool of otherPools) {
+    pool.feeHistory = [];
+    pool.volumeHistory = [];
+  }
 
   // Today, from the chain's own head (recent.ts). The figures above are
   // measured back from the last block the backfill indexed, which during a
   // first sync is weeks ago; this is the same arithmetic over the last day of
   // blocks, for every pool rather than only the ones an aggregator lists.
   const now = await recentMarket(anchor.address);
-  if (now.size > 0) for (const pool of pools) pool.now = now.get(pool.id) ?? null;
+  if (now.size > 0) {
+    for (const pool of pools) pool.now = now.get(pool.id) ?? null;
+    for (const pool of otherPools) pool.now = now.get(pool.id) ?? null;
+  }
 
   if (options.market) {
     for (const pool of pools) pool.market = options.market.quote(pool.token.address);
+    // The same token's quote on its other pools, so a builder opened on one
+    // of them shows the same figures the board showed.
+    for (const pool of otherPools) pool.market = options.market.quote(pool.token.address);
     // And the wrapper, for the masthead's ETH price: with the ether market's
     // own pool when it is on the board, so the feed reports that pool's
     // liquidity beside the token's.
@@ -781,6 +805,7 @@ export async function buildSnapshot(
   const nowEth = liveEth ? null : await recentEthPrice(anchor.address);
   return {
     pools,
+    otherPools,
     vaults,
     portfolio,
     global: {
