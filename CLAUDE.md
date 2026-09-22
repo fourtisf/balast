@@ -3567,3 +3567,41 @@ fees, which a token nobody trades never has. Hiding the zero-volume rows
 outright is one filter, offered and not made: a real token can have a
 quiet day, and a board that hides it says less than one that ranks it
 last.
+
+### The top of the board: a $210M cap on $1.1K of volume
+
+The board after that deploy, ranks 1 to 6: VIRTUAL; a CASHCAT with chain
+figures only and a 24h change of `+14380.4%`; SMK2 at `MC $210.03M` on
+`$1.1K` of volume, four buys and four sells; the real CASHCAT, with the
+logo, the live quote and `$20.73M` of volume, at rank 4; Analyst at `MC
+$81.30M` on one dollar of chain volume; then Index. ALFA: *saya ingin
+yang top-top ini difilter dari top MC serta vol, dan pastikan vol
+valid* — the top should be the top by market cap *and* volume, and the
+volume has to be a real one.
+
+Volume above zero was too low a bar. A market cap is a supply at a
+price, and a price from four trades supports nothing; and a chain figure
+during a sync is a day weeks ago — CASHCAT's `$232.3K · chain` and
+Analyst's `$1 · chain` are July's — which is not a claim about today.
+"Valid" here means measured today, by a source that is watching the
+market now: a live quote.
+
+So the market-cap ranking has three tiers (`rankTier` in
+`lib/market-figures.ts`), and the cap orders each:
+
+0. a live quote with volume today of at least `RANK_MIN_VOLUME_USD`
+   ($10,000) — a market somebody is in, measured today;
+1. some volume, but under the bar or only the chain's figure;
+2. none.
+
+The volume facet ranks live figures ahead of the chain's for the same
+reason. The subtitle under the board says which tier the top is, and the
+bar is **ALFA's number** like the listing bar's (§19): a first guess at
+"a market somebody is in", not a measurement. Tested against exactly
+that board.
+
+Two things this does not do. It does not tell the two CASHCATs apart by
+name — they are two tokens with one symbol, and the row shows each
+token's own address in the drawer, which is the only honest
+disambiguation. And it does not hide anything: the thin and the stale
+follow the projects, and a quiet day is visible rather than gone.

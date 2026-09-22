@@ -192,20 +192,51 @@ export function capKey(pool: Pool): number {
 }
 
 /**
- * The market-cap ranking, as a list.
+ * The live volume a token needs today to be ranked among the projects.
  *
- * A cap alone put the dead tokens first (§24): a launchpad token nobody has
- * traded carries its whole supply at the curve's floor, and an aggregator
- * reports that as a market cap and a liquidity of tens of millions — beside
- * a day's volume of zero. A figure nobody has paid is not a project. So a
- * token with no volume today ranks after every token with some, whatever
- * its cap; within each tier the cap decides, then depth. The zero-volume
- * tokens stay on the board, at the end, where a quiet day is visible
- * rather than hidden.
+ * ALFA's number, like the listing bar's (§19): a first guess at "a market
+ * somebody is in", not a measurement. The board that set it had a $210M
+ * market cap at rank 3 on $1.1K of volume — four buys, four sells.
  */
+export const RANK_MIN_VOLUME_USD = 10_000;
+
+/**
+ * Which tier of the board a token ranks in (§24).
+ *
+ *   0  a live quote, and volume today of at least RANK_MIN_VOLUME_USD —
+ *      a market somebody is in, measured today.
+ *   1  some volume, but under the bar or only the chain's figure — which
+ *      during a sync is weeks old, and is not a claim about today.
+ *   2  none at all.
+ *
+ * A market cap alone put the dead tokens first: a launchpad token nobody
+ * has traded carries its whole supply at the curve's floor, and an
+ * aggregator reports that as a market cap of tens of millions beside a
+ * day's volume of zero. A figure nobody has paid is not a project. So the
+ * volume decides the tier and the cap decides the order within it, and a
+ * quiet token is still on the board — at the end, visible rather than
+ * hidden.
+ */
+export function rankTier(pool: Pool): 0 | 1 | 2 {
+  const volume = shownVolume(pool);
+  if (volume.basis === 'live' && volume.value >= RANK_MIN_VOLUME_USD) return 0;
+  if (volume.value > 0) return 1;
+  return 2;
+}
+
+/** The market-cap ranking, as a list: by tier, then by cap, then by depth. */
 export function rankByCap(pools: Pool[]): Pool[] {
-  const traded = (p: Pool): number => (shownVolume(p).value > 0 ? 1 : 0);
-  return pools.slice().sort((a, b) => traded(b) - traded(a) || capKey(b) - capKey(a) || b.tvlUsd - a.tvlUsd);
+  return pools.slice().sort((a, b) => rankTier(a) - rankTier(b) || capKey(b) - capKey(a) || b.tvlUsd - a.tvlUsd);
+}
+
+/**
+ * The volume ranking: live figures ahead of the chain's, then by volume.
+ * A chain figure during a sync is a day weeks ago; a live one is today's,
+ * and today's is what a volume ranking claims to show.
+ */
+export function rankByVolume(pools: Pool[]): Pool[] {
+  const live = (p: Pool): number => (shownVolume(p).basis === 'live' ? 0 : 1);
+  return pools.slice().sort((a, b) => live(a) - live(b) || shownVolume(b).value - shownVolume(a).value);
 }
 
 /** `12s ago`, `4m ago` — how old a live quote is. */

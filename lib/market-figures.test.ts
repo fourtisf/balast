@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import { NATIVE_ETH } from './chain';
 import type { MarketQuote, Pool } from './data/types';
-import { capKey, rankByCap, shownCap, shownChange, shownLiquidity, shownSplit, shownVolume } from './market-figures';
+import { RANK_MIN_VOLUME_USD, capKey, rankByCap, rankByVolume, rankTier, shownCap, shownChange, shownLiquidity, shownSplit, shownVolume } from './market-figures';
 
 function quote(overrides: Partial<MarketQuote> = {}): MarketQuote {
   return {
@@ -138,6 +138,31 @@ describe('market cap', () => {
     expect(rankByCap([dead, small, big, chainOnly]).map((p) => p.id)).toEqual(['big', 'chain', 'small', 'dead']);
     // And still on the board, last, rather than hidden.
     expect(rankByCap([dead])).toHaveLength(1);
+  });
+
+  it('ranks among the projects only a token with live volume over the bar today', () => {
+    // Rank 3 on the live board was a $210M cap on $1.1K of volume — four
+    // buys, four sells — and rank 5 an $81M cap on one dollar of chain
+    // volume from a day weeks ago. Neither is a market somebody is in.
+    const thin = pool({ id: 'thin', market: quote({ marketCapUsd: 210_000_000, volume24hUsd: 1_100 }) });
+    const stale = pool({ id: 'stale', marketCapUsd: 81_000_000, volume24hUsd: 1 });
+    const real = pool({ id: 'real', market: quote({ marketCapUsd: 39_000_000, volume24hUsd: 5_460_000 }) });
+    const atBar = pool({ id: 'bar', market: quote({ marketCapUsd: 1_000_000, volume24hUsd: RANK_MIN_VOLUME_USD }) });
+    expect(rankTier(real)).toBe(0);
+    expect(rankTier(atBar)).toBe(0);
+    expect(rankTier(thin)).toBe(1);
+    expect(rankTier(stale)).toBe(1);
+    expect(rankTier(pool())).toBe(2);
+    expect(rankByCap([thin, stale, real, atBar]).map((p) => p.id)).toEqual(['real', 'bar', 'thin', 'stale']);
+  });
+
+  it('ranks live volume ahead of the chain’s, then by volume', () => {
+    // A chain figure during a sync is a day weeks ago; a volume ranking
+    // claims to show today, so the figures measured today come first.
+    const chainBig = pool({ id: 'chain-big', volume24hUsd: 232_300 });
+    const liveSmall = pool({ id: 'live-small', market: quote({ volume24hUsd: 1_100 }) });
+    const liveBig = pool({ id: 'live-big', market: quote({ volume24hUsd: 20_730_000 }) });
+    expect(rankByVolume([chainBig, liveSmall, liveBig]).map((p) => p.id)).toEqual(['live-big', 'live-small', 'chain-big']);
   });
 });
 

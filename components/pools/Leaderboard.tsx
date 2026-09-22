@@ -11,7 +11,7 @@ import { useFlip } from '@/hooks/useFlip';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import type { Pool, Quote } from '@/lib/data/types';
 import { ageLabel, usd } from '@/lib/format';
-import { ago, buyShare, rankByCap, shownCap, shownChange, shownLiquidity, shownSplit, shownVolume, sourceName } from '@/lib/market-figures';
+import { RANK_MIN_VOLUME_USD, ago, buyShare, rankByCap, rankByVolume, shownCap, shownChange, shownLiquidity, shownSplit, shownVolume, sourceName } from '@/lib/market-figures';
 import {
   YIELD_WINDOW_HOURS,
   feeYieldQualifier,
@@ -61,9 +61,7 @@ export function Leaderboard() {
       );
 
     if (facet === 'mc') return rankByCap(matching);
-    if (facet === 'volume') {
-      return matching.slice().sort((a, b) => shownVolume(b).value - shownVolume(a).value);
-    }
+    if (facet === 'volume') return rankByVolume(matching);
     return matching
       .filter((p) => p.ageHours >= YIELD_WINDOW_HOURS)
       .slice()
@@ -79,9 +77,9 @@ export function Leaderboard() {
           </h2>
           <p className="lb-sub">
             {facet === 'mc'
-              ? 'Ranked by market cap · tokens with no volume today rank last · fee yield appears at seven days of history'
+              ? `Ranked by market cap among tokens with ${usd(RANK_MIN_VOLUME_USD)}+ of live volume today · the rest follow, quiet tokens last`
               : facet === 'volume'
-                ? 'Ranked by 24h volume · fee yield appears at seven days of history'
+                ? 'Ranked by 24h volume · live figures rank ahead of the chain\u2019s · fee yield appears at seven days of history'
                 : 'Ranked by fee yield, trailing 7d · only pools with seven days of history'}
           </p>
         </div>
