@@ -36,6 +36,7 @@ import { MIN_DATA_HOURS, YIELD_WINDOW_HOURS } from '../../lib/yield';
 import { prisma } from '../db';
 import { env } from '../env';
 import { resolveUsdg } from '../indexer/anchor';
+import { indexedAsOf } from '../indexer/as-of';
 import { isEtherSql, tradedSide } from '../indexer/aggregate';
 import { POOL_MANAGER_CURSOR } from '../indexer/poller';
 
@@ -651,7 +652,9 @@ export async function buildSnapshot(
   const anchor = await resolveUsdg(options.usdgAddress);
   if (!anchor.address) return null;
 
-  const asOf = cursor.lastIndexedAt;
+  // The newest row indexed, or the cursor's time if later (indexer/as-of.ts):
+  // a cursor moved back for a repair must not empty the board's windows.
+  const asOf = await indexedAsOf(cursor.lastIndexedAt);
   const [rows, vaults, portfolio] = await Promise.all([
     queryPools(
       anchor.address,

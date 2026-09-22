@@ -25,6 +25,7 @@ import { maxUsableTick, minUsableTick } from '../../lib/v4/pool';
 import { amountsForLiquidity } from '../chain/tick-math';
 import { prisma } from '../db';
 import { resolveUsdg } from '../indexer/anchor';
+import { indexedAsOf } from '../indexer/as-of';
 import { POOL_MANAGER_CURSOR } from '../indexer/poller';
 
 export interface PortfolioResponse {
@@ -89,6 +90,7 @@ export async function buildPortfolio(wallet: string, usdgAddress?: string | null
   const anchor = await resolveUsdg(usdgAddress);
   if (!anchor.address) return null;
   const usdg = anchor.address.toLowerCase();
+  const asOf = await indexedAsOf(cursor.lastIndexedAt);
 
   const [ethRow] = await prisma.$queryRaw<{ price_usd: number }[]>`
     SELECT COALESCE(weth_usd, 0)::float8 AS price_usd FROM weth_usd_hourly ORDER BY hour DESC LIMIT 1
@@ -154,7 +156,7 @@ export async function buildPortfolio(wallet: string, usdgAddress?: string | null
         WHERE pool_id = ${row.pool_id} AND tick >= ${row.tick_lower} AND tick < ${row.tick_upper}
       `;
       const since = last?.at ?? row.minted_at;
-      if (since) outOfRangeSinceHours = Math.max(0, (cursor.lastIndexedAt.getTime() - new Date(since).getTime()) / 3_600_000);
+      if (since) outOfRangeSinceHours = Math.max(0, (asOf.getTime() - new Date(since).getTime()) / 3_600_000);
     }
 
     const tokenAddress = tokenFirst ? row.token0 : row.token1;
@@ -211,7 +213,7 @@ export async function buildPortfolio(wallet: string, usdgAddress?: string | null
 
   return {
     wallet: owner,
-    asOf: cursor.lastIndexedAt.toISOString(),
+    asOf: asOf.toISOString(),
     positions,
     netValueUsd: positions.reduce((a, p) => a + p.valueUsd, 0),
     priceImpactUsd: positions.reduce((a, p) => a + (p.priceImpactUsd ?? 0), 0),

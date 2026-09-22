@@ -155,6 +155,26 @@ export class ViemLogSource implements LogSource {
     return result;
   }
 
+  /** These blocks' timestamps, fetched the same way and cached the same way. */
+  async timeBlocks(blocks: bigint[]): Promise<Map<bigint, Date>> {
+    const missing = [...new Set(blocks)].filter((b) => !this.times.has(b));
+    if (this.batching && missing.length > 1) {
+      try {
+        await this.fetchBatched(missing);
+      } catch (error) {
+        this.batching = false;
+        this.log(`  endpoint refused a JSON-RPC batch (${(error as Error).message.split('\n')[0]}) — reading block times one call each from here on`);
+      }
+    }
+    await this.fetchPlain(missing.filter((b) => !this.times.has(b)));
+    const result = new Map<bigint, Date>();
+    for (const block of blocks) {
+      const time = this.times.get(block);
+      if (time) result.set(block, time);
+    }
+    return result;
+  }
+
   /** One HTTP request per RPC_BATCH_SIZE blocks. */
   private async fetchBatched(blocks: bigint[]): Promise<void> {
     for (let i = 0; i < blocks.length; i += RPC_BATCH_SIZE) {

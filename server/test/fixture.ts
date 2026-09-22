@@ -588,6 +588,12 @@ export class FixtureLogSource implements LogSource {
     return times;
   }
 
+  async timeBlocks(blocks: bigint[]): Promise<Map<bigint, Date>> {
+    const times = new Map<bigint, Date>();
+    for (const b of blocks) times.set(b, this.chain.blockTime(Number(b)));
+    return times;
+  }
+
   async getLogs(args: {
     address?: string | string[];
     topics?: string[];

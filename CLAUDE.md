@@ -3495,3 +3495,49 @@ board, labelled with its age, and both give way to the first fresh one.
 `server/api/server.test.ts` proves the API half — a new process with no
 cursor at all serves the kept snapshot, aged, from its first request and
 its second; `lib/data/snapshot-cache.test.ts` the browser half.
+
+### The repair that rewound four million blocks
+
+The deploy summary after the repair landed: *first sync running (0.43% of
+the chain): block 305284 of 69494974*. The cursor had been past four
+million. ALFA: *mengapa masih error, apa masalahnya*.
+
+The repair above did what it said — and what it said was wrong. It
+**deleted** every row stamped before the floor and moved the cursor back
+to the block before the earliest of them, so that the poller would read
+that range again. The earliest such row was at block 305,285: the v3
+factory's history walk (§20) had timed rows across the whole chain, so a
+zeroed answer during it left 1970 rows all the way back. The re-read is
+four million blocks at the poller's forty a second — a day and more — to
+recover rows that were never wrong about anything but their clock. And
+with the cursor at block 305,284, every window the board measures back
+from the cursor's time (§14) ended in the chain's first weeks: the board
+showed near nothing over tables that still held everything.
+
+Two changes, and the first is why the site is whole again while the
+re-read runs.
+
+**"Now" is the newest row indexed** (`server/indexer/as-of.ts`), or the
+cursor's time when that is later, which on a healthy box it always is.
+The snapshot and the portfolio measure their windows from it, so a
+cursor moved back for any reason leaves the board where it was; the
+cursor still says only where reading resumes. The top bar's lag is the
+data's age, as §7 wants; `/api/health`'s progress is the cursor's.
+
+**The repair re-times rows in place.** The rows carry their block
+numbers, and a block's time is one `getBlock` away — so the repair now
+asks the node for the bad blocks' timestamps (`LogSource.timeBlocks`,
+batched as the pass's own reads are), writes them onto the rows, and
+deletes nothing and moves nothing. A block the node will not answer for
+is logged and tried again on the next start. The suite gives a synced
+database the box's state and asserts the pass that follows starts at the
+re-scan behind the cursor, not at the bad rows; that every row is kept
+and every one is timed as the chain times it; and that the tables equal
+a clean sync's.
+
+What this cannot undo is the deletion the first version already did on
+the box. Those rows come back only as the re-read reaches their blocks,
+and the re-read runs at the poller's pace behind the board; the board
+does not wait for it. Nothing else was lost: the rows behind the cursor
+that carried real times were never touched, and the cursor's own time
+was restored from them.

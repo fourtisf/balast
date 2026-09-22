@@ -1,5 +1,5 @@
 /**
- * Rows stamped with a time that is not a time, undone.
+ * Rows stamped with a time that is not a time, re-timed in place.
  *
  * Before chain/block-time.ts refused them, an endpoint's zeroed timestamp
  * went straight into the pass: the cursor's chain time became 1 January
@@ -9,19 +9,26 @@
  * reach. The source refuses such a stamp now; this puts right what was
  * written before it did.
  *
- * The repair is a rewind, not a guess. Rows before the floor are deleted,
- * the aggregate hours before it with them, and the cursor is moved back to
- * the block before the earliest of them — so the next pass reads those
- * blocks again, times them properly, and the rebuild-never-increment rule
- * (§14) does the rest. The cursor's own time is set from the newest row
- * still in the tables, and the full rebuild is forced so no stale hour
- * survives. Runs on every start; on a healthy box it finds nothing and
- * changes nothing.
+ * The rows are correct in everything but their time, and the time is one
+ * `getBlock` away: the block numbers are on the rows. So the repair asks
+ * the node for those blocks' timestamps and writes them onto the rows,
+ * deletes the aggregate hours before the floor, restores the cursor's own
+ * time from the newest row, and forces the full rebuild so no stale hour
+ * survives. Nothing is deleted from the raw tables and the cursor is not
+ * moved. The first version of this deleted the rows and rewound the cursor
+ * to before the earliest of them, which on the box was block 305,284 — a
+ * re-read of four million blocks to recover rows that were never wrong
+ * about anything but their clock (§24). A block the node will not answer
+ * for is left as it is, logged, and tried again on the next start.
+ *
+ * Runs on every start; on a healthy box it finds nothing and changes
+ * nothing.
  */
 
 import { CONTRACTS } from '../../lib/chain';
-import { MIN_BLOCK_TIME_MS } from '../chain/block-time';
+import { MIN_BLOCK_TIME_MS, isSaneBlockTime } from '../chain/block-time';
 import { prisma } from '../db';
+import type { LogSource } from './poller';
 
 /**
  * The poller's cursor row and its rebuilt-anchor marker, spelled here the
@@ -31,78 +38,104 @@ import { prisma } from '../db';
 export const POOL_MANAGER_CURSOR = `v4:${CONTRACTS.poolManager.toLowerCase()}`;
 export const REBUILT_ANCHOR_KEY = 'rebuilt_anchor';
 
+/** Blocks asked for at a time; the source batches them into as few requests as it can. */
+const CHUNK = 200;
+
 export interface TimeRepair {
-  /** Raw rows deleted for carrying a time before the floor. */
+  /** Distinct blocks whose rows carried a time before the floor. */
+  blocks: number;
+  /** Rows given their real time. */
   rows: number;
+  /** Blocks the node would not answer for; their rows are left and tried again next start. */
+  unanswered: number;
   /** Aggregate rows (hours before the floor) deleted. */
   hours: number;
-  /** The block the cursor was moved back to, when it was. */
-  rewoundTo: bigint | null;
   /** Whether the cursor's own chain time was replaced. */
   cursorTimeFixed: boolean;
 }
 
-export async function repairBlockTimes(log: (message: string) => void = () => {}): Promise<TimeRepair> {
+export async function repairBlockTimes(
+  source: LogSource | null,
+  log: (message: string) => void = () => {},
+): Promise<TimeRepair> {
   const floor = new Date(MIN_BLOCK_TIME_MS);
-  const result: TimeRepair = { rows: 0, hours: 0, rewoundTo: null, cursorTimeFixed: false };
+  const result: TimeRepair = { blocks: 0, rows: 0, unanswered: 0, hours: 0, cursorTimeFixed: false };
 
-  const [bad] = await prisma.$queryRaw<{ min_block: bigint | null; rows: bigint }[]>`
-    SELECT MIN(block_num) AS min_block, COUNT(*) AS rows FROM (
-      SELECT block_num FROM swap_events      WHERE block_time < ${floor}
-      UNION ALL
-      SELECT block_num FROM liquidity_events WHERE block_time < ${floor}
-      UNION ALL
+  const bad = await prisma.$queryRaw<{ block_num: bigint }[]>`
+    SELECT DISTINCT block_num FROM (
+      SELECT block_num FROM swap_events        WHERE block_time < ${floor}
+      UNION
+      SELECT block_num FROM liquidity_events   WHERE block_time < ${floor}
+      UNION
       SELECT block_num FROM position_transfers WHERE block_time < ${floor}
-    ) t
+    ) t ORDER BY block_num
   `;
-  const cursor = await prisma.indexerCursor.findUnique({ where: { contract: POOL_MANAGER_CURSOR } });
+  result.blocks = bad.length;
 
-  if (bad.min_block !== null) {
-    result.rows = Number(bad.rows);
-    await prisma.$executeRaw`DELETE FROM swap_events WHERE block_time < ${floor}`;
-    await prisma.$executeRaw`DELETE FROM liquidity_events WHERE block_time < ${floor}`;
-    await prisma.$executeRaw`DELETE FROM position_transfers WHERE block_time < ${floor}`;
+  if (bad.length > 0) {
+    if (!source) {
+      log(`  block times: ${bad.length} block(s) carry a time before ${floor.toISOString().slice(0, 10)} and no source is at hand to re-time them`);
+      result.unanswered = bad.length;
+    } else {
+      log(`  block times: ${bad.length} block(s) carry a time before ${floor.toISOString().slice(0, 10)}; asking the node for their real times`);
+      for (let i = 0; i < bad.length; i += CHUNK) {
+        const chunk = bad.slice(i, i + CHUNK).map((r) => BigInt(r.block_num));
+        let times: Map<bigint, Date>;
+        try {
+          times = await source.timeBlocks(chunk);
+        } catch (error) {
+          log(`  block times: the node refused ${chunk.length} block(s) (${(error as Error).message.split('\n')[0]}); left for the next start`);
+          result.unanswered += chunk.length;
+          continue;
+        }
+        for (const block of chunk) {
+          const time = times.get(block);
+          if (!time || !isSaneBlockTime(time)) {
+            result.unanswered++;
+            continue;
+          }
+          for (const table of ['swap_events', 'liquidity_events', 'position_transfers']) {
+            result.rows += await prisma.$executeRawUnsafe(
+              `UPDATE ${table} SET block_time = $1 WHERE block_num = $2 AND block_time < $3`,
+              time,
+              block,
+              floor,
+            );
+          }
+        }
+        if ((i / CHUNK) % 10 === 9) log(`  block times: ${Math.min(i + CHUNK, bad.length)} of ${bad.length} block(s) re-timed`);
+      }
+    }
   }
-  // The hours those rows were aggregated into, whether or not the rows are
-  // still here: an hour in 1970 is stale by definition.
+
+  // The hours those rows were aggregated into: an hour in 1970 is stale by
+  // definition, and the full rebuild below puts the rows in their real hours.
   for (const table of ['weth_usd_hourly', 'pool_flow_hourly', 'pool_fee_hourly']) {
     result.hours += await prisma.$executeRawUnsafe(`DELETE FROM ${table} WHERE hour < $1`, floor);
   }
 
-  if (cursor) {
-    const data: { lastIndexedBlock?: bigint; lastIndexedAt?: Date } = {};
-    if (bad.min_block !== null) {
-      const rewind = BigInt(bad.min_block) - 1n;
-      if (rewind < cursor.lastIndexedBlock) {
-        data.lastIndexedBlock = rewind < 0n ? 0n : rewind;
-        result.rewoundTo = data.lastIndexedBlock;
-      }
-    }
-    if (cursor.lastIndexedAt.getTime() < MIN_BLOCK_TIME_MS || data.lastIndexedBlock !== undefined) {
-      const upTo = data.lastIndexedBlock ?? cursor.lastIndexedBlock;
-      const [newest] = await prisma.$queryRaw<{ at: Date | null }[]>`
-        SELECT MAX(block_time) AS at FROM (
-          SELECT block_time FROM swap_events      WHERE block_num <= ${upTo}
-          UNION ALL
-          SELECT block_time FROM liquidity_events WHERE block_num <= ${upTo}
-        ) t
-      `;
-      if (newest?.at && newest.at.getTime() >= MIN_BLOCK_TIME_MS && newest.at.getTime() !== cursor.lastIndexedAt.getTime()) {
-        data.lastIndexedAt = newest.at;
-        result.cursorTimeFixed = true;
-      }
-    }
-    if (Object.keys(data).length > 0) {
-      await prisma.indexerCursor.update({ where: { contract: POOL_MANAGER_CURSOR }, data });
+  const cursor = await prisma.indexerCursor.findUnique({ where: { contract: POOL_MANAGER_CURSOR } });
+  if (cursor && (cursor.lastIndexedAt.getTime() < MIN_BLOCK_TIME_MS || result.rows > 0)) {
+    const [newest] = await prisma.$queryRaw<{ at: Date | null }[]>`
+      SELECT MAX(block_time) AS at FROM (
+        SELECT block_time FROM swap_events      WHERE block_num <= ${cursor.lastIndexedBlock}
+        UNION ALL
+        SELECT block_time FROM liquidity_events WHERE block_num <= ${cursor.lastIndexedBlock}
+      ) t
+    `;
+    if (newest?.at && isSaneBlockTime(newest.at) && newest.at.getTime() !== cursor.lastIndexedAt.getTime()) {
+      await prisma.indexerCursor.update({ where: { contract: POOL_MANAGER_CURSOR }, data: { lastIndexedAt: newest.at } });
+      result.cursorTimeFixed = true;
     }
   }
 
-  if (result.rows > 0 || result.hours > 0 || result.rewoundTo !== null || result.cursorTimeFixed) {
+  if (result.rows > 0 || result.hours > 0 || result.cursorTimeFixed) {
     // Every priced table is rebuilt from the raw rows on the next pass.
     await prisma.indexerState.deleteMany({ where: { key: REBUILT_ANCHOR_KEY } });
     log(
-      `  block times: ${result.rows} row(s) and ${result.hours} aggregate hour(s) carried a time before ${floor.toISOString().slice(0, 10)}` +
-        (result.rewoundTo !== null ? `; cursor rewound to block ${result.rewoundTo} to read them again` : '') +
+      `  block times: ${result.rows} row(s) across ${result.blocks - result.unanswered} block(s) re-timed, ` +
+        `${result.hours} aggregate hour(s) before the floor dropped` +
+        (result.unanswered > 0 ? `, ${result.unanswered} block(s) unanswered and left for the next start` : '') +
         (result.cursorTimeFixed ? '; cursor time restored from the newest row' : '') +
         ' — priced tables will be rebuilt in full',
     );

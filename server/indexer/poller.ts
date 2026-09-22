@@ -93,6 +93,8 @@ export interface LogSource {
   getHeadBlock(): Promise<{ number: bigint; timestamp: Date }>;
   /** Block timestamps for a range, so an event carries chain time not wall time. */
   getBlockTimes(from: bigint, to: bigint): Promise<Map<bigint, Date>>;
+  /** Timestamps for these blocks in particular: the repair of rows stamped with a time that is not a time (repair-times.ts). */
+  timeBlocks(blocks: bigint[]): Promise<Map<bigint, Date>>;
   getLogs(args: {
     /** Contract(s) to ask for. Omitted, any contract — the pass asks by `topics` and keeps what it follows. */
     address?: string | string[];
@@ -362,7 +364,7 @@ export class Poller {
       // Rows and a cursor stamped with a time that is not a time, from
       // before the source refused such stamps (repair-times.ts). Nothing
       // to do on a healthy box.
-      await repairBlockTimes(this.log);
+      await repairBlockTimes(this.source, this.log);
       this.followV3Pools(await loadV3PoolAddresses());
       // And the pools the factory named before it was followed at all: the
       // factory was configured with the cursor millions of blocks in, so
