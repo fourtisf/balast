@@ -108,6 +108,31 @@ test.describe('shape builder', () => {
     if (!found) await expect(tiers).toHaveCount(0);
   });
 
+  test('a full-range position reads as every price, not as 1e38', async ({ page }) => {
+    // Full range runs to the lowest and highest ticks the spacing allows,
+    // which as a price is 0 and about 1e38. The live site printed it
+    // literally: `0 – 337,815,857,900,711,430,000,000,000,000,000,000,000
+    // ETH`, four lines of a number that means "every price".
+    await page.goto('/positions', { waitUntil: 'networkidle' });
+    const range = page.locator('.sum > div', { hasText: 'Range' }).locator('.v');
+    const shaped = await range.innerText();
+    expect(shaped).toMatch(/\d/);
+
+    await page.locator('#b-full').check();
+    await expect(range).toHaveText('0 → ∞');
+
+    // And the yield stops calling itself an estimate, because a full-range
+    // position concentrates nothing: it is the pool's own trailing figure.
+    const yieldCell = page.locator('.sum > div', { hasText: 'Fee yield' });
+    await expect(yieldCell.locator('.k')).toHaveText('Fee yield');
+    await expect(yieldCell.locator('.est')).not.toContainText('est. · from');
+
+    await page.locator('#b-full').uncheck();
+    await expect(page.locator('.sum > div', { hasText: 'Fee yield' }).locator('.k')).toHaveText(
+      'Est. fee yield',
+    );
+  });
+
   test('picks a token, then one of its markets', async ({ page }) => {
     // Two questions, asked separately (§26). One flat list of every pool on
     // the chain answered neither: choosing VIRTUAL meant scrolling past

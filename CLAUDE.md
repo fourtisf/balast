@@ -4183,3 +4183,45 @@ liquidity figure or an honest dash.
 Playwright tests, all green, plus the builder checked by screenshot at
 1280px — `Market: ETH | USDG`, `Fee tier: 0.3% $6.20M · 1% $1.40M ·
 0.05% $421.5K`, and the tier list changing with the currency.
+
+### A range of 3.4e38, and a yield that called itself an estimate of itself
+
+ALFA, on the live builder with CASHCAT full range: *skrg mala ngaco ini
+bikin orang bingung*. The right-hand panel read
+
+```
+RANGE   0 – 337,815,857,900,711,430,000,000,000,000,000,000,000 ETH
+```
+
+over four wrapped lines. A full-range position runs to the lowest and
+highest ticks the spacing allows, which as a price is 0 and about 1e38, so
+the number is arithmetically correct and completely useless: it means
+*every price*, and printed literally it reads as a fault. It is `0 → ∞`
+now, and the legend beside it — *Token side / ETH side / Current price* —
+no longer renders either, because it reads a bin chart that a full-range
+position does not draw.
+
+**The yield was an estimate of itself.** Full range concentrates nothing,
+so `estYield` was exactly the pool's trailing figure — and the cell showed
+`1445%` under `est. · from 1445% trailing`, which reads as a projection
+stacked on a projection. In that mode it is labelled the way the board and
+the drawer label it (§7): *Fee yield*, with the pool's own qualifier —
+`trailing 7d`, or `est.` and the age for a pool younger than a week.
+Nothing about the figure changed; what changed is that it no longer claims
+to be a forecast it never was.
+
+Two smaller things from the same screenshot. The summary's fee tier read
+`2.00%` beside a pill reading `2%` — one screen, one number, two
+spellings; both use `feeTierLabel` now. And the market hint said *"Both
+sides of the deposit are taken in it"*, which is false: the amount is
+counted in the quote, and the mint takes some of each currency, which is
+what the `You deposit` line beneath it had been saying all along.
+
+The tier pills reading `0.46% —` are honest and were not explained. A dash
+is unknown depth (§14) — the indexer cannot reconstruct that pool's
+liquidity from its own events, and the pool is listed because it has
+traded. The hint says so when any tier shows one.
+
+**Verified**: typecheck, lint, 438 unit tests, the production build and 40
+Playwright tests — one new, asserting the range reads `0 → ∞` and the
+yield stops calling itself an estimate when the full-range box is ticked.

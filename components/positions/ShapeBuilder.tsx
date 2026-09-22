@@ -9,11 +9,11 @@ import { DEFAULT_SLIPPAGE_BPS, useMintFlow } from '@/components/positions/useMin
 import { CHAIN, EXPLORER_URL, NATIVE_ETH } from '@/lib/chain';
 import { DATA_SOURCE } from '@/lib/data';
 import type { Pool, ShapeId } from '@/lib/data/types';
-import { feeTierLabel, price as fmtPrice, quoteIsWrappedEther, quoteLabel, usd } from '@/lib/format';
+import { ageLabel, feeTierLabel, price as fmtPrice, quoteIsWrappedEther, quoteLabel, usd } from '@/lib/format';
 import { isMintable, orderMarkets, poolLiquidityUsd, quoteGroups } from '@/lib/markets';
 import { densityAtPrice, MAX_BINS, MIN_BINS, SHAPES, shapeWeights } from '@/lib/shapes';
 import { amount as fmtAmount, num } from '@/lib/v4/format';
-import { yieldPct } from '@/lib/yield';
+import { feeYieldQualifier, feeYieldTitle, feeYieldValue, yieldPct } from '@/lib/yield';
 
 /** Simulated data has no wallet, so the spendable balance is a fixed stand-in. */
 const MAX_DEPOSIT_ETH = 4.18;
@@ -435,7 +435,7 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
           <p className="hint">
             {groups.length === 1
               ? `${token.symbol} trades against ${group.label} here, and nothing else this builder can mint into. A pool with no real money behind it is not offered.`
-              : 'What your wallet pays with. Both sides of the deposit are taken in it.'}
+              : `The currency the deposit below is counted in. A position holds both sides, so the mint takes some ${group.label} and some ${token.symbol}.`}
             {wrapped
               ? ` This pool holds its ether as aeWETH — one token per ether, the same asset — so the mint wraps what your wallet is short of and spends that.`
               : ''}
@@ -486,6 +486,8 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
               beside each is that pool&rsquo;s own liquidity — {group.markets.length} pools quote{' '}
               {token.symbol} in {group.label} here, and the deepest is the one the board&rsquo;s row
               is. A higher tier earns more per trade and usually sees fewer of them.
+              {group.markets.some((m) => poolLiquidityUsd(m) === null) &&
+                ' A dash means the indexer cannot reconstruct that pool\u2019s liquidity from its own events, so its depth is unknown rather than zero — the pool is listed because it has traded.'}
             </p>
           </div>
         )}
@@ -737,33 +739,57 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
           <BinChart weights={weights} minPct={safeMin / 100} maxPct={safeMax / 100} currentPrice={pool.priceUsd} shape={shape} symbol={tokenSymbol} />
         )}
 
-        <div className="legend">
-          <span>
-            <i style={{ background: 'var(--ac)' }} />
-            Token side (above price)
-          </span>
-          <span>
-            <i style={{ background: 'var(--ac-soft)' }} />
-            {quoteSymbol} side
-          </span>
-          <span>
-            <i style={{ background: 'var(--fg-2)' }} />
-            Current price
-          </span>
-        </div>
+        {/* The legend reads the bin chart, and a full-range position draws
+            none — it was describing a picture that was not on screen. */}
+        {!fullRange && (
+          <div className="legend">
+            <span>
+              <i style={{ background: 'var(--ac)' }} />
+              Token side (above price)
+            </span>
+            <span>
+              <i style={{ background: 'var(--ac-soft)' }} />
+              {quoteSymbol} side
+            </span>
+            <span>
+              <i style={{ background: 'var(--fg-2)' }} />
+              Current price
+            </span>
+          </div>
+        )}
 
         <div className="sum">
           <div>
             <div className="k">Range</div>
+            {/* A full-range position runs to the lowest and highest ticks the
+                spacing allows, which as a price is 0 and about 1e38. Printed
+                literally that was `0 – 337,815,857,900,711,430,000,000,000,
+                000,000,000,000 ETH`, four lines of a number that means "every
+                price" and reads as a fault. */}
             <div className="v num">
-              {liveRange ? `${num(liveRange.lo)} – ${num(liveRange.hi)} ${quoteSymbol}` : `${fmtPrice(lo)} – ${fmtPrice(hi)}`}
+              {fullRange
+                ? '0 → ∞'
+                : liveRange
+                  ? `${num(liveRange.lo)} – ${num(liveRange.hi)} ${quoteSymbol}`
+                  : `${fmtPrice(lo)} – ${fmtPrice(hi)}`}
             </div>
           </div>
           <div>
-            <div className="k">Est. fee yield</div>
-            <div className={`v num${known ? ' up' : ' muted'}`}>
-              {known ? `${estYield.toFixed(0)}%` : '—'}
-              {known && <span className="est">est. · from {trailing.toFixed(0)}% trailing</span>}
+            {/* Full range concentrates nothing, so the figure is not an
+                estimate of anything — it is this pool's own trailing yield,
+                and it is labelled the way the board and the drawer label it
+                (§7). Calling it `est. · from 1445% trailing` over the same
+                1445% read as a projection stacked on a projection. */}
+            <div className="k">{fullRange ? 'Fee yield' : 'Est. fee yield'}</div>
+            <div className={`v num${known ? ' up' : ' muted'}`} title={feeYieldTitle(pool.feeYield)}>
+              {fullRange ? feeYieldValue(pool.feeYield) : known ? `${estYield.toFixed(0)}%` : '—'}
+              {fullRange ? (
+                <span className="est">
+                  {feeYieldQualifier(pool.feeYield, ageLabel(pool.ageHours)) ?? 'trailing 7d'}
+                </span>
+              ) : (
+                known && <span className="est">est. · from {trailing.toFixed(0)}% trailing</span>
+              )}
             </div>
           </div>
           <div>
@@ -785,13 +811,14 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
           </div>
           <div>
             <div className="k">Fee tier</div>
-            <div className="v num">{(pool.feeTierBps / 100).toFixed(2)}%</div>
+            <div className="v num">{feeTierLabel(pool.feeTierBps)}</div>
           </div>
         </div>
 
         <p className="hint">
-          Est. fee yield scales this pool&rsquo;s trailing 7d fees by how tightly your range concentrates them. It is
-          arithmetic on past fees, not a forecast, and it earns nothing while price sits outside the range.
+          {fullRange
+            ? 'Fee yield is this pool\u2019s own trailing 7d figure: a full-range position concentrates nothing, so there is nothing to scale. It is arithmetic on past fees, not a forecast.'
+            : 'Est. fee yield scales this pool\u2019s trailing 7d fees by how tightly your range concentrates them. It is arithmetic on past fees, not a forecast, and it earns nothing while price sits outside the range.'}
           {onChain && !wallet ? ' Connect a wallet to see the exact amounts for your deposit.' : ''}
         </p>
       </div>
