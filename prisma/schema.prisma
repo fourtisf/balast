@@ -289,6 +289,13 @@ model WethUsdHourly {
 model PoolState {
   poolId    String   @id @map("pool_id")
   tvlUsd    Decimal  @map("tvl_usd") @db.Decimal(38, 18)
+  /// The quote side alone — the ether or USDG in the pool. `tvl_usd` values
+  /// the token side at a price derived from the pool's own ratio, which for a
+  /// pool holding most of a supply equals that token's FDV; this side is
+  /// priced outside the pool, so it is what actually backs the price.
+  /// Null until the rebuild has reached this pool: unknown, which the
+  /// listing bar does not hold against it. Zero means it holds no quote.
+  quoteTvlUsd Decimal? @map("quote_tvl_usd") @db.Decimal(38, 18)
   priceUsd  Decimal  @map("price_usd") @db.Decimal(38, 18)
   /// Fully diluted: total supply × price.
   mcUsd     Decimal  @map("mc_usd") @db.Decimal(38, 18)

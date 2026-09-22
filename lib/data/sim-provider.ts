@@ -126,6 +126,11 @@ export class SimProvider implements DataProvider {
       // so the fully diluted figure is the same one.
       fdvUsd: s.marketCapUsd,
       tvlUsd: s.tvlUsd,
+      // A balanced pool holds half its value in each side, which is what the
+      // prototype's pools are. The live figure is the pool's own quote-side
+      // reserves, and on the real chain a launchpad curve pool is nothing
+      // like balanced (§24) — the simulator has no such pool.
+      quoteTvlUsd: s.tvlUsd / 2,
       change24hPct: s.change24hPct,
       fees24hUsd: s.fees24hUsd,
       feesWindowUsd,
@@ -255,6 +260,7 @@ export class SimProvider implements DataProvider {
       // Pool depth moves too, with price and with LPs arriving and leaving.
       // Yield is fees over depth, so this is half of why the board reorders.
       p.tvlUsd = Math.max(1e4, p.tvlUsd * (1 + (rng() - 0.5) * 0.012));
+      p.quoteTvlUsd = p.tvlUsd / 2;
       p.feeYield = computeFeeYield({
         feesWindowUsd: p.feesWindowUsd,
         tvlUsd: p.tvlUsd,

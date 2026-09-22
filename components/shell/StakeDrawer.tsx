@@ -143,7 +143,19 @@ export function StakeDrawer() {
                     {liquidity.value === null
                       ? "this pool's events do not reconcile"
                       : liquidity.basis === 'chain'
-                        ? 'both sides, from the chain'
+                        ? /* Both sides, and then the side that is priced
+                             outside the pool: the dollars a swap can take
+                             out. The other side is the token at a price
+                             derived from the pool's own ratio, so for a pool
+                             holding most of a supply the total is that
+                             token's FDV however little is really there (§24).
+                             Under a dollar there is no figure worth printing:
+                             `usd()` rounds to whole dollars, and "$0 of it in
+                             ETH" reads as an empty pool rather than as a pool
+                             with change in it (§21). */
+                          pool.quoteTvlUsd >= 1
+                          ? `both sides · ${usd(pool.quoteTvlUsd)} of it in ${quoteLabel(pool)}`
+                          : 'both sides, from the chain'
                         : liquidity.scope === 'pool'
                           ? `both sides · via ${source}`
                           : `across its pools · via ${source}`}

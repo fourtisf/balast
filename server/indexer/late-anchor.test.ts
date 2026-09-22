@@ -59,7 +59,8 @@ async function syncInWindows(usdgAddress: string | null): Promise<void> {
 
 const ROWS = {
   state: () => prisma.$queryRaw<unknown[]>`
-    SELECT pool_id, tvl_usd::text AS tvl, price_usd::text AS price, mc_usd::text AS mc
+    SELECT pool_id, tvl_usd::text AS tvl, quote_tvl_usd::text AS quote,
+           price_usd::text AS price, mc_usd::text AS mc
     FROM pool_state ORDER BY pool_id`,
   fees: () => prisma.$queryRaw<unknown[]>`
     SELECT pool_id, hour, fees_usd::text AS fees, volume_usd::text AS volume, swaps

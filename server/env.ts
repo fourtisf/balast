@@ -103,6 +103,27 @@ export const env = {
    */
   listingMinLiquidityUsd: int('LISTING_MIN_LIQUIDITY_USD', 10_000),
   /**
+   * The dollars that have to be BEHIND a row, in USD: either sitting in the
+   * pool on the quote side, or traded through it during the yield window.
+   *
+   * The floor above is measured on both sides of the pool, and the token
+   * side's price is derived from the pool's own ratio — so a pool holding
+   * most of a token's supply reports a liquidity equal to that token's fully
+   * diluted value and clears any both-sides floor, however little is really
+   * in it. Three launchpad tokens sat on the board at an identical
+   * "MC $38.88M · liquidity $38.88M" on a day's volume of nothing, and a
+   * fourth with unknown depth on a dollar of trading. None of them was a
+   * market anyone could trade in.
+   *
+   * Ether and USDG are priced outside the pool (§4.3), so the quote side is
+   * the one figure that is not circular; volume through the pool is the
+   * other way to show real money, and it is what keeps a hooked pool whose
+   * reserves cannot be reconstructed (§14) on the board. Below both a pool
+   * stays indexed and counted, and reappears when either crosses. The
+   * ether/USDG market is exempt. Set to 0 to list everything.
+   */
+  listingMinBackingUsd: int('LISTING_MIN_BACKING_USD', 2_000),
+  /**
    * Whether stablecoins are listed as rows of their own. Off by the owner's
    * call: a dollar is not a project, and on a board ranked by market cap it
    * would sit above every one of them. Their pools stay indexed, and a

@@ -76,6 +76,7 @@ export async function dumpFeeHours(): Promise<FeeHourRow[]> {
 export interface PoolStateRow {
   pool_id: string;
   tvl_usd: string;
+  quote_tvl_usd: string | null;
   price_usd: string;
   sqrt_price_x96: string;
   tick: number;
@@ -84,7 +85,8 @@ export interface PoolStateRow {
 
 export async function dumpPoolState(): Promise<PoolStateRow[]> {
   return prisma.$queryRaw<PoolStateRow[]>`
-    SELECT pool_id, tvl_usd::text, price_usd::text, sqrt_price_x96::text, tick, liquidity::text
+    SELECT pool_id, tvl_usd::text, quote_tvl_usd::text, price_usd::text,
+           sqrt_price_x96::text, tick, liquidity::text
     FROM pool_state
     ORDER BY pool_id
   `;

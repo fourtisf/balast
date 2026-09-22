@@ -68,6 +68,12 @@ export interface SnapshotOptions {
    * `LISTING_MIN_LIQUIDITY_USD`; unknown liquidity is not held against a pool.
    */
   minLiquidityUsd?: number;
+  /**
+   * Minimum dollars behind a row — quote-side reserves, or volume traded
+   * through the pool in the yield window. Defaults to
+   * `LISTING_MIN_BACKING_USD`; ether/USDG pools are always listed.
+   */
+  minBackingUsd?: number;
   /** Whether stablecoins get rows of their own. Defaults to `LISTING_STABLECOINS`. */
   listStablecoins?: boolean;
 }
@@ -94,6 +100,7 @@ interface PoolQueryRow {
   quote_symbol: string | null;
   age_hours: number;
   tvl_usd: number;
+  quote_tvl_usd: number;
   price_usd: number;
   mc_usd: number;
   circ_mc_usd: number;
@@ -125,6 +132,7 @@ async function queryPools(
   asOf: Date,
   minFdvUsd: number,
   minLiquidityUsd: number,
+  minBackingUsd: number,
   listStablecoins: boolean,
 ): Promise<PoolQueryRow[]> {
   const weth = CONTRACTS.weth.toLowerCase();
@@ -137,6 +145,9 @@ async function queryPools(
   }
   if (!Number.isFinite(minLiquidityUsd) || minLiquidityUsd < 0) {
     throw new Error(`minLiquidityUsd must be a non-negative number, got ${String(minLiquidityUsd)}`);
+  }
+  if (!Number.isFinite(minBackingUsd) || minBackingUsd < 0) {
+    throw new Error(`minBackingUsd must be a non-negative number, got ${String(minBackingUsd)}`);
   }
 
   /** Pick a column from whichever side of the pool is the traded one. */
@@ -192,23 +203,43 @@ async function queryPools(
           OR (${isEtherSql('p.token0', weth)} AND lower(p.token1) = '${usdgLower}')
           OR (lower(p.token0) = '${usdgLower}' AND ${isEtherSql('p.token1', weth)})
         )
-        -- The liquidity floor (LISTING_MIN_LIQUIDITY_USD): a price from a pool
-        -- with a few dollars in it supports no market cap. An UNKNOWN
-        -- liquidity — zero, which is unknown depth (§14) — is not held
-        -- against a pool that trades: it is listed with its dash. A pool with
-        -- unknown liquidity and no trade in the whole yield window is a dead
-        -- pool with a supply, and on a launchpad chain that is a "market cap"
-        -- of trillions at the top of the board with $0 beside it. The
-        -- ether/USDG market is exempt again.
+        -- The liquidity floor (LISTING_MIN_LIQUIDITY_USD), on a KNOWN
+        -- liquidity only: a pool whose reserves the indexer cannot
+        -- reconstruct reads as unknown, not small (§14), and that is not held
+        -- against it here — the backing test below is what such a pool has to
+        -- pass. The ether/USDG market is exempt.
         AND (
           ps.tvl_usd >= ${minLiquidityUsd}
-          OR (
-            COALESCE(ps.tvl_usd, 0) = 0
-            AND EXISTS (
-              SELECT 1 FROM pool_fee_hourly f, params pr
-              WHERE f.pool_id = p.id AND f.hour >= pr.since_window AND f.volume_usd > 0
-            )
-          )
+          OR COALESCE(ps.tvl_usd, 0) = 0
+          OR (${isEtherSql('p.token0', weth)} AND lower(p.token1) = '${usdgLower}')
+          OR (lower(p.token0) = '${usdgLower}' AND ${isEtherSql('p.token1', weth)})
+        )
+        -- The backing test (LISTING_MIN_BACKING_USD): real dollars, either
+        -- sitting in the pool or traded through it.
+        --
+        -- The floor above values BOTH sides, and the token side's price comes
+        -- from the pool's own ratio — so a pool holding most of a token's
+        -- supply reports a liquidity equal to that token's fully diluted
+        -- value and clears any both-sides floor with dust on the quote side.
+        -- That is what put three launchpad tokens on the board at an
+        -- identical "MC $38.88M · liquidity $38.88M" with a day's volume of
+        -- nothing, and a fourth with unknown depth on a dollar of trading.
+        --
+        -- The quote side is priced outside the pool (§4.3), so it is the one
+        -- figure here that is not circular: it is the dollars a swap can
+        -- take out. Volume through the pool is the other way to show real
+        -- money, and it is what keeps a hooked pool whose reserves cannot be
+        -- reconstructed on the board. Either will do; neither is a dead pool
+        -- with a supply. The ether/USDG market is exempt again.
+        AND (
+          -- Null while the rebuild has not reached the pool: unknown, and
+          -- unknown is not held against it (§14). Zero is a measurement.
+          ps.quote_tvl_usd IS NULL
+          OR ps.quote_tvl_usd >= ${minBackingUsd}
+          OR COALESCE((
+            SELECT SUM(f.volume_usd) FROM pool_fee_hourly f, params pr
+            WHERE f.pool_id = p.id AND f.hour >= pr.since_window
+          ), 0) >= ${minBackingUsd}
           OR (${isEtherSql('p.token0', weth)} AND lower(p.token1) = '${usdgLower}')
           OR (lower(p.token0) = '${usdgLower}' AND ${isEtherSql('p.token1', weth)})
         )
@@ -355,6 +386,7 @@ async function queryPools(
 
       GREATEST(0, EXTRACT(EPOCH FROM (pr.as_of - p.created_at)) / 3600)::float8 AS age_hours,
       COALESCE(ps.tvl_usd, 0)::float8   AS tvl_usd,
+      COALESCE(ps.quote_tvl_usd, 0)::float8 AS quote_tvl_usd,
       COALESCE(ps.price_usd, 0)::float8 AS price_usd,
       COALESCE(ps.mc_usd, 0)::float8    AS mc_usd,
       COALESCE(ps.circ_mc_usd, 0)::float8 AS circ_mc_usd,
@@ -471,6 +503,12 @@ function toPool(row: PoolQueryRow): Pool {
     marketCapUsd: row.circ_mc_usd,
     fdvUsd: row.mc_usd,
     tvlUsd: row.tvl_usd,
+    // The quote side of those reserves alone: the dollars actually in the
+    // pool. The figure above values the token side at a price derived from
+    // the pool's own ratio, so for a pool holding most of a supply it equals
+    // that token's FDV whatever is really there. Zero when the reserves do
+    // not reconstruct, the same unknown as `tvlUsd`.
+    quoteTvlUsd: row.quote_tvl_usd,
     // Null stays null: no price a day ago is "unknown", and the row says so.
     change24hPct: row.change_24h_pct,
     fees24hUsd: row.fees_24h_usd,
@@ -661,6 +699,7 @@ export async function buildSnapshot(
       asOf,
       options.minFdvUsd ?? env.listingMinFdvUsd,
       options.minLiquidityUsd ?? env.listingMinLiquidityUsd,
+      options.minBackingUsd ?? env.listingMinBackingUsd,
       options.listStablecoins ?? env.listStablecoins,
     ),
     queryVaults(),

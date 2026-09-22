@@ -309,6 +309,9 @@ describe('the listing bar', () => {
       data: {
         poolId,
         tvlUsd: 250_000,
+        // Half of it in ether: a balanced, real pool, so what keeps this row
+        // off the board is the symbol and nothing else.
+        quoteTvlUsd: 125_000,
         priceUsd: 1,
         mcUsd: 327_000_000,
         circMcUsd: 327_000_000,
@@ -461,6 +464,7 @@ describe('the listing bar', () => {
       data: {
         poolId,
         tvlUsd: 0, // unknown depth (§14)
+        quoteTvlUsd: 0, // and no quote in it either: measured, not unknown
         priceUsd: 2.48,
         mcUsd: 2_480_000_000_000,
         circMcUsd: 2_480_000_000_000,
@@ -474,8 +478,10 @@ describe('the listing bar', () => {
     const dead = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0 });
     expect(dead!.pools.map((p) => p.token.symbol)).not.toContain('DUST');
 
-    // One trade inside the window and the same pool is listed, with its
-    // liquidity honestly unknown rather than invented.
+    // A hundred dollars through the pool in a week is not a market either.
+    // §21 forgave unknown depth for any volume above zero, and the board
+    // then carried Analyst at "MC $81.30M · liquidity — " on one dollar of
+    // trading (§24). The forgiveness is for real money moving.
     await prisma.poolFeeHourly.create({
       data: {
         poolId,
@@ -487,6 +493,23 @@ describe('the listing bar', () => {
         swaps: 1,
       },
     });
+    const dusted = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0 });
+    expect(dusted!.pools.map((p) => p.token.symbol)).not.toContain('DUST');
+
+    // Real volume through it and the same pool is listed, with its liquidity
+    // honestly unknown rather than invented — which is what keeps a hooked
+    // pool that trades (GUH, Index) on the board.
+    await prisma.poolFeeHourly.create({
+      data: {
+        poolId,
+        hour: new Date(asOf.getTime() - 3 * 3600_000),
+        feesToken0: '0',
+        feesToken1: '0',
+        feesUsd: 60,
+        volumeUsd: 20_000,
+        swaps: 40,
+      },
+    });
     const traded = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0 });
     const row = traded!.pools.find((p) => p.token.symbol === 'DUST');
     expect(row).toBeDefined();
@@ -495,5 +518,169 @@ describe('the listing bar', () => {
     // Tidy up so the suite's other counts hold.
     await prisma.pool.delete({ where: { id: poolId } });
     await prisma.token.delete({ where: { address: token } });
+  });
+
+  it('does not list a pool whose liquidity is its own token supply priced by itself', async () => {
+    // The board carried UNICLAW, PRILO and hoot at an identical
+    // "MC $38.88M · liquidity $38.88M" on a day's volume of $133, $4 and
+    // nothing (§24). Each is a launchpad pool holding a whole standard supply
+    // at the launch tick: `tvl_usd` values both sides, and the token side's
+    // price comes from the pool's own ratio, so the total IS that token's
+    // fully diluted value however little is really in it. Three identical
+    // figures across three tokens is the signature.
+    //
+    // It cleared the both-sides floor easily, which is why the floor was the
+    // wrong measurement rather than the wrong number. The quote side is
+    // priced outside the pool, and that is what says whether anyone has put
+    // dollars here.
+    const cursor = await prisma.indexerCursor.findFirstOrThrow();
+    const asOf = cursor.lastIndexedAt;
+    const token = '0x00000000000000000000000000000000000000c1';
+    await prisma.token.create({
+      data: {
+        address: token,
+        symbol: 'UNICLAW',
+        name: 'A launchpad token nobody has bought',
+        decimals: 18,
+        totalSupply: '1000000000000000000000000000',
+        nonCirculating: '0',
+        supplyReadAt: asOf,
+        firstSeen: asOf,
+      },
+    });
+    const poolId = `0x${'c1'.repeat(32)}`;
+    await prisma.pool.create({
+      data: {
+        id: poolId,
+        address: poolId,
+        chainId: 4663,
+        token0: token,
+        token1: WETH,
+        feeTier: 3000,
+        tickSpacing: 60,
+        hooks: null,
+        protocol: 'v4',
+        createdBlock: 1n,
+        createdAt: new Date(asOf.getTime() - 10 * 24 * 3600_000),
+      },
+    });
+    await prisma.poolState.create({
+      data: {
+        poolId,
+        // The pool holds the supply, so both-sides liquidity equals the FDV.
+        tvlUsd: 38_880_000,
+        // And this is what is actually in it.
+        quoteTvlUsd: 84,
+        priceUsd: 0.03888,
+        mcUsd: 38_880_000,
+        circMcUsd: 38_880_000,
+        sqrtPrice: '0',
+        tick: 0,
+        liquidity: '0',
+        updatedAt: asOf,
+      },
+    });
+    // A day's trading of $133, which is what the row showed.
+    await prisma.poolFeeHourly.create({
+      data: {
+        poolId,
+        hour: new Date(asOf.getTime() - 4 * 3600_000),
+        feesToken0: '0',
+        feesToken1: '0',
+        feesUsd: 0.4,
+        volumeUsd: 133,
+        swaps: 3,
+      },
+    });
+
+    const board = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0 });
+    expect(board!.pools.map((p) => p.token.symbol)).not.toContain('UNICLAW');
+    // And the pool is unlisted rather than unindexed: its state is still there.
+    expect(board!.pools.length).toBeGreaterThan(0);
+
+    // Somebody puts real money in and it is a market, with the quote side on
+    // the row so a person can see what backs it.
+    await prisma.poolState.update({ where: { poolId }, data: { quoteTvlUsd: 25_000 } });
+    const funded = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0 });
+    const row = funded!.pools.find((p) => p.token.symbol === 'UNICLAW');
+    expect(row).toBeDefined();
+    expect(row!.quoteTvlUsd).toBe(25_000);
+    expect(row!.tvlUsd).toBe(38_880_000);
+
+    await prisma.pool.delete({ where: { id: poolId } });
+    await prisma.token.delete({ where: { address: token } });
+  });
+
+  it('does not hold an unmeasured quote side against a pool', async () => {
+    // The column arrives by migration and is filled by the pool-state
+    // rebuild, which on the real tables takes a while. NULL means the rebuild
+    // has not reached this pool; zero means it has and there is nothing
+    // there. Reading NULL as zero would have unlisted every pool on the box
+    // for as long as the rebuild took (§14: unknown is never a measurement).
+    const cursor = await prisma.indexerCursor.findFirstOrThrow();
+    const asOf = cursor.lastIndexedAt;
+    const token = '0x00000000000000000000000000000000000000c2';
+    await prisma.token.create({
+      data: {
+        address: token,
+        symbol: 'PENDING',
+        name: 'A pool the rebuild has not reached',
+        decimals: 18,
+        totalSupply: '1000000000000000000000000000',
+        nonCirculating: '0',
+        supplyReadAt: asOf,
+        firstSeen: asOf,
+      },
+    });
+    const poolId = `0x${'c2'.repeat(32)}`;
+    await prisma.pool.create({
+      data: {
+        id: poolId,
+        address: poolId,
+        chainId: 4663,
+        token0: token,
+        token1: WETH,
+        feeTier: 3000,
+        tickSpacing: 60,
+        hooks: null,
+        protocol: 'v4',
+        createdBlock: 1n,
+        createdAt: new Date(asOf.getTime() - 10 * 24 * 3600_000),
+      },
+    });
+    await prisma.poolState.create({
+      data: {
+        poolId,
+        tvlUsd: 250_000,
+        quoteTvlUsd: null,
+        priceUsd: 1,
+        mcUsd: 5_000_000,
+        circMcUsd: 5_000_000,
+        sqrtPrice: '0',
+        tick: 0,
+        liquidity: '0',
+        updatedAt: asOf,
+      },
+    });
+
+    const board = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0 });
+    expect(board!.pools.map((p) => p.token.symbol)).toContain('PENDING');
+
+    // Measured at zero, the same pool goes.
+    await prisma.poolState.update({ where: { poolId }, data: { quoteTvlUsd: 0 } });
+    const measured = await buildSnapshot({ usdgAddress: USDG, minFdvUsd: 0 });
+    expect(measured!.pools.map((p) => p.token.symbol)).not.toContain('PENDING');
+
+    await prisma.pool.delete({ where: { id: poolId } });
+    await prisma.token.delete({ where: { address: token } });
+  });
+
+  it('carries the quote side of every listed pool, so the figure is visible', () => {
+    // Every pool in the fixture is balanced, so each has real quote depth
+    // and none of them is the artifact above.
+    for (const pool of snapshot.pools) {
+      expect(pool.quoteTvlUsd).toBeGreaterThan(0);
+      expect(pool.quoteTvlUsd).toBeLessThanOrEqual(pool.tvlUsd);
+    }
   });
 });

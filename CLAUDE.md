@@ -3605,3 +3605,68 @@ name — they are two tokens with one symbol, and the row shows each
 token's own address in the drawer, which is the only honest
 disambiguation. And it does not hide anything: the thin and the stale
 follow the projects, and a quiet day is visible rather than gone.
+
+### A liquidity figure that was the token's own supply, priced by itself
+
+ALFA, on the same board a rank lower: *masih ada projct puluhan mc tpi vol 0
+ini bug harus d perbaiki say aingin data real*. Rows 29 to 35 — Analyst at
+`MC $81.30M · liquidity — · $1 vol`, then UNICLAW, PRILO and hoot at an
+**identical** `MC $38.88M · liquidity $38.88M` on $133, $4 and nothing. The
+tiering above had moved them off the top; the objection was to the figures
+themselves, and it was right. This one is a defect, not a threshold.
+
+**`tvl_usd` values both sides of a pool, and the token side's price is
+derived from the pool's own ratio.** So for a pool holding most of a token's
+supply — which is every launchpad curve pool on this chain — the token side's
+dollar value *is* that token's fully diluted value, and the liquidity figure
+comes out equal to the market cap beside it. Three identical numbers across
+three tokens is the signature: one launchpad template, one standard supply,
+one launch tick. Whatever is actually in those pools, it is not $38.88M.
+
+That is also why §19's liquidity floor never caught them. The floor was the
+right idea measured on the wrong quantity: a both-sides figure that a pool
+can inflate by holding its own token cannot say whether anyone has put money
+in. Raising the number would not have helped — the figure scales with the
+supply, not with the pool.
+
+**The quote side is the one figure here that is not circular.** Ether and
+USDG are priced outside the pool (§4.3), so the quote-side reserves are the
+dollars a swap can actually take out, and `pool_state.quote_tvl_usd` (one
+migration) records them beside the total. A row now has to show real money
+one of two ways — `LISTING_MIN_BACKING_USD`, default $2,000:
+
+- **quote-side reserves** at or above it: dollars sitting in the pool; or
+- **volume through the pool** at or above it over the yield window: dollars
+  that moved. This is what keeps a hooked pool whose reserves the indexer
+  cannot reconstruct (§14) on the board, GUH and Index among them.
+
+Neither, and the pool is indexed, counted in `/api/health`, and unlisted
+until either crosses. The ether/USDG market is exempt as always. The old
+`LISTING_MIN_LIQUIDITY_USD` keeps its meaning and applies to a known
+both-sides liquidity; the forgiveness §21 gave unknown depth for *any*
+volume above zero is now this backing test, because a dollar of trading in a
+week was what put Analyst on the board.
+
+**The column is nullable, and that is the point.** NULL means the pool-state
+rebuild has not reached that pool yet; zero means it has and the pool holds
+no quote. Read as zero, a default would have unlisted **every pool on the
+box** for as long as the rebuild took — §14's rule, that unknown is never a
+measurement, applied to our own arithmetic. The migration forgets the anchor
+marker, so the first pass after the deploy fills the column and the board
+changes then, not before.
+
+The drawer says the figure out loud: under a chain liquidity it now reads
+*both sides · $X of it in ETH*, so a person about to stake can see what the
+pool is really a share of.
+
+`server/api/snapshot.test.ts` builds that exact row — a whole supply in the
+pool, $84 of ether, $133 of trading — and asserts it is unlisted, then funds
+it and asserts it returns with both figures on it; and asserts an unmeasured
+quote side lists, where a measured zero does not. `quote_tvl_usd` joins the
+§9 comparison in `dumpPoolState`, since it is a derived aggregate like the
+rest.
+
+**Still ALFA's number.** $2,000 is a first guess at "somebody has put real
+money here", like the other two bars. What it cannot fix is the sync: the
+chain figures on that board are a day in July (§21), and a token busy today
+but quiet then is judged on the quiet day until the backfill reaches head.

@@ -549,7 +549,7 @@ export async function rebuildPoolState(anchors: PriceAnchors, poolIds?: Iterable
       FROM quoted
     )
 
-    INSERT INTO pool_state (pool_id, tvl_usd, price_usd, mc_usd, circ_mc_usd, sqrt_price_x96, tick, liquidity, updated_at)
+    INSERT INTO pool_state (pool_id, tvl_usd, quote_tvl_usd, price_usd, mc_usd, circ_mc_usd, sqrt_price_x96, tick, liquidity, updated_at)
     SELECT
       pool_id,
       -- Both sides at their own prices. Never doubled from one side, never
@@ -566,6 +566,39 @@ export async function rebuildPoolState(anchors: PriceAnchors, poolIds?: Iterable
         GREATEST(COALESCE(${sane(
           `COALESCE(r0 / power(10::numeric, dec0) * COALESCE(price0_usd, 0), 0)
            + COALESCE(r1 / power(10::numeric, dec1) * COALESCE(price1_usd, 0), 0)`,
+          MAX_SANE_TOTAL_USD,
+        )}, 0), 0)
+      END::numeric(38,18),
+      -- The QUOTE side of those same reserves, alone.
+      --
+      -- The figure above values both sides, and the token side's price comes
+      -- from the pool's own ratio — so a pool holding most of a token's
+      -- supply reports a "liquidity" equal to that token's fully diluted
+      -- value, whatever is actually in it. Three launchpad tokens showed an
+      -- identical $38.88M of both, on a day's volume of nothing.
+      --
+      -- Ether and USDG are priced outside the pool (§4.3), so this side is
+      -- not circular: it is the dollars a swap can take out, and it is what
+      -- decides whether a price is backed (the listing bar) rather than
+      -- arithmetic.
+      --
+      -- Zero when the reserves do not reconstruct, exactly as above. The
+      -- column is nullable and NULL means "the rebuild has not reached this
+      -- pool", so a zero written here is a measurement — and such a pool has
+      -- to show its dollars the other way the listing bar allows, by volume
+      -- through it, which is what keeps a hooked pool that trades listed.
+      CASE WHEN r0 < 0 OR r1 < 0 THEN 0 ELSE
+        GREATEST(COALESCE(${sane(
+          tradedSide({
+            addr0: 'addr0',
+            addr1: 'addr1',
+            weth,
+            usdg,
+            // The quote is the side the token is not, so the branches invert.
+            whenToken0: 'r1 / power(10::numeric, dec1) * COALESCE(price1_usd, 0)',
+            whenToken1: 'r0 / power(10::numeric, dec0) * COALESCE(price0_usd, 0)',
+            otherwise: '0',
+          }),
           MAX_SANE_TOTAL_USD,
         )}, 0), 0)
       END::numeric(38,18),
@@ -623,6 +656,7 @@ export async function rebuildPoolState(anchors: PriceAnchors, poolIds?: Iterable
     FROM priced
     ON CONFLICT (pool_id) DO UPDATE SET
       tvl_usd        = EXCLUDED.tvl_usd,
+      quote_tvl_usd  = EXCLUDED.quote_tvl_usd,
       price_usd      = EXCLUDED.price_usd,
       mc_usd         = EXCLUDED.mc_usd,
       circ_mc_usd    = EXCLUDED.circ_mc_usd,

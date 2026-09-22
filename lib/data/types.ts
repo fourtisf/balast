@@ -138,6 +138,22 @@ export interface Pool {
   fdvUsd: number;
   tvlUsd: number;
   /**
+   * The quote side of the pool's reserves alone — the ether or USDG in it.
+   *
+   * `tvlUsd` values both sides, and the token side's price is derived from
+   * the pool's own ratio, so for a pool holding most of a token's supply it
+   * comes out equal to that token's fully diluted value however little is
+   * really there. The quote is priced outside the pool (§4.3), so this is the
+   * one figure here that is not circular: the dollars a swap can take out,
+   * and what says whether a price is backed.
+   *
+   * Zero when the reserves do not reconstruct, and zero too when the
+   * indexer's rebuild has not measured this pool yet — the API keeps those
+   * apart (a null column) because the listing bar has to, and the UI does
+   * not: with no figure it shows none.
+   */
+  quoteTvlUsd: number;
+  /**
    * Null when there is no price 24h ago to compare with — a pool younger
    * than a day, or an anchor that did not exist yet. Rendered as an em dash;
    * coercing it to zero painted "+0.0%" in green over an unknown (§7).
