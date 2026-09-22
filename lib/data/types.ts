@@ -120,6 +120,12 @@ export type MarketSourceName = 'dexscreener' | 'geckoterminal';
  */
 export interface ChainNow {
   volume24hUsd: number;
+  /**
+   * The fees those swaps actually paid, in USD — each swap's own fee amount
+   * at its token's price, not volume times the pool's tier. A dynamic-fee
+   * pool's per-swap fee is not its key's fee.
+   */
+  fees24hUsd: number;
   trades24h: number;
   buys24h: number;
   sells24h: number;
@@ -127,8 +133,13 @@ export interface ChainNow {
   sellVolume24hUsd: number;
   priceUsd: number | null;
   change24hPct: number | null;
-  /** Chain time of the newest swap behind these figures, ISO. */
-  at: string;
+  /**
+   * Chain time of the newest swap behind these figures, ISO — or null from
+   * the simulator, which reads no clock by design so that a snapshot cannot
+   * drift between two renders. A time is a claim about when (§7), and the
+   * simulator is in no position to make one.
+   */
+  at: string | null;
 }
 
 export interface Pool {

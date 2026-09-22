@@ -4,10 +4,10 @@ import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { TokenBadge } from '@/components/ui/TokenBadge';
 import { ageLabel, count, inHours, quoteLabel, usd } from '@/lib/format';
-import { FEE_YIELD_LABEL, feeYieldQualifier, feeYieldTitle, feeYieldValue } from '@/lib/yield';
+import { shownYield, stalenessText, yieldCaption, yieldLabel, yieldTitle, yieldValue } from '@/lib/market-figures';
 
 export function VaultGrid() {
-  const { vaults, pools } = useMarket();
+  const { vaults, pools, indexerLagSeconds } = useMarket();
   const { openStake, query } = useUi();
 
   const q = query.trim().toLowerCase();
@@ -52,8 +52,9 @@ export function VaultGrid() {
         const pool = pools.find((p) => p.id === vault.poolId);
         if (!pool) return null;
         const age = ageLabel(pool.ageHours);
-        const qualifier = feeYieldQualifier(pool.feeYield, age);
-        const none = pool.feeYield.basis === 'insufficient';
+        const shown = shownYield(pool);
+        const qualifier = yieldCaption(shown, age, stalenessText(indexerLagSeconds));
+        const none = shown.pct === null;
 
         return (
           <div className="card vault" key={vault.id}>
@@ -74,10 +75,10 @@ export function VaultGrid() {
               ) : null}
             </div>
 
-            <div className={`apr num${none ? ' none' : ''}`} title={feeYieldTitle(pool.feeYield)}>
-              {feeYieldValue(pool.feeYield)}
+            <div className={`apr num${none ? ' none' : ''}`} title={yieldTitle(shown)}>
+              {yieldValue(shown)}
               {qualifier && <span className="est">{qualifier}</span>}
-              <small>{FEE_YIELD_LABEL} · paid in ETH</small>
+              <small>{yieldLabel(shown)}</small>
             </div>
 
             <div className="meta">

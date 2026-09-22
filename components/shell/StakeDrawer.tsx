@@ -9,14 +9,26 @@ import { EXPLORER_URL, NATIVE_ETH, isEther } from '@/lib/chain';
 import { DATA_SOURCE } from '@/lib/data';
 import { ageLabel, feeTierLabel, quoteLabel, usd } from '@/lib/format';
 import { isMintable, orderMarkets } from '@/lib/markets';
-import { buyShare, shownLiquidity, shownSplit, shownVolume, sourceName } from '@/lib/market-figures';
+import {
+  buyShare,
+  shownLiquidity,
+  shownSplit,
+  shownVolume,
+  shownYield,
+  sourceName,
+  stalenessText,
+  yieldCaption,
+  yieldLabel,
+  yieldTitle,
+  yieldValue,
+} from '@/lib/market-figures';
 import { FEE_YIELD_LABEL, feeYieldQualifier, feeYieldTitle, feeYieldValue } from '@/lib/yield';
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function StakeDrawer() {
-  const { pools, otherPools, global } = useMarket();
+  const { pools, otherPools, global, indexerLagSeconds } = useMarket();
   const { stakePoolId, closeStake, showToast } = useUi();
   const router = useRouter();
   const drawerRef = useRef<HTMLElement | null>(null);
@@ -138,18 +150,18 @@ export function StakeDrawer() {
                 <div>
                   <div className="k">Fee yield</div>
                   <div
-                    className={`v num${pool.feeYield.basis !== 'insufficient' ? ' up' : ' muted'}`}
-                    title={feeYieldTitle(pool.feeYield)}
+                    className={`v num${shownYield(pool).pct !== null ? ' up' : ' muted'}`}
+                    title={yieldTitle(shownYield(pool))}
                   >
-                    {feeYieldValue(pool.feeYield)}
-                    {feeYieldQualifier(pool.feeYield, ageLabel(pool.ageHours)) && (
+                    {yieldValue(shownYield(pool))}
+                    {yieldCaption(shownYield(pool), ageLabel(pool.ageHours), stalenessText(indexerLagSeconds)) && (
                       <span className="est">
-                        {feeYieldQualifier(pool.feeYield, ageLabel(pool.ageHours))}
+                        {yieldCaption(shownYield(pool), ageLabel(pool.ageHours), stalenessText(indexerLagSeconds))}
                       </span>
                     )}
                   </div>
                   <div className="k" style={{ marginTop: 6 }}>
-                    {FEE_YIELD_LABEL}
+                    {yieldLabel(shownYield(pool))}
                   </div>
                 </div>
                 <div>

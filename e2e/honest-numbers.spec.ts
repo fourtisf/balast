@@ -11,13 +11,17 @@ test.describe('honest numbers', () => {
     }
   });
 
-  test('labels every vault yield as trailing 7d', async ({ page }) => {
+  test('every vault yield names the basis it was computed on', async ({ page }) => {
+    // ALFA chose Uniswap's basis — 24h fees annualised — over §1's
+    // trailing-7d-everywhere. The rule that survives, and matters more, is
+    // that the label always says which: a figure from one day must never be
+    // called a trailing seven, and nothing is ever called APY or APR.
     await page.goto('/stakes', { waitUntil: 'networkidle' });
     const cards = page.locator('.vault .apr small');
     const count = await cards.count();
     expect(count).toBeGreaterThan(0);
     for (let i = 0; i < count; i++) {
-      await expect(cards.nth(i)).toContainText('fee yield, trailing 7d');
+      await expect(cards.nth(i)).toHaveText(/^fee yield(, trailing 7d| · 24h, annualised)$/);
     }
   });
 
@@ -27,18 +31,27 @@ test.describe('honest numbers', () => {
     await page.locator('#main .lb-row .stake-btn').first().click();
     const drawer = page.locator('.drawer');
     await expect(drawer).toHaveClass(/on/);
-    await expect(drawer.locator('.kv .v').first()).toHaveText('—');
+    // An em dash, and never a figure — with the reason beside it rather than
+    // only in a tooltip, which is what §7 asks of an empty state.
+    const cell = drawer.locator('.kv .v').first();
+    await expect(cell).toContainText('—');
+    await expect(cell).toContainText('not enough data yet');
+    expect(await cell.innerText()).not.toMatch(/\d/);
     // And it cannot be staked while it is still on its launchpad curve (§4).
     await expect(drawer).toContainText('Not offered for staking');
     await expect(drawer.getByRole('button', { name: 'Stake full range', exact: true })).toBeDisabled();
   });
 
   test('a pool under 7d old is labelled est. and carries its age', async ({ page }) => {
+    // §7, untouched by the change of basis: the liquidity a young pool's
+    // yield divides by has as little history as the fees above it.
     await page.goto('/pools', { waitUntil: 'networkidle' });
     await page.fill('#q', 'LAURA');
     await page.locator('#main .lb-row .stake-btn').first().click();
     const drawer = page.locator('.drawer');
-    await expect(drawer.locator('.kv .est').first()).toHaveText('est. · 1d');
+    const caption = drawer.locator('.kv .est').first();
+    await expect(caption).toContainText('est.');
+    await expect(caption).toContainText('1d');
   });
 
   test('discloses the fee, the custody and the contract address in the drawer before signing', async ({ page }) => {

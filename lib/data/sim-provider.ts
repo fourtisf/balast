@@ -190,17 +190,33 @@ export class SimProvider implements DataProvider {
       feesWindowUsd,
       feeWindowHours: windowHours,
       volume24hUsd: s.volume24hUsd,
-      trades24h: Math.round(s.volume24hUsd / (120 + rng() * 90)),
+      // The head reader's view of the same pool (§25): its last day of swaps,
+      // which is what the 24h fee yield is computed from. The simulator never
+      // sent one, so the whole `now` path — the yield ALFA asked for, the
+      // row's `now` cap, the dollar split — was unreachable in the prototype
+      // and untestable end to end, exactly as `otherPools` was.
       // A rising token was bought more than sold in the day, and vice versa.
       ...(() => {
         const trades = Math.round(s.volume24hUsd / (120 + rng() * 90));
         const buyShare = Math.min(0.8, Math.max(0.2, 0.5 + s.change24hPct / 100));
         const buys = Math.round(trades * buyShare);
-        return {
+        const split = {
+          trades24h: trades,
           buyVolume24hUsd: s.volume24hUsd * buyShare,
           sellVolume24hUsd: s.volume24hUsd * (1 - buyShare),
           buys24h: buys,
           sells24h: trades - buys,
+        };
+        return {
+          ...split,
+          now: {
+            ...split,
+            volume24hUsd: s.volume24hUsd,
+            fees24hUsd: s.fees24hUsd,
+            priceUsd: s.priceUsd,
+            change24hPct: s.change24hPct,
+            at: null,
+          },
         };
       })(),
       volumeHistory: Array.from({ length: 14 }, (_, i) =>
@@ -327,6 +343,20 @@ export class SimProvider implements DataProvider {
       p.volumeHistory = p.volumeHistory
         .slice(1)
         .concat(Math.max(20, p.volumeHistory[p.volumeHistory.length - 1] * (1 + (rng() - 0.47) * 0.25)));
+      // The head reader sees the same day these figures describe. Left at
+      // what `buildPool` set, the board would have frozen: `shownVolume`,
+      // `shownChange`, `shownSplit` and now the yield all read `now` first,
+      // so a tick that moved only the indexed fields moved nothing on screen.
+      if (p.now) {
+        p.now = {
+          ...p.now,
+          volume24hUsd: p.volume24hUsd,
+          fees24hUsd: p.fees24hUsd,
+          change24hPct: p.change24hPct,
+          buyVolume24hUsd: p.buyVolume24hUsd,
+          sellVolume24hUsd: p.sellVolume24hUsd,
+        };
+      }
     }
 
     this.global.ethPriceUsd = Math.max(100, this.global.ethPriceUsd * (1 + (rng() - 0.5) * 0.004));

@@ -9,7 +9,23 @@
 import { describe, expect, it } from 'vitest';
 import { NATIVE_ETH } from './chain';
 import type { ChainNow, MarketQuote, Pool } from './data/types';
-import { RANK_MIN_VOLUME_USD, capKey, rankByCap, rankByVolume, rankTier, shownCap, shownChange, shownLiquidity, shownSplit, shownVolume } from './market-figures';
+import {
+  RANK_MIN_VOLUME_USD,
+  capKey,
+  rankByCap,
+  rankByVolume,
+  rankTier,
+  shownCap,
+  shownChange,
+  shownLiquidity,
+  shownSplit,
+  shownVolume,
+  shownYield,
+  stalenessText,
+  yieldCaption,
+  yieldLabel,
+  yieldValue,
+} from './market-figures';
 
 function quote(overrides: Partial<MarketQuote> = {}): MarketQuote {
   return {
@@ -36,6 +52,7 @@ function quote(overrides: Partial<MarketQuote> = {}): MarketQuote {
 function chainNow(overrides: Partial<ChainNow> = {}): ChainNow {
   return {
     volume24hUsd: 500_000,
+    fees24hUsd: 1_500,
     trades24h: 120,
     buys24h: 70,
     sells24h: 50,
@@ -286,5 +303,88 @@ describe("today, from the chain's own head", () => {
     const p = pool({ now: chainNow(), market: null, tvlUsd: 250_000 });
     expect(shownLiquidity(p)).toEqual({ value: 250_000, basis: 'chain', scope: 'pool' });
     expect(shownCap(p).basis).toBe('chain');
+  });
+});
+
+describe('shownYield', () => {
+  /**
+   * ALFA's call, after the alternative was put: the yield is Uniswap's own
+   * basis — the fees a pool actually took in the last 24 hours, annualised,
+   * over the liquidity behind them. It sets aside §1's "never annualise a
+   * single day", so the basis travels with the figure and the label never
+   * says "trailing 7d" over a day.
+   */
+  it('annualises the day the head reader actually saw', () => {
+    const p = pool({ tvlUsd: 100_000, feeYield: { basis: 'trailing7d', pct: 1445 } });
+    p.now = chainNow({ fees24hUsd: 100 });
+    const y = shownYield(p);
+    expect(y.basis).toBe('now24h');
+    expect(y.current).toBe(true);
+    // 100 x 365 / 100_000 x 100
+    expect(y.pct).toBeCloseTo(36.5, 6);
+    expect(yieldLabel(y)).toBe('fee yield · 24h, annualised');
+    // Nothing to add beside the figure: the label under it names the basis,
+    // the pool has a week of history, and the figure is today's.
+    expect(yieldCaption(y, '3mo', '74d 2h')).toBeNull();
+  });
+
+  it('falls back to the indexer when the head reader has no day for the pool', () => {
+    const p = pool({ tvlUsd: 100_000, feeYield: { basis: 'trailing7d', pct: 1445 } });
+    p.now = null;
+    const y = shownYield(p);
+    expect(y.basis).toBe('trailing7d');
+    expect(y.pct).toBe(1445);
+    expect(y.current).toBe(false);
+  });
+
+  /**
+   * §7 asks for the lag to be shown. A yield is the number that most reads
+   * as live, so a stale one carries its age: `1445%` said nothing about
+   * being July's, which is what sent the owner looking for a bug.
+   */
+  it('puts the age on a figure that is as old as the sync', () => {
+    const p = pool({ tvlUsd: 100_000, feeYield: { basis: 'trailing7d', pct: 1445 } });
+    p.now = null;
+    expect(yieldCaption(shownYield(p), '3mo', '74d 2h')).toBe('74d 2h old');
+    expect(yieldCaption(shownYield(p), '3mo', null)).toBeNull();
+  });
+
+  it('keeps the three honest states when it has to fall back (§7)', () => {
+    const young = pool({ ageHours: 40, tvlUsd: 100_000, feeYield: { basis: 'estimate', pct: 900, windowHours: 40 } });
+    young.now = null;
+    expect(shownYield(young).basis).toBe('estimate');
+    expect(yieldCaption(shownYield(young), '2d', '74d 2h')).toBe('est. · 2d · 74d 2h old');
+    expect(yieldLabel(shownYield(young))).toBe('fee yield, trailing 7d');
+
+    const none = pool({ tvlUsd: 100_000, feeYield: { basis: 'insufficient' } });
+    none.now = null;
+    expect(shownYield(none).pct).toBeNull();
+    expect(yieldValue(shownYield(none))).toBe('—');
+  });
+
+  it('will not divide by a liquidity the chain could not reconstruct (§14)', () => {
+    const p = pool({ tvlUsd: 0, feeYield: { basis: 'trailing7d', pct: 1445 } });
+    p.now = chainNow({ fees24hUsd: 100 });
+    // Never Infinity, and never an aggregator's token-wide figure in its place.
+    expect(shownYield(p).basis).toBe('trailing7d');
+  });
+
+  it('shows a quiet day as a quiet day rather than reaching for a better number', () => {
+    const p = pool({ tvlUsd: 100_000, feeYield: { basis: 'trailing7d', pct: 1445 } });
+    p.now = chainNow({ fees24hUsd: 0, volume24hUsd: 0 });
+    const y = shownYield(p);
+    expect(y.basis).toBe('now24h');
+    expect(y.pct).toBe(0);
+  });
+});
+
+describe('stalenessText', () => {
+  it('says nothing while the indexer is within a day', () => {
+    expect(stalenessText(0)).toBeNull();
+    expect(stalenessText(3600)).toBeNull();
+  });
+
+  it('names the age past a day', () => {
+    expect(stalenessText(74 * 86_400 + 2 * 3600)).toBe('74d 2h');
   });
 });

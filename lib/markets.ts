@@ -34,16 +34,25 @@ export function isMintable(pool: Pool, live: boolean): boolean {
 /**
  * This pool's own liquidity in dollars, or null when it is not known.
  *
- * Deliberately the pool's figure and never the token's. An aggregator can
- * answer "how much liquidity does this token have across its pairs", which
- * is the same number for every pool of that token and therefore ranks none
- * of them. §14's rule holds: unknown is null, not zero, because a pool whose
- * reserves the indexer cannot reconstruct is not an empty pool.
+ * **The chain's figure and nothing else.** An aggregator's quote is fetched
+ * once per token and attached to every pool of it, so `market.liquidityUsd`
+ * is the token summed across its pairs and `market.poolLiquidityUsd` is the
+ * one pair the source picked — the board's row. Neither distinguishes this
+ * pool from its siblings, which is the only thing this function is for.
+ *
+ * Taking the latter looked right and put the same figure on four of
+ * CASHCAT's six ether pools: `0.46% $5.42M`, `0.66% $5.42M`, `0.96% $5.42M`,
+ * `3% $5.42M`, a number belonging to none of them, ranked above the 2% pool
+ * whose real depth the chain gives as $325.4K. The comment above this
+ * function already said not to; the field name is what made it look like a
+ * pool's figure.
+ *
+ * §14's rule holds: unknown is null, not zero. A pool whose reserves the
+ * indexer cannot reconstruct is not an empty pool, and the builder draws
+ * that as a dash and says why.
  */
 export function poolLiquidityUsd(pool: Pool): number | null {
-  if (pool.tvlUsd > 0) return pool.tvlUsd;
-  const live = pool.market?.poolLiquidityUsd;
-  return live !== null && live !== undefined && live > 0 ? live : null;
+  return pool.tvlUsd > 0 ? pool.tvlUsd : null;
 }
 
 /** Deepest first, then the cheaper tier; an unknown depth sorts last. */

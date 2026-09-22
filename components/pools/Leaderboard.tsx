@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { usePools } from '@/components/providers/MarketProvider';
+import { useMarket, usePools } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { Change } from '@/components/ui/Change';
 import { Flash } from '@/components/ui/Flash';
@@ -11,14 +11,26 @@ import { useFlip } from '@/hooks/useFlip';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import type { Pool, Quote } from '@/lib/data/types';
 import { ageLabel, usd } from '@/lib/format';
-import { RANK_MIN_VOLUME_USD, ago, buyShare, rankByCap, rankByVolume, shownCap, shownChange, shownLiquidity, shownSplit, shownVolume, sourceName } from '@/lib/market-figures';
 import {
-  YIELD_WINDOW_HOURS,
-  feeYieldQualifier,
-  feeYieldTitle,
-  feeYieldValue,
-  yieldPct,
-} from '@/lib/yield';
+  RANK_MIN_VOLUME_USD,
+  ago,
+  buyShare,
+  rankByCap,
+  rankByVolume,
+  shownCap,
+  shownChange,
+  shownLiquidity,
+  shownSplit,
+  shownVolume,
+  shownYield,
+  sourceName,
+  stalenessText,
+  yieldCaption,
+  yieldLabel,
+  yieldTitle,
+  yieldValue,
+} from '@/lib/market-figures';
+import { YIELD_WINDOW_HOURS } from '@/lib/yield';
 
 /**
  * Three rankings as one list with a facet. Market cap is the default, by the
@@ -43,6 +55,7 @@ const FILTERS: { id: 'all' | Quote; label: string }[] = [
 
 export function Leaderboard() {
   const pools = usePools();
+  const { indexerLagSeconds } = useMarket();
   const { query, openStake } = useUi();
   const [facet, setFacet] = useState<Facet>('mc');
   const [filter, setFilter] = useState<'all' | Quote>('all');
@@ -65,7 +78,7 @@ export function Leaderboard() {
     return matching
       .filter((p) => p.ageHours >= YIELD_WINDOW_HOURS)
       .slice()
-      .sort((a, b) => yieldPct(b.feeYield) - yieldPct(a.feeYield));
+      .sort((a, b) => (shownYield(b).pct ?? -1) - (shownYield(a).pct ?? -1));
   }, [pools, filter, query, facet]);
 
   return (
@@ -80,7 +93,7 @@ export function Leaderboard() {
               ? `Ranked by market cap among tokens with ${usd(RANK_MIN_VOLUME_USD)}+ of live volume today · the rest follow, quiet tokens last`
               : facet === 'volume'
                 ? 'Ranked by 24h volume · live figures rank ahead of the chain\u2019s · fee yield appears at seven days of history'
-                : 'Ranked by fee yield, trailing 7d · only pools with seven days of history'}
+                : 'Ranked by fee yield · fees over liquidity, annualised · only pools with seven days of history'}
           </p>
         </div>
         <div className="row">
@@ -129,6 +142,7 @@ export function Leaderboard() {
             rank={i + 1}
             leader={i === 0}
             facet={facet}
+            indexerLagSeconds={indexerLagSeconds}
             registerRef={register(pool.id)}
             onOpen={() => openStake(pool.id)}
           />
@@ -143,6 +157,7 @@ function Row({
   rank,
   leader,
   facet,
+  indexerLagSeconds,
   registerRef,
   onOpen,
 }: {
@@ -150,13 +165,15 @@ function Row({
   rank: number;
   leader: boolean;
   facet: Facet;
+  indexerLagSeconds: number;
   registerRef: (el: HTMLElement | null) => void;
   onOpen: () => void;
 }) {
   const age = ageLabel(pool.ageHours);
-  const qualifier = feeYieldQualifier(pool.feeYield, age);
-  const yieldText = feeYieldValue(pool.feeYield);
-  const insufficient = pool.feeYield.basis === 'insufficient';
+  const shownY = shownYield(pool);
+  const qualifier = yieldCaption(shownY, age, stalenessText(indexerLagSeconds));
+  const yieldText = yieldValue(shownY);
+  const insufficient = shownY.pct === null;
 
   // Market cap, liquidity and the day's figures: which source each comes
   // from is decided once in lib/market-figures.ts, so the row, the drawer
@@ -333,12 +350,12 @@ function Row({
             as="div"
             className={`big num${insufficient ? ' muted' : ' up'}`}
             text={yieldText}
-            title={feeYieldTitle(pool.feeYield)}
+            title={yieldTitle(shownY)}
           >
             {yieldText}
             {qualifier && <span className="est">{qualifier}</span>}
           </Flash>
-          <span className="cap">fee yield · trailing 7d</span>
+          <span className="cap">{yieldLabel(shownY)}</span>
         </div>
       )}
 

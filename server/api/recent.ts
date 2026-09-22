@@ -30,6 +30,8 @@ import { isEtherSql, tradedSide } from '../indexer/aggregate';
 export interface RecentMarket {
   /** The day's volume in USD, from the chain's last 24 hours. */
   volume24hUsd: number;
+  /** The fees those swaps actually paid, in USD. */
+  fees24hUsd: number;
   trades24h: number;
   buys24h: number;
   sells24h: number;
@@ -51,6 +53,7 @@ export async function recentHead(): Promise<Date | null> {
 interface Row {
   pool_id: string;
   volume_usd: number;
+  fees_usd: number;
   trades: number;
   buys: number;
   sells: number;
@@ -127,6 +130,8 @@ export async function recentMarket(usdg: string): Promise<Map<string, RecentMark
         s.log_index,
         s.amount0,
         s.amount1,
+        s.fee_amount,
+        s.fee_token,
         t0.decimals AS dec0,
         t1.decimals AS dec1,
         ${ratio('s.sqrt_price_x96', 't0.decimals', 't1.decimals')} AS ratio,
@@ -169,6 +174,17 @@ export async function recentMarket(usdg: string): Promise<Map<string, RecentMark
           WHEN amount1 > 0 THEN amount1 / power(10::numeric, dec1) * COALESCE(price1_usd, 0)
           ELSE 0
         END AS volume_usd,
+        -- The fee each swap actually paid, in the token it was taken in, at
+        -- that token's USD price — rebuildFeeHourly's own expression, so a
+        -- pool's fees today and its fees once the backfill arrives are one
+        -- number reached twice. Never volume x tier: a dynamic-fee pool's
+        -- per-swap fee is not its key's fee, and on this chain a hook can
+        -- take most of a trade (§20).
+        CASE
+          WHEN fee_token = 0 THEN fee_amount / power(10::numeric, dec0) * COALESCE(price0_usd, 0)
+          WHEN fee_token = 1 THEN fee_amount / power(10::numeric, dec1) * COALESCE(price1_usd, 0)
+          ELSE 0
+        END AS fees_usd,
         CASE WHEN token_is_0 THEN price0_usd ELSE price1_usd END AS token_usd
       FROM usd
     ),
@@ -189,6 +205,7 @@ export async function recentMarket(usdg: string): Promise<Map<string, RecentMark
     SELECT
       v.pool_id,
       COALESCE(${sane('SUM(v.volume_usd)', '1e15')}, 0)::float8              AS volume_usd,
+      COALESCE(${sane('SUM(v.fees_usd)', '1e15')}, 0)::float8                AS fees_usd,
       COUNT(*)::int                                                          AS trades,
       COUNT(*) FILTER (WHERE v.is_buy)::int                                  AS buys,
       COUNT(*) FILTER (WHERE v.is_buy = false)::int                          AS sells,
@@ -209,6 +226,7 @@ export async function recentMarket(usdg: string): Promise<Map<string, RecentMark
   for (const row of rows) {
     out.set(row.pool_id, {
       volume24hUsd: row.volume_usd,
+      fees24hUsd: row.fees_usd,
       trades24h: row.trades,
       buys24h: row.buys,
       sells24h: row.sells,

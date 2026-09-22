@@ -193,7 +193,7 @@ test.describe('shape builder', () => {
 
   test('shows the trailing figure the estimate is derived from', async ({ page }) => {
     await page.goto('/positions', { waitUntil: 'networkidle' });
-    await expect(page.locator('.sum .est')).toContainText(/est\. · from \d+% trailing/);
+    await expect(page.locator('.sum .est')).toContainText(/est\. · from \d+% · (24h|trailing 7d)/);
   });
 });
 

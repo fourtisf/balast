@@ -10,10 +10,19 @@ import { CHAIN, EXPLORER_URL, NATIVE_ETH } from '@/lib/chain';
 import { DATA_SOURCE } from '@/lib/data';
 import type { Pool, ShapeId } from '@/lib/data/types';
 import { ageLabel, feeTierLabel, price as fmtPrice, quoteIsWrappedEther, quoteLabel, usd } from '@/lib/format';
+import {
+  shownYield,
+  stalenessText,
+  yieldBasisShort,
+  yieldCaption,
+  yieldLabel,
+  yieldTitle,
+  yieldValue,
+} from '@/lib/market-figures';
 import { isMintable, orderMarkets, poolLiquidityUsd, quoteGroups } from '@/lib/markets';
 import { densityAtPrice, MAX_BINS, MIN_BINS, SHAPES, shapeWeights } from '@/lib/shapes';
 import { amount as fmtAmount, num } from '@/lib/v4/format';
-import { feeYieldQualifier, feeYieldTitle, feeYieldValue, yieldPct } from '@/lib/yield';
+
 
 /** Simulated data has no wallet, so the spendable balance is a fixed stand-in. */
 const MAX_DEPOSIT_ETH = 4.18;
@@ -104,7 +113,7 @@ export function ShapeBuilder() {
 }
 
 function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePools: Pool[]; live: boolean }) {
-  const { global } = useMarket();
+  const { global, indexerLagSeconds } = useMarket();
   const { wallet } = useUi();
 
   // The drawer hands over here: ?pool= picks the pool, ?range=full is a stake.
@@ -312,8 +321,9 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
   // Estimated, and labelled as such: this pool's trailing-7d yield scaled by
   // how tightly the range concentrates it. Never a forecast (§1). Full range
   // is the pool's own yield: no concentration at all.
-  const known = pool.feeYield.basis !== 'insufficient';
-  const trailing = yieldPct(pool.feeYield);
+  const shownY = shownYield(pool);
+  const known = shownY.pct !== null;
+  const trailing = shownY.pct ?? 0;
   // What the shape puts where the price is, as a multiple of an even spread
   // over the same range. Only the bin holding the price earns, so this is
   // the whole difference between the shapes — and it is arithmetic on the
@@ -781,15 +791,17 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
                 (§7). Calling it `est. · from 1445% trailing` over the same
                 1445% read as a projection stacked on a projection. */}
             <div className="k">{fullRange ? 'Fee yield' : 'Est. fee yield'}</div>
-            <div className={`v num${known ? ' up' : ' muted'}`} title={feeYieldTitle(pool.feeYield)}>
-              {fullRange ? feeYieldValue(pool.feeYield) : known ? `${estYield.toFixed(0)}%` : '—'}
-              {fullRange ? (
-                <span className="est">
-                  {feeYieldQualifier(pool.feeYield, ageLabel(pool.ageHours)) ?? 'trailing 7d'}
-                </span>
-              ) : (
-                known && <span className="est">est. · from {trailing.toFixed(0)}% trailing</span>
-              )}
+            <div className={`v num${known ? ' up' : ' muted'}`} title={yieldTitle(shownY)}>
+              {fullRange ? yieldValue(shownY) : known ? `${estYield.toFixed(0)}%` : '—'}
+              {(() => {
+                const qualifier = yieldCaption(shownY, ageLabel(pool.ageHours), stalenessText(indexerLagSeconds));
+                const text = fullRange
+                  ? (qualifier ?? yieldBasisShort(shownY))
+                  : known
+                    ? `est. · from ${trailing.toFixed(0)}% · ${yieldBasisShort(shownY)}`
+                    : qualifier;
+                return text ? <span className="est">{text}</span> : null;
+              })()}
             </div>
           </div>
           <div>
@@ -817,8 +829,8 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
 
         <p className="hint">
           {fullRange
-            ? 'Fee yield is this pool\u2019s own trailing 7d figure: a full-range position concentrates nothing, so there is nothing to scale. It is arithmetic on past fees, not a forecast.'
-            : 'Est. fee yield scales this pool\u2019s trailing 7d fees by how tightly your range concentrates them. It is arithmetic on past fees, not a forecast, and it earns nothing while price sits outside the range.'}
+            ? `Fee yield is this pool\u2019s own ${yieldLabel(shownY)} figure: a full-range position concentrates nothing, so there is nothing to scale. It is arithmetic on fees already paid, not a forecast.`
+            : `Est. fee yield scales this pool\u2019s ${yieldLabel(shownY)} by how tightly your range concentrates them. It is arithmetic on fees already paid, not a forecast, and it earns nothing while price sits outside the range.`}
           {onChain && !wallet ? ' Connect a wallet to see the exact amounts for your deposit.' : ''}
         </p>
       </div>

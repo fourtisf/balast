@@ -142,14 +142,26 @@ describe('poolLiquidityUsd', () => {
     expect(poolLiquidityUsd(pool({ tvlUsd: 1_234 }))).toBe(1_234);
   });
 
-  it('falls back to a live figure for the same pool, never for the token', () => {
-    const tokenWide = pool({ tvlUsd: 0 });
-    (tokenWide as { market?: unknown }).market = { liquidityUsd: 5_000_000, poolLiquidityUsd: null };
-    expect(poolLiquidityUsd(tokenWide)).toBeNull();
+  /**
+   * An aggregator's quote is fetched once per token and attached to every
+   * pool of it, so neither of its liquidity fields describes one pool.
+   * Reading `poolLiquidityUsd` off it put an identical $5.42M on four of
+   * CASHCAT's six ether pools and ranked them above the one whose real
+   * depth the chain knew.
+   */
+  it('never takes a figure from the token-wide quote, by either name', () => {
+    const p = pool({ tvlUsd: 0 });
+    (p as { market?: unknown }).market = { liquidityUsd: 5_420_000, poolLiquidityUsd: 5_420_000 };
+    expect(poolLiquidityUsd(p)).toBeNull();
+  });
 
-    const poolWide = pool({ tvlUsd: 0 });
-    (poolWide as { market?: unknown }).market = { liquidityUsd: 5_000_000, poolLiquidityUsd: 7_000 };
-    expect(poolLiquidityUsd(poolWide)).toBe(7_000);
+  it('does not let that figure decide the order', () => {
+    const shared = { liquidityUsd: 5_420_000, poolLiquidityUsd: 5_420_000 };
+    const unknown = pool({ feeTierBps: 46, tvlUsd: 0 });
+    const known = pool({ feeTierBps: 200, tvlUsd: 325_400 });
+    (unknown as { market?: unknown }).market = shared;
+    (known as { market?: unknown }).market = shared;
+    expect(orderMarkets([unknown, known])[0]).toBe(known);
   });
 
   it('is null for an unreconstructable pool, not zero', () => {

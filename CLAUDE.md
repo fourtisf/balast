@@ -4225,3 +4225,101 @@ traded. The hint says so when any tier shows one.
 **Verified**: typecheck, lint, 438 unit tests, the production build and 40
 Playwright tests — one new, asserting the range reads `0 → ∞` and the
 yield stops calling itself an estimate when the full-range box is ticked.
+
+### The yield, on Uniswap's basis — ALFA's call, and §1 set aside
+
+ALFA, on the same panel: *masih sama aja saya ingin data yeild-nya real
+seperti uniswap*. Two things in one screenshot, and the first is why the
+second was still on screen.
+
+**The range and the est-yield fixes above were committed, not deployed.**
+Nothing on the box had changed. What *had* deployed was the fee-tier
+control, and it showed the next fault.
+
+### Four pools at an identical $5.42M
+
+`0.46% $5.42M`, `0.66% $5.42M`, `0.96% $5.42M`, `3% $5.42M` — one figure
+on four pools, ranked above the 2% pool whose real depth the chain gives
+as $325.4K. Mine, one commit old, and the function's own doc comment had
+warned against it: an aggregator's quote is fetched **once per token** and
+attached to every pool of it, so `market.liquidityUsd` is the token summed
+over its pairs and `market.poolLiquidityUsd` is the single pair the source
+picked. Neither distinguishes one pool of a token from another, which is
+the only thing `poolLiquidityUsd` exists to do. The field name is what made
+it look like a pool's figure. It is the chain's `tvl_usd` and nothing else
+now, with a dash where that is unknown (§14).
+
+### The yield is 24h fees, annualised
+
+`1445%` is honest arithmetic — `fees over a 7-day window ÷ liquidity ×
+365/7` — and **every input was 74 days old**: July's fees over July's
+liquidity, with nothing on the panel saying which day that was.
+
+The alternative was put to ALFA, because Uniswap's basis is precisely what
+§1 calls non-negotiable-forbidden (*never annualise a single day*), and
+ALFA chose it. **§1's "displayed yield is trailing" is set aside; this
+section is that decision.** What replaced it:
+
+`shownYield` in `lib/market-figures.ts` — the file §21 made for exactly
+this — prefers **`now24h`**: the fees the pool actually took in the last 24
+hours of chain time, annualised, over the pool's own liquidity. The
+numerator is the head reader's (§25), so it is current while the backfill
+is months behind, and it is each swap's **real fee amount** at its token's
+price — `rebuildFeeHourly`'s own expression, never volume × tier, because a
+dynamic-fee pool's per-swap fee is not its key's fee and a hook on this
+chain can take most of a trade (§20). `recent_swaps` already carried
+`fee_amount`; the head query simply had not summed it.
+
+Everything else in §1 and §7 stands, and two rules needed defending
+explicitly:
+
+- **Never a figure from under 24 hours of data.** A pool three hours old
+  has three hours of fees in the head window, and annualising them as a day
+  is the "1-day-old pool showing 1200%" §7 exists to stop. Below 24h the
+  figure falls back to the indexer's, which says `insufficient` — an em
+  dash, now with *not enough data yet* beside it rather than only in a
+  tooltip.
+- **A pool under a week carries its age.** The liquidity the figure divides
+  by has as little history as the fees above it. `young` is true when
+  either the age or the indexer's own `estimate` basis says so, so the
+  qualifier cannot be dropped because one field disagreed with the other.
+- **Nothing is ever called APY or APR**, and a figure from one day is never
+  labelled a trailing seven. The basis travels with the figure:
+  `fee yield · 24h, annualised` or `fee yield, trailing 7d`, on the board,
+  the drawer, the vault cards and the builder, which all read the one
+  function. And where the figure *is* the indexer's, it now carries how old
+  it is — `74d 2h old` — which is §7's own lag rule applied to the number
+  that most reads as live.
+
+The board's fee-yield facet ranks on the figure it displays, which it had
+stopped doing the moment the two could differ (§21's lesson, again).
+
+### Two regressions caught before they shipped
+
+**The board froze.** `SimProvider` had never filled `now`, so adding it
+exercised the `now` path for the first time — and the market tick updated
+only the indexed fields, so `shownVolume`, `shownChange`, `shownSplit` and
+the yield all read a `now` that never moved. The tick updates it. This is
+the `otherPools` lesson a second time: a path the simulator cannot reach is
+a path first seen on the live board.
+
+**The caption said what the label said.** `yieldCaption` returned the basis,
+which every surface already prints under the number, so each row carried
+`fees 24h · annualised` inline over the volume column to its left. It
+returns only the qualifiers now — `est.` and an age, a staleness — and null
+when there are none, which is what the board had before and why no row used
+to carry one.
+
+`ChainNow.at` became nullable for the simulator, which reads no clock by
+design so a snapshot cannot drift between two renders; a time is a claim
+about when, and the simulator is in no position to make one.
+
+**Verified**: typecheck, lint, 447 unit tests, the production build and 40
+Playwright tests, all green, and the board and builder checked by
+screenshot at 1280px.
+
+**Still ALFA's, and worth revisiting**: one day is a noisy basis — a quiet
+day or a busy one moves the figure a long way, which is what §1 was
+protecting against. The tooltip says so on every figure. If the noise reads
+badly once the backfill nears head, the trailing-7d figure is one line
+away and both are already computed.

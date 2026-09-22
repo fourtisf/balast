@@ -18,6 +18,8 @@
 
 import { isEther } from './chain';
 import type { Pool } from './data/types';
+import { duration, usd } from './format';
+import { MIN_DATA_HOURS, YIELD_WINDOW_HOURS } from './yield';
 
 /**
  * Where a figure came from.
@@ -288,4 +290,150 @@ export function ago(iso: string, now: number = Date.now()): string {
 export function sourceName(pool: Pool): string {
   if (!pool.market) return 'indexed swaps';
   return pool.market.source === 'dexscreener' ? 'DexScreener' : 'GeckoTerminal';
+}
+
+/**
+ * The yield a person is shown, and what it is a claim about.
+ *
+ * `now24h` is what Uniswap's own interface shows: the fees a pool actually
+ * took in the last 24 hours, annualised, over the liquidity behind them.
+ * Both come from the chain — the head reader's own swaps for this pool
+ * (§25), and the pool's reserves — so the figure describes the pool as it is
+ * rather than as it was.
+ *
+ * **This sets aside §1's "never annualise a single day", and it is ALFA's
+ * decision** (*saya ingin data yield-nya real seperti uniswap*), taken after
+ * the alternative was put: the indexer's trailing-7d figure is honest
+ * arithmetic and, while the backfill is seventy-four days behind, it is
+ * July's fees over July's liquidity. A pool showed 1445% with nothing on
+ * screen saying which day that was. §1's reason still stands — one day is
+ * noisy — so the basis travels with the figure and the label never says
+ * "trailing 7d" over a day, and never "APY" over anything.
+ *
+ * The fallback is unchanged: with no day from the head reader, or nothing to
+ * divide by, it is the indexer's `feeYield` with its own three states (§7).
+ */
+export type YieldBasis = 'now24h' | 'trailing7d' | 'estimate' | 'insufficient';
+
+export interface ShownYield {
+  /** Null only when the basis is `insufficient`. */
+  pct: number | null;
+  basis: YieldBasis;
+  /** How old the figure is: `now24h` is today, the rest are the indexer's. */
+  current: boolean;
+  /**
+   * The pool has less than a week of history, so §7's `est.` and its age
+   * ride with the figure. Carried here rather than asked of each caller:
+   * four surfaces show this figure and any one of them could forget.
+   */
+  young: boolean;
+  /** What went into a `now24h` figure, for the tooltip. */
+  feesUsd: number | null;
+  liquidityUsd: number | null;
+}
+
+export function shownYield(pool: Pool): ShownYield {
+  const now = pool.now;
+  // Two things say a pool has less than a week behind it: its age, and the
+  // indexer's own `estimate` basis, which it sets for exactly that reason.
+  // Either is enough — §7's qualifier must not be dropped because one field
+  // disagreed with the other.
+  const young = pool.ageHours < YIELD_WINDOW_HOURS || pool.feeYield.basis === 'estimate';
+  // The pool's own reserves. Never an aggregator's figure here: its quote is
+  // fetched once per token and describes the token or the one pair it chose,
+  // so for a token with six pools it is the same number six times (§27).
+  const liquidity = pool.tvlUsd > 0 ? pool.tvlUsd : null;
+  // §7's floor, which ALFA's decision did not move: never a yield from fewer
+  // than 24 hours of data. A pool three hours old has three hours of fees in
+  // the head reader's window, and annualising them as if they were a day is
+  // the "1-day-old pool showing 1200%" that rule exists to stop.
+  const enough = pool.ageHours >= MIN_DATA_HOURS;
+  if (now && enough && liquidity !== null && Number.isFinite(now.fees24hUsd)) {
+    return {
+      pct: (now.fees24hUsd * 365) / liquidity * 100,
+      basis: 'now24h',
+      current: true,
+      young,
+      feesUsd: now.fees24hUsd,
+      liquidityUsd: liquidity,
+    };
+  }
+  const y = pool.feeYield;
+  return {
+    pct: y.basis === 'insufficient' ? null : y.pct,
+    basis: y.basis === 'insufficient' ? 'insufficient' : y.basis === 'estimate' ? 'estimate' : 'trailing7d',
+    current: false,
+    young,
+    feesUsd: null,
+    liquidityUsd: null,
+  };
+}
+
+/** "148%", or an em dash when nothing honest can be said. */
+export function yieldValue(y: ShownYield): string {
+  return y.pct === null ? '—' : `${y.pct.toFixed(0)}%`;
+}
+
+/**
+ * What has to be said *beside* the figure, or null when nothing does.
+ *
+ * Only the qualifiers: the basis itself belongs to `yieldLabel`, which every
+ * surface already prints under the number. Returning the basis here too put
+ * `fees 24h · annualised` inline beside each figure on the board, over the
+ * volume column to its left, saying what the line below it said.
+ *
+ * What is left is what §7 asks for and the label cannot carry: a pool with
+ * less than a week of history (`est.` and its age), and a figure as old as
+ * the sync.
+ */
+export function yieldCaption(y: ShownYield, ageText: string, lagText: string | null): string | null {
+  if (y.basis === 'insufficient') return 'not enough data yet';
+  const parts: string[] = [];
+  if (y.young) parts.push(`est. · ${ageText}`);
+  if (!y.current && lagText) parts.push(`${lagText} old`);
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+/** Why the figure is what it is, for the title attribute. */
+export function yieldTitle(y: ShownYield): string {
+  switch (y.basis) {
+    case 'now24h':
+      return (
+        `The fees this pool took in the last 24 hours of chain time, annualised: ` +
+        `${usd(y.feesUsd ?? 0)} over ${usd(y.liquidityUsd ?? 0)} of liquidity. ` +
+        'From the pool’s own swaps, not a forecast — one day is a noisy basis, ' +
+        'and a quiet day or a busy one moves it a long way.'
+      );
+    case 'estimate':
+      return 'Pool is younger than 7 days. Annualised from the fees it has — arithmetic, not a forecast.';
+    case 'trailing7d':
+      return (
+        'Fees over the trailing 7 days, annualised, from the indexer. No trade has ' +
+        'been read for this pool in the last day, so this is as old as the sync.'
+      );
+    default:
+      return 'Less than 24h of fee data. No yield figure is honest yet.';
+  }
+}
+
+/**
+ * How old the indexer's figures are, in words, or null while it is current.
+ *
+ * §7 asks for the lag in the top bar. A yield is the one number on the page
+ * that most reads as live, so where the figure is the indexer's it carries
+ * the same lag beside it: `trailing 7d · 74d 2h old` cannot be mistaken for
+ * today the way a bare `1445%` was.
+ */
+export function stalenessText(indexerLagSeconds: number): string | null {
+  return indexerLagSeconds >= 86_400 ? duration(indexerLagSeconds) : null;
+}
+
+/** The figure's name, which is the basis: `fee yield · 24h`, or trailing 7d. */
+export function yieldLabel(y: ShownYield): string {
+  return y.basis === 'now24h' ? 'fee yield · 24h, annualised' : 'fee yield, trailing 7d';
+}
+
+/** The basis in two words, for a caption that already names a figure. */
+export function yieldBasisShort(y: ShownYield): string {
+  return y.basis === 'now24h' ? '24h' : 'trailing 7d';
 }
