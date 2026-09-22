@@ -191,6 +191,23 @@ export function capKey(pool: Pool): number {
   return shownCap(pool).value ?? 0;
 }
 
+/**
+ * The market-cap ranking, as a list.
+ *
+ * A cap alone put the dead tokens first (§24): a launchpad token nobody has
+ * traded carries its whole supply at the curve's floor, and an aggregator
+ * reports that as a market cap and a liquidity of tens of millions — beside
+ * a day's volume of zero. A figure nobody has paid is not a project. So a
+ * token with no volume today ranks after every token with some, whatever
+ * its cap; within each tier the cap decides, then depth. The zero-volume
+ * tokens stay on the board, at the end, where a quiet day is visible
+ * rather than hidden.
+ */
+export function rankByCap(pools: Pool[]): Pool[] {
+  const traded = (p: Pool): number => (shownVolume(p).value > 0 ? 1 : 0);
+  return pools.slice().sort((a, b) => traded(b) - traded(a) || capKey(b) - capKey(a) || b.tvlUsd - a.tvlUsd);
+}
+
 /** `12s ago`, `4m ago` — how old a live quote is. */
 export function ago(iso: string, now: number = Date.now()): string {
   const s = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));

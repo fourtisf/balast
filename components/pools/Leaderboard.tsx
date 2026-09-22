@@ -11,17 +11,7 @@ import { useFlip } from '@/hooks/useFlip';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import type { Pool, Quote } from '@/lib/data/types';
 import { ageLabel, usd } from '@/lib/format';
-import {
-  ago,
-  buyShare,
-  capKey,
-  shownCap,
-  shownChange,
-  shownLiquidity,
-  shownSplit,
-  shownVolume,
-  sourceName,
-} from '@/lib/market-figures';
+import { ago, buyShare, rankByCap, shownCap, shownChange, shownLiquidity, shownSplit, shownVolume, sourceName } from '@/lib/market-figures';
 import {
   YIELD_WINDOW_HOURS,
   feeYieldQualifier,
@@ -70,11 +60,7 @@ export function Leaderboard() {
           p.token.name.toLowerCase().includes(q),
       );
 
-    if (facet === 'mc') {
-      return matching
-        .slice()
-        .sort((a, b) => capKey(b) - capKey(a) || b.tvlUsd - a.tvlUsd);
-    }
+    if (facet === 'mc') return rankByCap(matching);
     if (facet === 'volume') {
       return matching.slice().sort((a, b) => shownVolume(b).value - shownVolume(a).value);
     }
@@ -93,7 +79,7 @@ export function Leaderboard() {
           </h2>
           <p className="lb-sub">
             {facet === 'mc'
-              ? 'Ranked by market cap · fee yield appears at seven days of history'
+              ? 'Ranked by market cap · tokens with no volume today rank last · fee yield appears at seven days of history'
               : facet === 'volume'
                 ? 'Ranked by 24h volume · fee yield appears at seven days of history'
                 : 'Ranked by fee yield, trailing 7d · only pools with seven days of history'}

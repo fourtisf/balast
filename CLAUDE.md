@@ -3541,3 +3541,29 @@ and the re-read runs at the poller's pace behind the board; the board
 does not wait for it. Nothing else was lost: the rows behind the cursor
 that carried real times were never touched, and the cursor's own time
 was restored from them.
+
+### Seven tokens at the same market cap, and a day's volume of zero
+
+The board after the re-read began, ranks 9 to 15: `!!!!!`, RVH, `f`,
+RTH, BACKD, RC, UNICLAW — each at `MC $38.88M`, most at `liquidity
+$38.88M`, every one at `vol · 24h · live $0`. ALFA: *token-token masih
+pada shit dan pada 0 vol, perbaiki asap*.
+
+The figures are the aggregator's, and they are not wrong about what
+they measure. A launchpad token nobody has bought holds its whole supply
+in the pool that launched it, at the curve's floor price; the aggregator
+multiplies the one by the other and reports a market cap, and values the
+pool's tokens and reports a liquidity — the same number, since the pool
+*is* the supply. Seven fresh launches at the same floor are seven
+identical figures. What the figures are not is a project: nobody has
+paid any of it, which the `$0` beside them says.
+
+So the market-cap ranking has two tiers now (`rankByCap` in
+`lib/market-figures.ts`): every token with volume today, by cap; then
+every token without, by cap. A quiet day still shows — at the end of the
+board, not the top of it — and the subtitle says so. The volume facet
+was already in that order, and the yield facet requires seven days of
+fees, which a token nobody trades never has. Hiding the zero-volume rows
+outright is one filter, offered and not made: a real token can have a
+quiet day, and a board that hides it says less than one that ranks it
+last.

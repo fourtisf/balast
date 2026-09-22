@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import { NATIVE_ETH } from './chain';
 import type { MarketQuote, Pool } from './data/types';
-import { capKey, shownCap, shownChange, shownLiquidity, shownSplit, shownVolume } from './market-figures';
+import { capKey, rankByCap, shownCap, shownChange, shownLiquidity, shownSplit, shownVolume } from './market-figures';
 
 function quote(overrides: Partial<MarketQuote> = {}): MarketQuote {
   return {
@@ -125,6 +125,19 @@ describe('market cap', () => {
     expect(capKey(live)).toBe(22_920_000);
     expect(capKey(chain)).toBe(5_000_000);
     expect(capKey(pool())).toBe(0);
+  });
+
+  it('ranks a token nobody traded today after every token somebody did, whatever its cap', () => {
+    // The live board at rank 9 to 15: seven launchpad tokens at an identical
+    // "MC $38.88M" — a whole supply sitting at the curve's floor — with a
+    // day's volume of $0 each, above tokens people were actually trading.
+    const dead = pool({ id: 'dead', market: quote({ marketCapUsd: 38_880_000, volume24hUsd: 0 }) });
+    const small = pool({ id: 'small', market: quote({ marketCapUsd: 2_000_000, volume24hUsd: 1_500 }) });
+    const big = pool({ id: 'big', market: quote({ marketCapUsd: 9_000_000, volume24hUsd: 40_000 }) });
+    const chainOnly = pool({ id: 'chain', marketCapUsd: 3_000_000, volume24hUsd: 10 });
+    expect(rankByCap([dead, small, big, chainOnly]).map((p) => p.id)).toEqual(['big', 'chain', 'small', 'dead']);
+    // And still on the board, last, rather than hidden.
+    expect(rankByCap([dead])).toHaveLength(1);
   });
 });
 
