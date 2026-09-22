@@ -27,7 +27,8 @@ import { readWork } from '../indexer/working';
 import { busKind, subscribeTicks } from './bus';
 import { MarketFeed } from './market';
 import { buildPortfolio } from './portfolio';
-import { buildSnapshot } from './snapshot';
+import { buildSnapshot, nextRevision } from './snapshot';
+import { agedSnapshot, isServable, loadPersistedSnapshot, persistSnapshot } from './snapshot-store';
 
 const USDG = process.env.USDG_ADDRESS ?? '';
 
@@ -234,6 +235,18 @@ export async function buildServer(
    */
   let cached: { snapshot: MarketSnapshot | null; at: number } | null = null;
   let building: Promise<MarketSnapshot | null> | null = null;
+  /**
+   * The last snapshot the previous process built, served from the first
+   * request while this one's first build runs (snapshot-store.ts). Aged, so
+   * the lag in the top bar says how old it is; its revision is below the
+   * first build's, so the page takes the build the moment it lands. `at: 0`
+   * makes that first request also start the rebuild.
+   */
+  const kept = await loadPersistedSnapshot();
+  if (kept) {
+    cached = { snapshot: agedSnapshot(kept, nextRevision()), at: 0 };
+    app.log.info(`  snapshot: serving the one kept from ${kept.builtAt} until the first build here succeeds`);
+  }
 
   /**
    * Live market figures (market.ts): DexScreener, then GeckoTerminal for what
@@ -327,8 +340,20 @@ export async function buildServer(
     if (!building) {
       building = buildSnapshot({ usdgAddress: USDG || null, market })
         .then((value) => {
-          cached = { snapshot: value, at: Date.now() };
-          return value;
+          if (value) {
+            cached = { snapshot: value, at: Date.now() };
+            void persistSnapshot(value).catch((error) => app.log.warn({ err: error }, 'could not keep the snapshot'));
+          } else if (cached?.snapshot && isServable(cached.snapshot)) {
+            // Nothing could be built — the cursor or the anchor is missing,
+            // which after a deploy is usually the indexer mid-repair. The
+            // last good board stays up, aged, rather than the page going
+            // blank over tables that had one a minute ago; past a day it is
+            // let go and the loading panel is the honest state again.
+            cached = { snapshot: agedSnapshot(cached.snapshot, cached.snapshot.revision), at: Date.now() };
+          } else {
+            cached = { snapshot: null, at: Date.now() };
+          }
+          return cached.snapshot;
         })
         .finally(() => {
           building = null;

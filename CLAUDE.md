@@ -3444,10 +3444,54 @@ next time it happens the log says.
 
 ### Verified here
 
-`typecheck`, `lint`, the full suite (40 files, 382 tests, the
-block-time and repair suites among them), the production build and the
-34 Playwright tests. Unverified, as always from this sandbox: the
+`typecheck`, `lint`, the full suite (41 files, 387 tests, the
+block-time, repair and snapshot-cache suites among them), the production
+build and the 34 Playwright tests. Unverified, as always from this sandbox: the
 aggregators' answer for the wrapper on this chain. `/api/health`'s
 `market` section says whether the wrapper is quoted, and
 `npm run market:probe -- 0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73`
 prints what each source answers for it.
+
+### The loading panel after a deploy
+
+The deploy carrying the above landed, every process came up, and the site
+showed the loading panel — *asking the API what state the indexer is in* —
+while `/api/health` reported `followed: 0` and *none has been built since
+this process started*. ALFA's answer: *hapus loading gini, harusnya
+langsung website saja*. Take the loading away; the site should just be
+there.
+
+The cause is structural, and it is the same one on both ends. The API
+starts with nothing and builds its first snapshot on demand — the
+expensive query, run right after a deploy, when the indexer is usually
+mid-repair or mid-rebuild after the same deploy and the build can come
+back empty until the cursor or the anchor is put right. And the browser
+starts every load with nothing and waits for the API. Two cold starts,
+one behind the other, over tables that had a perfectly good board in
+them a minute earlier.
+
+**The API keeps its last board** (`server/api/snapshot-store.ts`): each
+successful build is written to `indexer_state`, at most once every thirty
+seconds, and a starting process serves it from its very first request
+while its own first build runs. A build that comes back empty no longer
+replaces a good board with nothing; the last one stays up. Both are
+**aged**, not passed off as fresh: the snapshot carries `builtAt` now, and
+what is served has the time since added to its lag, so the top bar says
+exactly how old the numbers are (§7). Past a day it is let go, and the
+loading panel is the honest state again. The revision handed to a kept
+snapshot comes from the same counter as the builds, so the first real
+build is newer and the page takes it.
+
+**The browser keeps its last board** (`lib/data/snapshot-cache.ts`): the
+live provider stores each snapshot it accepts in `localStorage`, at most
+once every ten seconds and without the wallet's positions, and restores
+it on the next load with the same ageing — after the first paint and
+outside hydration, so the server-rendered null state and the client
+agree. Its revision is zeroed, so whatever the API answers first replaces
+it. A private window or a full store is not an error.
+
+Neither is a fallback to invented numbers (§14): both are the last real
+board, labelled with its age, and both give way to the first fresh one.
+`server/api/server.test.ts` proves the API half — a new process with no
+cursor at all serves the kept snapshot, aged, from its first request and
+its second; `lib/data/snapshot-cache.test.ts` the browser half.

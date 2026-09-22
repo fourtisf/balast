@@ -752,7 +752,18 @@ export async function buildSnapshot(
     payoutTotalUsd: 0,
     indexerLagSeconds: Math.max(0, (Date.now() - asOf.getTime()) / 1000),
     revision: ++revision,
+    builtAt: new Date().toISOString(),
   };
+}
+
+/**
+ * The next revision, for a snapshot this process did not build — the one
+ * persisted by the previous process and served until the first build here
+ * succeeds (snapshot-store.ts). Taken from the same counter, so the first
+ * build's revision is above it and the page accepts the build.
+ */
+export function nextRevision(): number {
+  return ++revision;
 }
 
 /** Element-wise sum of equal-length series, for the featured chart. */

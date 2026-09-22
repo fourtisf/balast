@@ -1,3 +1,4 @@
+import { restoreSnapshot, storeSnapshot } from './snapshot-cache';
 import type { DataProvider, MarketListener, MarketSnapshot, Portfolio, Unsubscribe, UserPosition } from './types';
 
 /**
@@ -97,6 +98,16 @@ export class LiveProvider implements DataProvider {
     // is the null state, and the client fills it in.
     if (typeof window === 'undefined' || this.started) return;
     this.started = true;
+    // The board this browser last saw, aged, until the API answers
+    // (snapshot-cache.ts). After the first paint and outside hydration, so
+    // the server-rendered null state and the client agree.
+    if (!this.snapshot) {
+      const kept = restoreSnapshot(browserStorage());
+      if (kept) {
+        this.snapshot = this.withPortfolio(kept);
+        this.listeners.forEach((listener) => listener(this.snapshot!));
+      }
+    }
     void this.fetchSnapshot();
     this.openSocket();
     this.pollTimer = setInterval(() => void this.fetchSnapshot(), POLL_MS);
@@ -229,5 +240,15 @@ export class LiveProvider implements DataProvider {
     if (this.snapshot && next.revision <= this.snapshot.revision) return;
     this.snapshot = this.withPortfolio(next);
     this.listeners.forEach((listener) => listener(this.snapshot!));
+    storeSnapshot(browserStorage(), next);
+  }
+}
+
+/** localStorage when the browser allows it; a private window or a blocked origin is not an error. */
+function browserStorage(): Storage | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    return null;
   }
 }

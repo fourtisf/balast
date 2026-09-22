@@ -531,3 +531,59 @@ describe('/api/health while there is no anchor', () => {
     vi.resetModules();
   });
 });
+
+describe('the kept snapshot', () => {
+  it('is served by a new process from its first request, aged, even while nothing can be built', async () => {
+    // A deploy restarts the API, and the page that loads next used to wait on
+    // the new process's first build — which, with the indexer mid-repair
+    // after the same deploy, can come back empty for a long time. The last
+    // build is kept in indexer_state and served until a build here succeeds.
+    const { resetDatabase } = await import('../test/db');
+    await resetDatabase();
+    const { Poller, POOL_MANAGER_CURSOR } = await import('../indexer/poller');
+    const { FixtureLogSource, USDG, fixtureTokenReader } = await import('../test/fixture');
+    await new Poller({ source: new FixtureLogSource(chain), usdgAddress: USDG, startBlock: 0n, blockRange: chain.headBlock + 1, tokenReader: fixtureTokenReader }).syncToHead();
+    const { SNAPSHOT_STATE_KEY, resetPersistClock } = await import('./snapshot-store');
+    const { buildServer } = await import('./server');
+    resetPersistClock();
+
+    // The process that builds it writes it down.
+    const before = await buildServer();
+    await before.ready();
+    try {
+      const first = await before.inject({ method: 'GET', url: '/api/snapshot', headers: { 'x-real-ip': 'kept-a' } });
+      expect(first.statusCode).toBe(200);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    } finally {
+      await before.close();
+    }
+    const row = await prisma.indexerState.findUnique({ where: { key: SNAPSHOT_STATE_KEY } });
+    expect(row).not.toBeNull();
+    const kept = JSON.parse(row!.value);
+    expect(typeof kept.builtAt).toBe('string');
+    expect(kept.pools.length).toBeGreaterThan(0);
+
+    // Every fresh build now comes back empty: there is no cursor.
+    await prisma.indexerCursor.delete({ where: { contract: POOL_MANAGER_CURSOR } });
+    const fresh = await buildServer();
+    await fresh.ready();
+    try {
+      const served = await fresh.inject({ method: 'GET', url: '/api/snapshot', headers: { 'x-real-ip': 'kept-b' } });
+      expect(served.statusCode).toBe(200);
+      const body = served.json();
+      expect(body.builtAt).toBe(kept.builtAt);
+      expect(body.pools.length).toBe(kept.pools.length);
+      // Aged: the lag has the time since the build added to it.
+      expect(body.indexerLagSeconds).toBeGreaterThanOrEqual(kept.indexerLagSeconds);
+      // The page accepts only a higher revision, and the first real build's is above this one's.
+      expect(body.revision).toBeGreaterThan(kept.revision);
+      // The rebuild that request started found nothing; the board stays up.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const again = await fresh.inject({ method: 'GET', url: '/api/snapshot', headers: { 'x-real-ip': 'kept-c' } });
+      expect(again.statusCode).toBe(200);
+      expect(again.json().builtAt).toBe(kept.builtAt);
+    } finally {
+      await fresh.close();
+    }
+  });
+});

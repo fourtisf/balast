@@ -327,6 +327,13 @@ export interface MarketSnapshot {
   indexerLagSeconds: number;
   /** Monotonic counter so consumers can cheaply detect a new snapshot. */
   revision: number;
+  /**
+   * When this snapshot was built, ISO. `indexerLagSeconds` is as of then: a
+   * snapshot served or restored later has the time since added to it, so a
+   * page never shows a stale board as fresher than it is (§7). Absent on
+   * simulated data.
+   */
+  builtAt?: string;
 }
 
 export type MarketListener = (snapshot: MarketSnapshot) => void;
