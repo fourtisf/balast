@@ -12,7 +12,7 @@
 
 import type { Hex } from 'viem';
 
-export type TxKind = 'approve' | 'mint' | 'collect' | 'withdraw';
+export type TxKind = 'approve' | 'wrap' | 'mint' | 'collect' | 'withdraw';
 export type TxStatus = 'pending' | 'success' | 'reverted';
 
 export interface TxRecord {

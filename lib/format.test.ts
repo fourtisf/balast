@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { ageLabel, countdown, duration, feeTierLabel, inHours, price, signedPct, usd, usdExact, weth } from './format';
+import { CONTRACTS, NATIVE_ETH } from './chain';
+import type { Pool } from './data/types';
+import {
+  ageLabel,
+  countdown,
+  duration,
+  feeTierLabel,
+  inHours,
+  price,
+  quoteCurrencyOf,
+  quoteIsNativeEther,
+  quoteIsWrappedEther,
+  quoteLabel,
+  signedPct,
+  usd,
+  usdExact,
+  weth,
+} from './format';
 
 describe('usd', () => {
   it('scales to B / M / K / plain', () => {
@@ -98,5 +115,76 @@ describe('feeTierLabel', () => {
     expect(feeTierLabel(500)).toBe('5%');
     expect(feeTierLabel(690)).toBe('6.9%');
     expect(feeTierLabel(5)).toBe('0.05%');
+  });
+});
+
+/**
+ * Which side of a pool is the quote, and whether it is this chain's own
+ * ether or the aeWETH wrapper.
+ *
+ * It decides what a wallet has to hold to enter a market — the builder puts
+ * the native one first because that is the balance the wallet already
+ * shows — so the answer is given once and asserted here. §18 is what
+ * happens when several places answer it separately.
+ */
+const TOKEN = '0x2222222222222222222222222222222222222222';
+type QuoteSided = Pick<Pool, 'quote' | 'key' | 'token' | 'protocol'>;
+
+function market(quoteSide: string, protocol: 'v3' | 'v4' = 'v4', withKey = true): QuoteSided {
+  // currency0 is the lower address, as a PoolKey always is; the token here
+  // sorts above both quote sides used below.
+  return {
+    quote: 'ETH',
+    protocol,
+    token: { address: TOKEN } as Pool['token'],
+    key: withKey
+      ? { currency0: quoteSide, currency1: TOKEN, fee: 3000, tickSpacing: 60, hooks: NATIVE_ETH, decimals0: 18, decimals1: 18 }
+      : undefined,
+  };
+}
+
+describe('the quote side of a pair', () => {
+  it('reads native ether and the wrapper apart', () => {
+    expect(quoteCurrencyOf(market(NATIVE_ETH))).toBe(NATIVE_ETH);
+    expect(quoteIsNativeEther(market(NATIVE_ETH))).toBe(true);
+    expect(quoteIsWrappedEther(market(NATIVE_ETH))).toBe(false);
+
+    expect(quoteIsNativeEther(market(CONTRACTS.weth))).toBe(false);
+    expect(quoteIsWrappedEther(market(CONTRACTS.weth))).toBe(true);
+  });
+
+  it('answers whichever side the token is not', () => {
+    const tokenIsCurrency0: QuoteSided = {
+      quote: 'ETH',
+      protocol: 'v4',
+      token: { address: '0x0000000000000000000000000000000000000abc' } as Pool['token'],
+      key: {
+        currency0: '0x0000000000000000000000000000000000000abc',
+        currency1: CONTRACTS.weth,
+        fee: 3000,
+        tickSpacing: 60,
+        hooks: NATIVE_ETH,
+        decimals0: 18,
+        decimals1: 18,
+      },
+    };
+    expect(quoteCurrencyOf(tokenIsCurrency0)).toBe(CONTRACTS.weth.toLowerCase());
+    expect(quoteIsWrappedEther(tokenIsCurrency0)).toBe(true);
+  });
+
+  it('labels the two apart, and says nothing about a pool it has no key for', () => {
+    expect(quoteLabel(market(NATIVE_ETH))).toBe('ETH');
+    expect(quoteLabel(market(CONTRACTS.weth))).toBe('WETH');
+    // No key: a v3 pool always holds the wrapper, a simulated one is nominal.
+    expect(quoteCurrencyOf(market(NATIVE_ETH, 'v3', false))).toBeNull();
+    expect(quoteIsNativeEther(market(NATIVE_ETH, 'v3', false))).toBe(false);
+    expect(quoteLabel(market(NATIVE_ETH, 'v3', false))).toBe('WETH');
+    expect(quoteLabel(market(NATIVE_ETH, 'v4', false))).toBe('ETH');
+  });
+
+  it('leaves a pair quoted in anything else alone', () => {
+    const usdg: QuoteSided = { ...market(CONTRACTS.weth), quote: 'USDG' };
+    expect(quoteLabel(usdg)).toBe('USDG');
+    expect(quoteIsNativeEther(usdg)).toBe(false);
   });
 });

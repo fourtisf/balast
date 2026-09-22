@@ -3927,3 +3927,135 @@ whose ether market is dust still shows only its USDG market — and a token
 with no ether pool on this chain shows only what exists. Those two look the
 same from the page, and telling them apart is `npm run market:probe` and the
 explorer.
+
+---
+
+## 27. Two shapes that looked alike, and a pair bought with the wrong ether
+
+ALFA asked two things off the builder: what the difference between *Curve*
+and *Bid-ask* actually is — *sama ajaa?* — and that a pair be entered with
+Robinhood Chain's own ether rather than with WETH. The first turned out to
+be a question the page could not answer because the page did not know; the
+second was a defect that had the builder fabricating a balance on mainnet.
+
+### Curve and bid-ask are opposites, and nothing said so in a number
+
+They were never the same. `shapeWeights` gives curve a bell,
+`exp(-4x²)`, and bid-ask a trough, `0.15 + x²`. What the page lacked was
+the one figure that makes the difference mean something: **only the bin
+holding the current price earns a fee**, so what separates the shapes is
+how much liquidity each puts there.
+
+`densityAtPrice` computes it — the weight of the bin the price sits in,
+times the bin count, so an even spread is 1 by construction. Over a
+symmetric range at 24 bins, curve is **2.27×** an even spread and bid-ask
+is **0.31×**: a factor of seven between them, on screen, in the builder's
+own units.
+
+That figure now also **scales the estimate**, in place of two constants
+the builder had been multiplying by — 1.35 for curve and 0.8 for bid-ask.
+Both were invented, and the bid-ask one was wrong by more than two and a
+half times, in the flattering direction: it claimed the shape holding the
+least where it counts gave up only a fifth of the yield. With the real
+density, bid-ask's estimate now comes out **below** the pool's own
+trailing figure, which is the honest answer — it is a ladder of orders,
+not a fee position, and the hint says so.
+
+The shape hints were rewritten to say what each does to the money rather
+than to praise it, and the cap on the combined multiple stays at 6× (§12).
+
+Two colour-rule violations sat in the same panel: the bin chart's
+current-price line, its legend swatch and the `now` label were all painted
+`--red`, which §5 reserves for a negative number and nothing else. They
+are ink. And the simulated split line said `ETH` whatever the pool's quote
+was — the last of the hardcoded quotes §22 went through.
+
+### A v3 pool cannot be minted into, and the builder pretended otherwise
+
+The screenshot that came with the question showed `VIRTUAL` with a market
+pill reading `WETH · 0.3%` and a deposit field reading **`Max 4.18`**.
+That figure is `MAX_DEPOSIT_ETH`, the prototype's stand-in balance, and it
+renders when a pool has no `key`.
+
+A pool has no key when it is simulated — or when it is a **Uniswap v3
+pool**, which the live listing is full of (§20's history walk found 12,893
+of them). The builder treated the two alike, so on the live site choosing
+a token's v3 market dropped the whole flow into its simulated branch: a
+balance it had never read, a wallet it had never asked, and a `Mint
+position` button whose entire effect was a toast saying nothing had been
+minted. On mainnet that is not an empty state, it is a fabrication, and it
+is exactly what §7 exists to stop.
+
+`lib/markets.ts` now holds the two rules, with their tests:
+
+- **`isMintable`** — a pool is offered only if it is stakeable *and*, on
+  live data, has a v4 key. Balast deploys no contract of its own and mints
+  through v4's PositionManager (§20); a v3 pool stays listed, traded and
+  charted, and is not offered here.
+- **`byEntryCurrency`** — ALFA's rule. A market quoted in **native ether**
+  goes in front of one quoted in the wrapper, whatever their depth, and
+  everything after keeps depth order. A native market spends the balance
+  the wallet already shows; a wrapped one needs an ERC-20 the wallet
+  probably does not hold. So the builder opens on the native market.
+
+Nothing is dropped silently. A token whose v3 markets were filtered out
+says so under the market pills, naming their quotes and why they are not
+offered. A link naming a pool the builder cannot offer — a bookmark, or a
+pool that has since fallen below the listing bar — says so rather than
+opening on some other token, which is what it used to do.
+
+The drawer's hand-off had the same hole: the board's row is the token's
+*deepest* pool, and the deepest can be the v3 one, so `Stake full range`
+was pushing a pool id the builder would silently swap out. It resolves the
+same target now — the token's best mintable market, native ether first —
+and when that is not the row you clicked, the drawer says which pool it
+will open and that its liquidity and fees are its own. A token with no
+mintable market at all gets a third reason in its "not offered" note,
+distinct from the hook and the launchpad ones.
+
+### And ether that is already wrapped
+
+Filtering to v4 does not make every ether market native: a v4 pool may be
+quoted in aeWETH. Refusing those would hide real liquidity, and telling
+someone to go and wrap on another site is not an answer either.
+
+So the flow wraps. When the market's quote is the wrapper and the wallet
+is short of it but holds the ether, the button becomes **`Wrap 0.1 ETH to
+WETH`** and the mint follows it — one `deposit()`, one token per ether,
+no price and nothing to slip (§18). It is estimated against the node
+first, like every other call here, so a wrapper that will not take a
+direct deposit reverts before a signature is asked for rather than after.
+A gas reserve is held back so wrapping never leaves the wallet unable to
+pay for the mint. The deposit line shows the ether balance beside the
+wrapped one, because a `Balance 0` next to a wallet full of ether reads as
+"you cannot do this".
+
+`WRAP_CALLDATA` is asserted against the canonical WETH9 selector
+(`0xd0e30db0`) in the test, and the wrap is recorded in the browser's
+transaction list (§23) like the approvals and the mint.
+
+### Verified here
+
+On a fresh Postgres: `typecheck`, `lint`, the full suite — 43 files and
+431 tests, with `lib/markets.test.ts`, the density cases in
+`lib/shapes.test.ts`, the quote-side cases in `lib/format.test.ts` and the
+wrap cases in `lib/v4/flow.test.ts` — the production build, and 36
+Playwright end-to-end tests against that build, one of them new: the
+density line and the estimate moving with the shape rather than with a
+constant. All green.
+
+**Unverified from here**, as always: the sandbox reaches no RPC, so the
+wrap has never been sent. It is one `deposit()` on the address §20
+verified against Uniswap's registry, and it is dry-run before signing —
+but the first wrap on the live site should be a small one, watched on the
+explorer, exactly as §20 said of the first mint.
+
+### Still open
+
+Unchanged: the §12 questions, `LAUNCHPAD_HOOKS` and `STAKEABLE_HOOKS`
+(§14, §20), the listing bar's three thresholds, and the protocol fee's
+immutable cap before any vault is deployed. `/positions`'s *Est. fee
+yield* is still a forward-looking figure §1 sits awkwardly against — but
+it is now scaled by arithmetic on the person's own inputs rather than by
+a constant somebody guessed, which is the least a projected number owes
+the reader.

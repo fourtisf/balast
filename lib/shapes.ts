@@ -9,17 +9,24 @@ export const SHAPES: { id: ShapeId; label: string; hint: string }[] = [
   {
     id: 'spot',
     label: 'Spot',
-    hint: 'Even liquidity across the range. Most fees at any price inside it.',
+    hint:
+      'The same liquidity in every bin. It earns the same fee wherever the price sits inside the ' +
+      'range, and holds more of the token the further the price falls.',
   },
   {
     id: 'curve',
     label: 'Curve',
-    hint: 'Concentrated at the current price. Highest fees while it stays put, faster to leave range.',
+    hint:
+      'Bunched around the current price and thin at the edges. Only the bin holding the price ' +
+      'earns, so this earns the most while the price sits still — and drops away fastest as it moves.',
   },
   {
     id: 'bidask',
     label: 'Bid-ask',
-    hint: 'Heavy at the edges, light in the middle. Buys dips and sells rips; suits volatile tokens.',
+    hint:
+      'The opposite: heavy at both edges, almost nothing at the price. It earns little while the ' +
+      'price sits still, and fills as the price moves — buying below, selling above. A ladder of ' +
+      'orders, not a fee position.',
   },
 ];
 
@@ -44,4 +51,29 @@ export function weightsToBps(weights: number[]): number[] {
   let drift = 10_000 - bps.reduce((a, v) => a + v, 0);
   for (let i = 0; drift > 0; i = (i + 1) % bps.length, drift--) bps[i] += 1;
   return bps;
+}
+
+/**
+ * How much liquidity this shape puts where the price actually is, as a
+ * multiple of what an even spread over the same range would put there.
+ *
+ * Only the bin holding the current price earns a fee, so this is the one
+ * number that separates the shapes: at 24 bins over a symmetric range,
+ * `curve` is about 2.3x an even spread and `bidask` about 0.3x. The builder
+ * used to scale its estimate by a constant per shape — 1.35 for curve, 0.8
+ * for bid-ask — which was invented, and wrong in the flattering direction
+ * for the shape that holds the least where it counts.
+ *
+ * `minPct` and `maxPct` are the range as fractions (-0.15, 0.15), and the
+ * bins are equal-width across it, as the chart draws them.
+ */
+export function densityAtPrice(weights: number[], minPct: number, maxPct: number): number {
+  const bins = weights.length;
+  if (bins === 0) return 1;
+  const span = maxPct - minPct;
+  if (!(span > 0)) return 1;
+  // Where the current price sits in the range, 0 at the bottom, 1 at the top.
+  const fraction = Math.min(1, Math.max(0, (0 - minPct) / span));
+  const index = Math.min(bins - 1, Math.floor(fraction * bins));
+  return weights[index] * bins;
 }

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Address } from 'viem';
 import { useUi } from '@/components/providers/UiProvider';
 import { useWalletChainId } from '@/components/providers/useWalletChainId';
-import { CHAIN } from '@/lib/chain';
+import { CHAIN, CONTRACTS, NATIVE_ETH } from '@/lib/chain';
 import { getProvider } from '@/lib/data';
 import type { Pool, PoolKeyInfo, ShapeId } from '@/lib/data/types';
 import { quoteLabel } from '@/lib/format';
@@ -17,12 +17,14 @@ import {
   readClient,
   readSlot0,
   sendMint,
+  sendWrap,
   simulateMint,
+  simulateWrap,
   waitForMint,
   type ApprovalStep,
   type Slot0,
 } from '@/lib/v4/flow';
-import { toRaw } from '@/lib/v4/format';
+import { amount as fmtAmount, toRaw } from '@/lib/v4/format';
 import { planMint, type MintPlan } from '@/lib/v4/mint';
 import { priceFromSqrt, toPoolKey, type PoolKey } from '@/lib/v4/pool';
 import { describeWalletError, ensureChain } from '@/lib/wallet';
@@ -33,6 +35,8 @@ const REFRESH_MS = 12_000;
 export const DEFAULT_SLIPPAGE_BPS = 100;
 const DEADLINE_SECONDS = 20 * 60;
 const PLACEHOLDER_OWNER = '0x0000000000000000000000000000000000000001';
+/** Ether held back from a wrap so the mint that follows can still pay its gas. */
+const WRAP_GAS_RESERVE_WEI = 1_000_000_000_000_000n; // 0.001 ETH
 
 export type MintStep =
   | 'simulated' // no pool on chain to mint into
@@ -41,6 +45,8 @@ export type MintStep =
   | 'wrong-chain'
   | 'reading'
   | 'unavailable'
+  /** The market is quoted in aeWETH and the wallet is short of it, but holds the ether to wrap. */
+  | 'wrap'
   | 'approve'
   | 'ready'
   | 'busy';
@@ -63,7 +69,14 @@ export interface MintFlow {
   planError: string | null;
   /** The two amounts the plan takes, in the builder's terms. */
   needs: { token: bigint; quote: bigint } | null;
-  balances: { token: bigint; quote: bigint } | null;
+  balances: { token: bigint; quote: bigint; native: bigint } | null;
+  /**
+   * What is missing to enter a market quoted in the wrapper, when the wallet
+   * holds the ether to cover it. Null everywhere else — a native market
+   * spends the balance directly, and a wallet without the ether is short
+   * whatever it wraps.
+   */
+  wrap: { shortfall: bigint } | null;
   step: MintStep;
   busyLabel: string | null;
   approvals: ApprovalStep[];
@@ -110,7 +123,7 @@ export function useMintFlow(args: {
   const { wallet, openWallet, showToast } = useUi();
   const [live, setLive] = useState<(Slot0 & { tokenPriceInQuote: number }) | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
-  const [balances, setBalances] = useState<{ token: bigint; quote: bigint } | null>(null);
+  const [balances, setBalances] = useState<{ token: bigint; quote: bigint; native: bigint } | null>(null);
   const [approvals, setApprovals] = useState<ApprovalStep[]>([]);
   const [gas, setGas] = useState<bigint | null>(null);
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
@@ -197,11 +210,14 @@ export function useMintFlow(args: {
     const client = readClient(readVia);
     const tick = async () => {
       try {
-        const [token, quote] = await Promise.all([
+        const [token, quote, native] = await Promise.all([
           readBalance(client, owner, sides.tokenCurrency),
           readBalance(client, owner, sides.quoteCurrency),
+          // What the wallet shows as its balance. It is the quote for a
+          // native market, and what a wrapped one has to be wrapped from.
+          readBalance(client, owner, NATIVE_ETH as Address),
         ]);
-        if (!cancelled) setBalances({ token, quote });
+        if (!cancelled) setBalances({ token, quote, native });
       } catch {
         /* the check simply waits for the next read */
       }
@@ -249,6 +265,25 @@ export function useMintFlow(args: {
       : { token: plan.amount1, quote: plan.amount0 };
   }, [plan, sides]);
 
+  /**
+   * Wrapping, when the market is quoted in aeWETH and the wallet is short.
+   *
+   * ALFA's rule is that a pair is entered with this chain's own ether, not
+   * with the wrapper. A v4 pool that holds ether natively already does that;
+   * one quoted in aeWETH cannot, unless the shortfall is wrapped first — one
+   * `deposit()`, one token per ether, no price and nothing to slip. The gas
+   * reserve is held back so wrapping never leaves the wallet unable to pay
+   * for the mint that follows it.
+   */
+  const wrap = useMemo(() => {
+    if (!sides || !needs || !balances) return null;
+    if (sides.quoteCurrency.toLowerCase() !== CONTRACTS.weth.toLowerCase()) return null;
+    if (balances.quote >= needs.quote) return null;
+    const shortfall = needs.quote - balances.quote;
+    if (balances.native < shortfall + WRAP_GAS_RESERVE_WEI) return null;
+    return { shortfall };
+  }, [sides, needs, balances]);
+
   // Approvals and a dry run, whenever the plan or the wallet changes — and
   // only on this chain: an allowance read or an estimate on another network
   // is an answer about a different contract.
@@ -263,7 +298,7 @@ export function useMintFlow(args: {
         const steps = await approvalsNeeded(client, owner, key, plan, Math.floor(Date.now() / 1000));
         if (cancelled) return;
         setApprovals(steps);
-        if (steps.length === 0) {
+        if (steps.length === 0 && !wrap) {
           const estimate = await simulateMint(client, owner, plan);
           if (!cancelled) {
             setGas(estimate);
@@ -277,7 +312,7 @@ export function useMintFlow(args: {
     return () => {
       cancelled = true;
     };
-  }, [plan, owner, key, readVia, onChain]);
+  }, [plan, owner, key, readVia, onChain, wrap]);
 
   const step: MintStep = !key
     ? 'simulated'
@@ -293,9 +328,11 @@ export function useMintFlow(args: {
               ? 'unavailable'
               : !live
                 ? 'reading'
-                : approvals.length > 0
-                  ? 'approve'
-                  : 'ready';
+                : wrap
+                  ? 'wrap'
+                  : approvals.length > 0
+                    ? 'approve'
+                    : 'ready';
 
   const run = useCallback(async () => {
     if (step === 'simulated') {
@@ -327,6 +364,31 @@ export function useMintFlow(args: {
     const client = readClient(provider);
     const pair = `${pool.token.symbol} / ${quoteLabel(pool)}`;
     try {
+      // Ether into aeWETH, so a market quoted in the wrapper is entered with
+      // the ether the wallet holds. Estimated first, like everything else
+      // here: a wrapper that will not take a direct deposit says so before a
+      // signature is asked for.
+      if (wrap) {
+        setBusyLabel('Checking with the chain…');
+        const estimate = await simulateWrap(client, owner, wrap.shortfall);
+        setBusyLabel('Confirm the wrap in the wallet…');
+        const hash = await sendWrap(provider, owner, wrap.shortfall, estimate);
+        recordTx({
+          hash,
+          kind: 'wrap',
+          wallet: owner,
+          at: Date.now(),
+          status: 'pending',
+          label: `Wrap ${fmtAmount(wrap.shortfall, 18)} ETH to WETH`,
+          poolId: pool.id,
+        });
+        setBusyLabel('Wrapping…');
+        const receipt = await client.waitForTransactionReceipt({ hash });
+        updateTx(hash, receipt.status === 'success' ? 'success' : 'reverted');
+        if (receipt.status !== 'success') throw new Error('The wrap reverted on chain.');
+        setRefreshTick((n) => n + 1);
+        return;
+      }
       if (approvals.length > 0) {
         const next = approvals[0];
         const symbol = next.token.toLowerCase() === sides.tokenCurrency.toLowerCase() ? pool.token.symbol : quoteLabel(pool);
@@ -399,7 +461,7 @@ export function useMintFlow(args: {
     } finally {
       setBusyLabel(null);
     }
-  }, [step, plan, owner, provider, key, sides, onChain, approvals, live, depositRaw, minPct, maxPct, bins, shape, fullRange, slippageBps, pool, refreshChainId, showToast, openWallet]);
+  }, [step, plan, owner, provider, key, sides, onChain, approvals, wrap, live, depositRaw, minPct, maxPct, bins, shape, fullRange, slippageBps, pool, refreshChainId, showToast, openWallet]);
 
-  return { key, sides, live, liveError, plan, planError, needs, balances, step, busyLabel, approvals, gas, error, result, run };
+  return { key, sides, live, liveError, plan, planError, needs, balances, wrap, step, busyLabel, approvals, gas, error, result, run };
 }

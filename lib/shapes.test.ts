@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_BINS, MIN_BINS, SHAPES, shapeWeights, weightsToBps } from './shapes';
+import { densityAtPrice, MAX_BINS, MIN_BINS, SHAPES, shapeWeights, weightsToBps } from './shapes';
 
 const ALL_BIN_COUNTS = Array.from({ length: MAX_BINS - MIN_BINS + 1 }, (_, i) => MIN_BINS + i);
 
@@ -77,5 +77,57 @@ describe('weightsToBps', () => {
 describe('bin limits', () => {
   it('caps a transaction at 60 bins (§3.2)', () => {
     expect(MAX_BINS).toBe(60);
+  });
+});
+
+describe('densityAtPrice', () => {
+  /**
+   * The one number that separates the shapes. Only the bin holding the
+   * current price earns a fee, so a shape's liquidity there is what its
+   * estimate should be scaled by — the builder used a constant per shape
+   * before, and the constant for bid-ask (0.8) was more than twice what the
+   * shape actually holds.
+   */
+  it('is exactly 1 for spot, whatever the bin count', () => {
+    for (const bins of ALL_BIN_COUNTS) {
+      expect(densityAtPrice(shapeWeights('spot', bins), -0.15, 0.15)).toBeCloseTo(1, 12);
+    }
+  });
+
+  it('puts curve well above an even spread and bid-ask well below it', () => {
+    const curve = densityAtPrice(shapeWeights('curve', 24), -0.15, 0.15);
+    const bidask = densityAtPrice(shapeWeights('bidask', 24), -0.15, 0.15);
+    expect(curve).toBeGreaterThan(2);
+    expect(bidask).toBeLessThan(0.4);
+    expect(curve).toBeGreaterThan(bidask * 5);
+  });
+
+  it('never ranks bid-ask above spot, or spot above curve, at any bin count', () => {
+    for (const bins of ALL_BIN_COUNTS) {
+      const spot = densityAtPrice(shapeWeights('spot', bins), -0.2, 0.2);
+      const curve = densityAtPrice(shapeWeights('curve', bins), -0.2, 0.2);
+      const bidask = densityAtPrice(shapeWeights('bidask', bins), -0.2, 0.2);
+      expect(bidask).toBeLessThan(spot);
+      expect(curve).toBeGreaterThan(spot);
+    }
+  });
+
+  it('reads the bin the price is actually in, not the middle one', () => {
+    // A range that is mostly above the price: for curve the peak sits near
+    // the middle of the range, which is well above the price, so the density
+    // where the price is has to come out lower than a centred range's.
+    const weights = shapeWeights('curve', 24);
+    const centred = densityAtPrice(weights, -0.15, 0.15);
+    const lopsided = densityAtPrice(weights, -0.03, 0.3);
+    expect(lopsided).toBeLessThan(centred);
+  });
+
+  it('holds together on the degenerate inputs the builder can hand it mid-edit', () => {
+    expect(densityAtPrice([], -0.1, 0.1)).toBe(1);
+    expect(densityAtPrice(shapeWeights('curve', 12), 0, 0)).toBe(1);
+    // A range entirely above the price clamps to the first bin rather than
+    // indexing off the end of the array.
+    expect(Number.isFinite(densityAtPrice(shapeWeights('curve', 12), 0.05, 0.3))).toBe(true);
+    expect(Number.isFinite(densityAtPrice(shapeWeights('curve', 12), -0.3, -0.05))).toBe(true);
   });
 });

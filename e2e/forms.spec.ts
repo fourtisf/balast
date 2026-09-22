@@ -23,6 +23,33 @@ test.describe('shape builder', () => {
     await expect(page.locator('.sum .num').first()).not.toHaveText('');
   });
 
+  test('says how much liquidity each shape puts where the price is', async ({ page }) => {
+    // Curve and bid-ask are opposites, and nothing on the page said so in a
+    // number. Only the bin holding the current price earns a fee, so the
+    // density there is the whole difference between the three — and it is
+    // what scales the estimate, in place of the invented constant per shape
+    // it replaced.
+    await page.goto('/positions', { waitUntil: 'networkidle' });
+    const density = page.locator('.field', { has: page.getByRole('group', { name: 'Shape' }) }).locator('p.hint').last();
+
+    await expect(density).toContainText('exactly what an even spread does');
+
+    await page.getByRole('button', { name: 'Curve' }).click();
+    const curve = Number((await density.innerText()).match(/([\d.]+)×/)?.[1]);
+    expect(curve).toBeGreaterThan(1.5);
+
+    await page.getByRole('button', { name: 'Bid-ask' }).click();
+    const bidask = Number((await density.innerText()).match(/([\d.]+)×/)?.[1]);
+    expect(bidask).toBeLessThan(1);
+    expect(curve).toBeGreaterThan(bidask * 3);
+
+    // And the estimate moves with it, rather than with a constant.
+    const estimate = page.locator('.sum > div', { hasText: 'Est. fee yield' }).locator('.v');
+    const bidaskEst = await estimate.innerText();
+    await page.getByRole('button', { name: 'Curve' }).click();
+    await expect(estimate).not.toHaveText(bidaskEst);
+  });
+
   test('picks a token, then one of its markets', async ({ page }) => {
     // Two questions, asked separately (§26). One flat list of every pool on
     // the chain answered neither: choosing VIRTUAL meant scrolling past

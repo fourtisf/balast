@@ -1,12 +1,14 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { TokenBadge } from '@/components/ui/TokenBadge';
 import { EXPLORER_URL, NATIVE_ETH, isEther } from '@/lib/chain';
+import { DATA_SOURCE } from '@/lib/data';
 import { ageLabel, quoteLabel, usd } from '@/lib/format';
+import { byEntryCurrency, isMintable } from '@/lib/markets';
 import { buyShare, shownLiquidity, shownSplit, shownVolume, sourceName } from '@/lib/market-figures';
 import { FEE_YIELD_LABEL, feeYieldQualifier, feeYieldTitle, feeYieldValue } from '@/lib/yield';
 
@@ -14,7 +16,7 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function StakeDrawer() {
-  const { pools, global } = useMarket();
+  const { pools, otherPools, global } = useMarket();
   const { stakePoolId, closeStake, showToast } = useUi();
   const router = useRouter();
   const drawerRef = useRef<HTMLElement | null>(null);
@@ -22,6 +24,24 @@ export function StakeDrawer() {
 
   const pool = pools.find((p) => p.id === stakePoolId) ?? null;
   const open = pool !== null;
+
+  /**
+   * Which market the Stake button actually opens.
+   *
+   * The row's pool is the token's deepest (§20), and the deepest can be a
+   * Uniswap v3 pool — which Balast cannot mint into, since it mints through
+   * v4's PositionManager and deploys nothing of its own (§20). The token's
+   * other markets ride beside the board (§26), so the button opens the best
+   * one it can mint into: this chain's own ether first, then the deepest.
+   * Nothing is substituted silently — when the target is not the row, the
+   * drawer says which pool it will open and why.
+   */
+  const stakeTarget = useMemo(() => {
+    if (!pool) return null;
+    const address = pool.token.address.toLowerCase();
+    const candidates = [pool, ...(otherPools ?? []).filter((p) => p.token.address.toLowerCase() === address)];
+    return candidates.filter((p) => isMintable(p, DATA_SOURCE === 'live')).sort(byEntryCurrency)[0] ?? null;
+  }, [pool, otherPools]);
 
   // Escape closes, Tab cycles inside, focus returns where it came from.
   useEffect(() => {
@@ -269,7 +289,7 @@ export function StakeDrawer() {
                 </div>
               )}
 
-              {pool.stakeable ? (
+              {stakeTarget ? (
                 <>
                   <div className="sect-h" style={{ display: 'block', margin: '16px 0 8px' }}>
                     What a stake is
@@ -303,6 +323,16 @@ export function StakeDrawer() {
                       <b>None</b>
                     </div>
                   </div>
+                  {stakeTarget && stakeTarget.id !== pool.id && (
+                    <p className="hint" style={{ marginTop: 12 }}>
+                      This row is {pool.token.symbol}&rsquo;s deepest market, a Uniswap v3 pool.
+                      Balast mints through Uniswap v4, so staking opens{' '}
+                      <b>
+                        {pool.token.symbol} / {quoteLabel(stakeTarget)} · {(stakeTarget.feeTierBps / 100).toFixed(2).replace(/\.?0+$/, '')}%
+                      </b>{' '}
+                      instead — a different pool, with its own liquidity and its own fees.
+                    </p>
+                  )}
                   <p className="hint" style={{ marginTop: 12 }}>
                     If the token drops, the value of your stake drops with it — fees soften that,
                     they don&rsquo;t remove it.
@@ -312,9 +342,11 @@ export function StakeDrawer() {
                 <div className="note" style={{ marginTop: 16 }}>
                   <b>Not offered for staking</b>
                   <p className="hint">
-                    {pool.token.launchpad
+                    {pool.token.launchpad && !pool.stakeable
                       ? `${pool.token.symbol} is still on its ${pool.token.launchpad} curve, and pre-graduation liquidity cannot be staked until the pool graduates.`
-                      : `This pool runs a hook${hook ? ` (${hook.slice(0, 6)}…${hook.slice(-4)})` : ''} that Balast has not verified. A hook can refuse liquidity, price it on its own curve, or take most of every trade as its fee — one on this chain takes about 98%. It is not offered until someone has looked.`}
+                      : !pool.stakeable
+                        ? `This pool runs a hook${hook ? ` (${hook.slice(0, 6)}…${hook.slice(-4)})` : ''} that Balast has not verified. A hook can refuse liquidity, price it on its own curve, or take most of every trade as its fee — one on this chain takes about 98%. It is not offered until someone has looked.`
+                        : `This is a Uniswap v3 pool, and ${pool.token.symbol} has no Uniswap v4 market that clears the listing bar. Balast deploys no contract of its own and mints through v4's PositionManager, so a v3 pool is listed and traded here but cannot be staked into.`}
                   </p>
                 </div>
               )}
@@ -323,23 +355,26 @@ export function StakeDrawer() {
             <div className="dr-f">
               <button
                 className="btn btn-ghost"
+                disabled={!stakeTarget}
                 onClick={() => {
+                  if (!stakeTarget) return;
                   closeStake();
-                  router.push(`/positions?pool=${encodeURIComponent(pool.id)}`);
+                  router.push(`/positions?pool=${encodeURIComponent(stakeTarget.id)}`);
                 }}
               >
                 Build custom
               </button>
               <button
                 className="btn btn-brand"
-                disabled={!pool.stakeable}
+                disabled={!stakeTarget}
                 onClick={() => {
                   // The real thing, through the builder's mint flow: full
                   // range, one position, dry-run by the node before the
                   // wallet is asked to sign (§20). It used to toast "Staked"
                   // and do nothing, which on mainnet is a lie.
+                  if (!stakeTarget) return;
                   closeStake();
-                  router.push(`/positions?pool=${encodeURIComponent(pool.id)}&range=full`);
+                  router.push(`/positions?pool=${encodeURIComponent(stakeTarget.id)}&range=full`);
                 }}
               >
                 Stake full range

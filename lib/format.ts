@@ -3,7 +3,7 @@
  * that belongs in the provider (§4: compute it in SQL, never in the component).
  */
 
-import { NATIVE_ETH } from './chain';
+import { CONTRACTS, NATIVE_ETH } from './chain';
 import type { Pool } from './data/types';
 
 /** $1.23B / $1.23M / $12.3K / $123 — the prototype's `fmt`. */
@@ -116,12 +116,44 @@ export function feeTierLabel(feeTierBps: number): string {
  * (lib/chain.ts, NATIVE_ETH), not as the wrapper. A v3 pool always holds the
  * wrapper; a simulated pool has no key and keeps its nominal quote.
  */
-export function quoteLabel(pool: Pick<Pool, 'quote' | 'key' | 'token' | 'protocol'>): string {
+export function quoteLabel(pool: QuoteSided): string {
   if (pool.quote !== 'ETH') return pool.quote;
-  if (pool.key) {
-    const tokenIsCurrency0 = pool.token.address.toLowerCase() === pool.key.currency0.toLowerCase();
-    const quoteSide = tokenIsCurrency0 ? pool.key.currency1 : pool.key.currency0;
-    return quoteSide.toLowerCase() === NATIVE_ETH ? 'ETH' : 'WETH';
-  }
+  const currency = quoteCurrencyOf(pool);
+  if (currency) return currency === NATIVE_ETH ? 'ETH' : 'WETH';
   return pool.protocol === 'v3' ? 'WETH' : 'ETH';
+}
+
+type QuoteSided = Pick<Pool, 'quote' | 'key' | 'token' | 'protocol'>;
+
+/**
+ * The address of the pool's quote side, lowercase, or null when the pool has
+ * no key — a v3 pool or a simulated one.
+ *
+ * One function answers it because the places that ask have disagreed before:
+ * §18's "which side is ether" was written out four times and one of them was
+ * against the wrapper alone, which blanked the site. `quoteLabel` and the
+ * builder's market ordering now read the same answer.
+ */
+export function quoteCurrencyOf(pool: QuoteSided): string | null {
+  if (!pool.key) return null;
+  const tokenIsCurrency0 = pool.token.address.toLowerCase() === pool.key.currency0.toLowerCase();
+  return (tokenIsCurrency0 ? pool.key.currency1 : pool.key.currency0).toLowerCase();
+}
+
+/**
+ * Whether this market is quoted in the chain's own ether rather than in the
+ * aeWETH wrapper.
+ *
+ * It decides what a wallet has to hold to enter: a native market spends the
+ * balance the wallet already shows, a wrapped one needs the ERC-20, which
+ * has to be wrapped first. That is why the builder puts the native market
+ * in front of the wrapped one.
+ */
+export function quoteIsNativeEther(pool: QuoteSided): boolean {
+  return quoteCurrencyOf(pool) === NATIVE_ETH;
+}
+
+/** Quoted in aeWETH: the same asset, one token per ether, held as an ERC-20. */
+export function quoteIsWrappedEther(pool: QuoteSided, weth: string = CONTRACTS.weth): boolean {
+  return quoteCurrencyOf(pool) === weth.toLowerCase();
 }

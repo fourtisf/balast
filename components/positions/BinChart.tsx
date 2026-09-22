@@ -45,7 +45,7 @@ export function BinChart({
         {weights.map((w, i) => {
           const x = PAD + i * bw;
           const h = (w / max) * (H - 70);
-          // Above the current price the bin is held as the token; below it, WETH.
+          // Above the current price the bin is held as the token; below it, in the quote.
           const tokenSide = x + bw / 2 > priceX;
           return (
             <rect
@@ -64,7 +64,7 @@ export function BinChart({
           x2={priceX}
           y1={14}
           y2={H - 40}
-          stroke="var(--red)"
+          stroke="var(--fg-2)"
           strokeWidth={1.5}
           strokeDasharray="4 4"
           vectorEffect="non-scaling-stroke"

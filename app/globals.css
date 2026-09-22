@@ -32,7 +32,7 @@
   --ac:#1B8353;
   --ac-2:#22996A;
   --ac-3:#0F5C3A;                  /* deep accent: text on the green tint */
-  --ac-soft:#BFE3CF;               /* the WETH side of the bin chart */
+  --ac-soft:#BFE3CF;               /* the quote side of the bin chart */
   --ac-dim:rgba(27,131,83,.10);
   --ac-glow:rgba(27,131,83,.28);
   --on-ac:#FFFFFF;                 /* ink on an accent fill */
@@ -452,7 +452,7 @@ h1 em{font-style:italic;color:var(--ac)}
    Bars are drawn with preserveAspectRatio="none" so the shape fills the card
    at any width; the labels are HTML on top, so nothing text-shaped stretches. */
 .bins-wrap{position:relative}
-.bins-now{position:absolute;top:10px;transform:translateX(6px);font-size:12px;font-weight:600;color:var(--red);pointer-events:none;white-space:nowrap}
+.bins-now{position:absolute;top:10px;transform:translateX(6px);font-size:12px;font-weight:600;color:var(--fg-2);pointer-events:none;white-space:nowrap}
 .bins-axis{display:flex;justify-content:space-between;font-size:11px;color:var(--fg-3);margin-top:-28px;padding:0 12px;position:relative;pointer-events:none}
 
 /* An inline action inside a sentence. */

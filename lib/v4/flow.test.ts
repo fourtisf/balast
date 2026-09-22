@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { encodeAbiParameters, type PublicClient } from 'viem';
 import { CONTRACTS } from '../chain';
-import { approvalsNeeded, describeTxError, waitForMint } from './flow';
+import { approvalsNeeded, describeTxError, simulateWrap, waitForMint, WRAP_CALLDATA } from './flow';
 import type { PoolKey } from './pool';
 
 const ZERO = '0x0000000000000000000000000000000000000000' as const;
@@ -87,5 +87,45 @@ describe('describeTxError', () => {
     expect(describeTxError({ shortMessage: 'insufficient funds for gas * price + value' })).toMatch(/Not enough ETH/);
     expect(describeTxError({ shortMessage: 'execution reverted: MaximumAmountExceeded(1,2)' })).toMatch(/price moved/);
     expect(describeTxError(new Error('something odd'))).toBe('The transaction could not be prepared.');
+  });
+});
+
+/**
+ * Wrapping ether for a market quoted in aeWETH.
+ *
+ * ALFA's rule is that a pair is entered with this chain's own ether. A pool
+ * that holds ether natively already does; one quoted in the wrapper needs
+ * the shortfall wrapped first, and that call has to go to the wrapper with
+ * the ether as its value — not as an argument, which would wrap nothing and
+ * still take the gas.
+ */
+describe('wrapping ether', () => {
+  it('is deposit(), with the amount as the transaction value', async () => {
+    // keccak("deposit()")[0..4] — the canonical WETH9 selector.
+    expect(WRAP_CALLDATA).toBe('0xd0e30db0');
+
+    let seen: { to?: string; data?: string; value?: bigint; account?: string } = {};
+    const client = {
+      estimateGas: async (args: { to: string; data: string; value: bigint; account: string }) => {
+        seen = args;
+        return 40_000n;
+      },
+    } as unknown as PublicClient;
+
+    const gas = await simulateWrap(client, OWNER, 1_500_000_000_000_000_000n);
+    expect(gas).toBe(40_000n);
+    expect(seen.to?.toLowerCase()).toBe(CONTRACTS.weth.toLowerCase());
+    expect(seen.data).toBe('0xd0e30db0');
+    expect(seen.value).toBe(1_500_000_000_000_000_000n);
+    expect(seen.account).toBe(OWNER);
+  });
+
+  it('surfaces a wrapper that will not take a direct deposit as a revert, not a signature', async () => {
+    const client = {
+      estimateGas: async () => {
+        throw Object.assign(new Error('execution reverted'), { shortMessage: 'execution reverted' });
+      },
+    } as unknown as PublicClient;
+    await expect(simulateWrap(client, OWNER, 1n)).rejects.toThrow(/reverted/);
   });
 });

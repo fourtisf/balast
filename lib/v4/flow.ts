@@ -8,7 +8,17 @@
  * would revert is refused before the wallet is asked to sign.
  */
 
-import { createPublicClient, custom, http, parseAbi, type Address, type Hex, type Log, type PublicClient } from 'viem';
+import {
+  createPublicClient,
+  custom,
+  encodeFunctionData,
+  http,
+  parseAbi,
+  type Address,
+  type Hex,
+  type Log,
+  type PublicClient,
+} from 'viem';
 import { CONTRACTS, NATIVE_ETH, PUBLIC_RPC_URL } from '../chain';
 import type { Eip1193Provider } from '../wallet';
 import { POSITION_MANAGER_ABI } from './actions';
@@ -44,6 +54,44 @@ export async function readSlot0(client: PublicClient, key: PoolKey): Promise<Slo
 
 export function isNative(currency: string): boolean {
   return currency.toLowerCase() === NATIVE_ETH;
+}
+
+/**
+ * aeWETH's own two calls. The wrapper mints one token per ether deposited
+ * and burns one per ether withdrawn (§18), so wrapping is not a trade and
+ * has no price to guard — the amount in is the amount out.
+ */
+export const WETH_ABI = parseAbi(['function deposit() payable', 'function withdraw(uint256 amount)']);
+
+/** `deposit()` — the selector, so the estimate and the send are the same bytes. */
+export const WRAP_CALLDATA: Hex = encodeFunctionData({ abi: WETH_ABI, functionName: 'deposit' });
+
+/**
+ * Wrap ether into aeWETH, so a market quoted in the wrapper can be entered
+ * with the chain's own ether.
+ *
+ * A v4 pool that holds ether holds it natively, but not every pool does:
+ * some are quoted in the wrapper, and a wallet holding ether cannot enter
+ * one without this. As everywhere else here, the node runs the call before
+ * the wallet is asked to sign — a wrapper that does not take a direct
+ * deposit reverts in the estimate rather than after a signature.
+ */
+export async function simulateWrap(client: PublicClient, owner: Address, amount: bigint): Promise<bigint> {
+  return client.estimateGas({
+    account: owner,
+    to: CONTRACTS.weth as Address,
+    data: WRAP_CALLDATA,
+    value: amount,
+  });
+}
+
+export async function sendWrap(provider: Eip1193Provider, owner: Address, amount: bigint, gas?: bigint): Promise<Hex> {
+  return walletClient(provider, owner).sendTransaction({
+    to: CONTRACTS.weth as Address,
+    data: WRAP_CALLDATA,
+    value: amount,
+    gas: gas ? (gas * 12n) / 10n : undefined,
+  });
 }
 
 export async function readBalance(client: PublicClient, owner: Address, currency: Address): Promise<bigint> {

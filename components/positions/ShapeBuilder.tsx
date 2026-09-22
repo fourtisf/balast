@@ -7,9 +7,11 @@ import { useUi } from '@/components/providers/UiProvider';
 import { BinChart } from '@/components/positions/BinChart';
 import { DEFAULT_SLIPPAGE_BPS, useMintFlow } from '@/components/positions/useMintFlow';
 import { CHAIN, EXPLORER_URL, NATIVE_ETH } from '@/lib/chain';
+import { DATA_SOURCE } from '@/lib/data';
 import type { Pool, ShapeId } from '@/lib/data/types';
-import { feeTierLabel, price as fmtPrice, quoteLabel } from '@/lib/format';
-import { MAX_BINS, MIN_BINS, SHAPES, shapeWeights } from '@/lib/shapes';
+import { feeTierLabel, price as fmtPrice, quoteIsNativeEther, quoteLabel } from '@/lib/format';
+import { byEntryCurrency, isMintable } from '@/lib/markets';
+import { densityAtPrice, MAX_BINS, MIN_BINS, SHAPES, shapeWeights } from '@/lib/shapes';
 import { amount as fmtAmount, num } from '@/lib/v4/format';
 import { yieldPct } from '@/lib/yield';
 
@@ -46,29 +48,35 @@ const SHAPE_ICONS: Record<ShapeId, number[]> = {
  */
 export function ShapeBuilder() {
   const { pools, otherPools } = useMarket();
+  const live = DATA_SOURCE === 'live';
   // The board keeps one pool per token (§20); a token's other markets ride
   // beside it. Here they matter: the pair is what a person is choosing, and
   // which currency it is quoted in decides whether their wallet can enter it.
   const everyPool = useMemo(() => [...pools, ...(otherPools ?? [])], [pools, otherPools]);
-  const stakeablePools = everyPool.filter((p) => p.stakeable);
+  const stakeablePools = everyPool.filter((p) => isMintable(p, live));
   if (stakeablePools.length === 0) {
+    const listedButNotV4 = live && everyPool.some((p) => p.stakeable && !p.key);
     return (
       <div className="card">
         <div className="empty">
           <b>{everyPool.length === 0 ? 'Nothing to mint into yet' : 'No pool is offered for minting'}</b>
           {everyPool.length === 0
             ? 'No pool is listed yet. The builder opens on the first one the indexer lists.'
-            : 'Every listed pool runs a hook Balast has not verified. A hook can refuse liquidity ' +
-              'or take most of every trade as its fee, so none is offered until someone has looked ' +
-              '(STAKEABLE_HOOKS).'}
+            : listedButNotV4
+              ? 'Every pool that clears the listing bar is a Uniswap v3 pool. Balast mints through ' +
+                'v4\u2019s PositionManager, so a v3 pool is listed and traded but cannot be minted ' +
+                'into here.'
+              : 'Every listed pool runs a hook Balast has not verified. A hook can refuse liquidity ' +
+                'or take most of every trade as its fee, so none is offered until someone has looked ' +
+                '(STAKEABLE_HOOKS).'}
         </div>
       </div>
     );
   }
-  return <Builder pools={everyPool} stakeablePools={stakeablePools} />;
+  return <Builder pools={everyPool} stakeablePools={stakeablePools} live={live} />;
 }
 
-function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Pool[] }) {
+function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePools: Pool[]; live: boolean }) {
   const { global } = useMarket();
   const { wallet } = useUi();
 
@@ -91,10 +99,21 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
   const [fullRange, setFullRange] = useState(wantedFull);
   // The pools can arrive after the first render; honour the link once they do.
   useEffect(() => {
-    if (wantedPool && pools.some((p) => p.id === wantedPool && p.stakeable)) setPoolId(wantedPool);
+    if (wantedPool && pools.some((p) => p.id === wantedPool && isMintable(p, live))) setPoolId(wantedPool);
   }, [wantedPool, pools.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pool = stakeablePools.find((p) => p.id === poolId) ?? stakeablePools[0];
+
+  /**
+   * A link that named a pool this builder cannot offer.
+   *
+   * The drawer hands over a pool it has already checked, so this is a
+   * bookmarked link or a pool that has since fallen below the listing bar.
+   * Either way the builder used to open on a different token without saying
+   * so — the person asked for one market and got another.
+   */
+  const wantedMissing =
+    wantedPool !== null && pool.id !== wantedPool && !pools.some((p) => p.id === wantedPool && isMintable(p, live));
 
   /**
    * Switch market, and re-default the deposit when the currency changes.
@@ -132,6 +151,19 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
       if (list) list.push(p);
       else byToken.set(key, [p]);
     }
+    // A token's other listed markets that cannot be minted into — on the
+    // live site, its v3 pools. They are named rather than silently dropped:
+    // a person looking for a pair they can see on the board should be told
+    // why it is not offered here, not left to wonder.
+    const byUnmintable = new Map<string, Pool[]>();
+    for (const p of pools) {
+      if (isMintable(p, live)) continue;
+      const key = p.token.address.toLowerCase();
+      if (!byToken.has(key)) continue;
+      const list = byUnmintable.get(key);
+      if (list) list.push(p);
+      else byUnmintable.set(key, [p]);
+    }
     // A ticker is not unique on this chain — there are two CASHCATs (§24) —
     // so a repeated symbol carries the end of its own address, which is the
     // only honest way to tell two of them apart.
@@ -142,7 +174,7 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
     }
     return [...byToken.entries()]
       .map(([address, list]) => {
-        const markets = list.slice().sort((a, b) => b.tvlUsd - a.tvlUsd || a.feeTierBps - b.feeTierBps);
+        const markets = list.slice().sort(byEntryCurrency);
         const symbol = markets[0].token.symbol;
         const ambiguous = (perSymbol.get(symbol.toUpperCase()) ?? 0) > 1;
         return {
@@ -150,10 +182,12 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
           symbol,
           label: ambiguous ? `${symbol} · ${address.slice(-4)}` : symbol,
           markets,
+          // Listed and traded, but not something this builder can mint into.
+          unmintable: (byUnmintable.get(address) ?? []).slice().sort((a, b) => b.tvlUsd - a.tvlUsd),
         };
       })
       .sort((a, b) => a.symbol.localeCompare(b.symbol) || a.address.localeCompare(b.address));
-  }, [stakeablePools]);
+  }, [stakeablePools, pools, live]);
 
   const token = tokens.find((t) => t.markets.some((m) => m.id === pool.id)) ?? tokens[0];
   const shapeMeta = SHAPES.find((s) => s.id === shape)!;
@@ -193,7 +227,9 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
     if (flow.planError) problems.push(flow.planError);
     if (flow.needs && flow.balances && flow.sides) {
       const reserve = flow.sides.quoteCurrency.toLowerCase() === NATIVE_ETH ? GAS_RESERVE_WEI : 0n;
-      if (flow.balances.quote < flow.needs.quote + reserve) {
+      // Short of the wrapper but holding the ether to cover it is not a
+      // problem to report: it is the wrap step, and the button offers it.
+      if (!flow.wrap && flow.balances.quote < flow.needs.quote + reserve) {
         problems.push(
           `Deposit is above your balance of ${fmtAmount(flow.balances.quote, flow.sides.quoteDecimals)} ${quoteSymbol}` +
             (reserve > 0n ? ', keeping a little for gas.' : '.'),
@@ -230,9 +266,15 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
   // is the pool's own yield: no concentration at all.
   const known = pool.feeYield.basis !== 'insufficient';
   const trailing = yieldPct(pool.feeYield);
-  const concentration = fullRange ? 1 : Math.min(6, 0.6 / span);
-  const shapeFactor = fullRange ? 1 : shape === 'curve' ? 1.35 : shape === 'bidask' ? 0.8 : 1;
-  const estYield = trailing * concentration * shapeFactor;
+  // What the shape puts where the price is, as a multiple of an even spread
+  // over the same range. Only the bin holding the price earns, so this is
+  // the whole difference between the shapes — and it is arithmetic on the
+  // weights the person chose, not the constant per shape it replaced
+  // (1.35 for curve, 0.8 for bid-ask), which was invented and flattered the
+  // shape that holds the least where it counts.
+  const density = fullRange ? 1 : densityAtPrice(weights, safeMin / 100, safeMax / 100);
+  const concentration = fullRange ? 1 : Math.min(6, (0.6 / span) * density);
+  const estYield = trailing * concentration;
 
   // The range the plan actually covers, in the quote, from its aligned ticks.
   const liveRange = useMemo(() => {
@@ -270,6 +312,8 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
             ? 'Pool unreadable'
             : flow.step === 'busy'
               ? flow.busyLabel
+              : flow.step === 'wrap'
+                ? `Wrap ${fmtAmount(flow.wrap!.shortfall, 18)} ETH to ${quoteSymbol}`
               : flow.step === 'approve'
                 ? nextApproval.kind === 'erc20'
                   ? `Approve ${approvalSymbol}`
@@ -289,6 +333,16 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
   return (
     <div className="builder">
       <div className="card panel">
+        {wantedMissing && (
+          <div className="note" style={{ marginBottom: 16 }} role="status">
+            <b>That market is not offered here</b>
+            <p className="hint">
+              The pool the link named is not one this builder can mint into — it is a Uniswap v3
+              pool, or it no longer clears the listing bar. It is showing {pool.token.symbol} /{' '}
+              {quoteLabel(pool)} instead; pick the market you want below.
+            </p>
+          </div>
+        )}
         <div className="field">
           <label htmlFor="b-token">Token</label>
           <div className="inp" style={{ height: 46 }}>
@@ -331,12 +385,22 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
               </button>
             ))}
           </div>
-          {token.markets.length === 1 && (
-            <p className="hint">
-              The only market for {token.symbol} that clears the listing bar. A pool with no real
-              money behind it is not offered here.
-            </p>
-          )}
+          <p className="hint">
+            {token.markets.length === 1
+              ? `The only market for ${token.symbol} this builder can mint into. A pool with no real money behind it is not offered here.`
+              : 'The quote currency decides what your wallet needs; the fee tier decides what the position earns.'}
+            {quoteIsNativeEther(pool)
+              ? ` ETH is this chain\u2019s own ether — the balance your wallet already shows.`
+              : quoteSymbol === 'WETH'
+                ? ` WETH is wrapped ether (aeWETH), one token per ether. The mint spends the wrapped token, and anything missing is wrapped from your ETH first.`
+                : ''}
+            {token.unmintable.length > 0 &&
+              ` ${token.symbol} also trades in ${token.unmintable.length} Uniswap v3 pool${
+                token.unmintable.length === 1 ? '' : 's'
+              } (${[...new Set(token.unmintable.map((m) => quoteLabel(m)))].join(', ')}). Balast mints through Uniswap v4, so ${
+                token.unmintable.length === 1 ? 'it is' : 'they are'
+              } listed but not offered here.`}
+          </p>
         </div>
 
         <div className="field">
@@ -354,7 +418,15 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
             {!onChain ? (
               <span className="max">Max {MAX_DEPOSIT_ETH}</span>
             ) : flow.balances && flow.sides ? (
-              <span className="max">Balance {fmtAmount(flow.balances.quote, flow.sides.quoteDecimals)}</span>
+              <span className="max">
+                Balance {fmtAmount(flow.balances.quote, flow.sides.quoteDecimals)}
+                {/* A wrapped market's balance of zero beside a wallet full of
+                    ether reads as "you cannot do this". The ether is what
+                    pays for it, so it is on the line too. */}
+                {quoteSymbol === 'WETH' && !quoteIsNativeEther(pool)
+                  ? ` · ${fmtAmount(flow.balances.native, 18)} ETH`
+                  : ''}
+              </span>
             ) : null}
           </div>
           <p className="hint">
@@ -429,6 +501,19 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
             ))}
           </div>
           <p className="hint">{shapeMeta.hint}</p>
+          <p className="hint">
+            Across {bins} bins it holds{' '}
+            {shape === 'spot' ? (
+              <>exactly what an even spread does at the current price</>
+            ) : (
+              <>
+                <b className="num">{density >= 10 ? density.toFixed(0) : density >= 1 ? density.toFixed(2) : density.toFixed(2)}×</b>{' '}
+                an even spread at the current price
+              </>
+            )}
+            . Only the bin holding the price earns a fee, so that is the whole difference between
+            the three — and it is what scales the estimate on the right.
+          </p>
         </div>
 
         <div className="field">
@@ -513,7 +598,9 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
             {onChain
               ? flow.step === 'wrong-chain'
                 ? `The wallet is on another network. Nothing is sent until it is on ${CHAIN.name}; the price shown is read from the chain's public RPC.`
-                : flow.step === 'approve'
+                : flow.step === 'wrap'
+                ? `This market is quoted in wrapped ether. One transaction turns ${fmtAmount(flow.wrap!.shortfall, 18)} of your ETH into the same amount of ${quoteSymbol} — one token per ether, no price and nothing to slip — and the mint follows it.`
+              : flow.step === 'approve'
                 ? `${flow.approvals.length} approval${flow.approvals.length === 1 ? '' : 's'} first, then one transaction to mint. Nothing is held by Balast.`
                 : `One transaction through Uniswap's PositionManager${flow.plan ? `: ${flow.plan.positions.length} position${flow.plan.positions.length === 1 ? '' : 's'}, each an NFT in your wallet` : ''}. Nothing is held by Balast.`
               : 'One transaction. You keep the NFT.'}
@@ -567,7 +654,7 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
             {quoteSymbol} side
           </span>
           <span>
-            <i style={{ background: 'var(--red)' }} />
+            <i style={{ background: 'var(--fg-2)' }} />
             Current price
           </span>
         </div>
@@ -597,7 +684,7 @@ function Builder({ pools, stakeablePools }: { pools: Pool[]; stakeablePools: Poo
                 '—'
               ) : (
                 <>
-                  {(eth * (1 - tokenShare)).toFixed(2)} ETH ·{' '}
+                  {(eth * (1 - tokenShare)).toFixed(2)} {quoteSymbol} ·{' '}
                   {((eth * tokenShare * global.ethPriceUsd) / pool.priceUsd).toLocaleString('en-US', { maximumFractionDigits: 1 })} {tokenSymbol}
                 </>
               )}
