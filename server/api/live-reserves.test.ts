@@ -69,4 +69,16 @@ describe('a pool’s liquidity now', () => {
     expect(reserves.get('v3:0xpool')).toBeNull();
     expect(reserves.status().lastError).toBe('pool reserves failed on all 4 endpoints:');
   });
+
+  it('asks for a rebuild once a read lands, and not after one that found nothing', async () => {
+    let updates = 0;
+    let answer = new Map<string, { amount0: bigint; amount1: bigint }>();
+    const reserves = new LiveReserves({ read: async () => answer, onUpdate: () => updates++ });
+    reserves.follow([{ id: 'v3:0xpool', address: '0xpool', token0: TOKEN, token1: USDG }]);
+    await reserves.refresh();
+    expect(updates).toBe(0);
+    answer = new Map([['v3:0xpool', { amount0: 1n, amount1: 1n }]]);
+    await reserves.refresh();
+    expect(updates).toBe(1);
+  });
 });

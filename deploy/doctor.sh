@@ -380,6 +380,31 @@ else
     fi
   fi
 
+  # Live v3 pool reserves: the liquidity today's fee yield is divided by
+  # (§31). Zero pools for the first minutes after a restart is the first
+  # snapshot still being built, not a fault.
+  if printf '%s' "$BODY" | grep -q '"poolReserves":{'; then
+    RES=${BODY#*\"poolReserves\":}
+    RES=${RES%%\}*}
+    R_POOLS=$(printf '%s' "$RES" | grep -o '"pools":[0-9]*' | head -1 | cut -d: -f2)
+    R_READ=$(printf '%s' "$RES" | grep -o '"read":[0-9]*' | head -1 | cut -d: -f2)
+    R_ERR=$(printf '%s' "$RES" | grep -o '"lastError":"[^"]*"' | head -1 | cut -d'"' -f4)
+    R_UP=$(printf '%s' "$BODY" | grep -o '"uptimeSeconds":[0-9]*' | head -1 | cut -d: -f2)
+    if [[ -n "${R_ERR:-}" ]]; then
+      warn "pool reserves: $R_ERR — v3 fee yields fall back to the indexer's figure, labelled with its age"
+    elif [[ "${R_READ:-0}" -gt 0 ]]; then
+      ok "pool reserves: ${R_READ} of ${R_POOLS:-?} v3 pools read from the chain — fee yield uses today's liquidity"
+    elif [[ "${R_POOLS:-0}" -gt 0 ]]; then
+      ok "pool reserves: ${R_POOLS} v3 pools followed, first read in progress"
+    elif [[ -n "${R_UP:-}" && "${R_UP}" -lt 600 ]]; then
+      ok "pool reserves: waiting for the first snapshot (API up ${R_UP}s) — read within a minute of it"
+    else
+      warn "pool reserves: no v3 pool followed — every fee yield is the indexer's figure, labelled with its age"
+    fi
+  elif printf '%s' "$BODY" | grep -q '"poolReserves":null'; then
+    ok "pool reserves: off (LIVE_RESERVES=false) — fee yields use the indexer's figure, labelled with its age"
+  fi
+
   # The live market feed. A row reading `chain` is showing a day as old as the
   # sync, so how many of the board's tokens an aggregator places is the
   # difference between a current board and a two-month-old one — and when some

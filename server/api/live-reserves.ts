@@ -75,7 +75,17 @@ export class LiveReserves {
   private running = false;
 
   constructor(
-    private readonly options: { read?: ReservesReader; now?: () => number; log?: (line: string) => void } = {},
+    private readonly options: {
+      read?: ReservesReader;
+      now?: () => number;
+      log?: (line: string) => void;
+      /**
+       * Called after a read that produced readings, so the snapshot can be
+       * rebuilt with them. Without it the first reading waited for some other
+       * rebuild to be used at all.
+       */
+      onUpdate?: () => void;
+    } = {},
   ) {}
 
   /** The v3 pools the snapshot lists; the next refresh reads these. */
@@ -106,6 +116,7 @@ export class LiveReserves {
       this.lastReadAt = now;
       if (this.lastError) this.options.log?.('pool reserves: recovered');
       this.lastError = null;
+      if (read.size > 0) this.options.onUpdate?.();
     } catch (e) {
       const reason = (e as Error).message.split('\n')[0].slice(0, 200);
       if (reason !== this.lastError) this.options.log?.(`pool reserves: ${reason}`);

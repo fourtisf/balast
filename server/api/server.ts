@@ -231,7 +231,13 @@ export async function buildServer(
   const reserves =
     options.reservesReader === null || (options.reservesReader === undefined && process.env.LIVE_RESERVES === 'false')
       ? null
-      : new LiveReserves({ read: options.reservesReader ?? undefined, log: (line) => app.log.warn(line) });
+      : new LiveReserves({
+          read: options.reservesReader ?? undefined,
+          log: (line) => app.log.warn(line),
+          // Rebuilt on the same floor as a market refresh, so the fee yield
+          // uses a reading within seconds of it landing.
+          onUpdate: () => publishMarket(),
+        });
   reserves?.start();
   app.addHook('onClose', async () => reserves?.stop());
 

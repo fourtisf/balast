@@ -4898,3 +4898,24 @@ on the box says whether it answers.
 live-reserves cases and a test that today's fees are never divided by a
 liquidity as old as the indexer), the production build, and 41 Playwright
 tests, one of them new: the address copies.
+
+### `poolReserves: {"pools":0,"read":0}` right after a deploy
+
+The first `/api/health` after that deploy read `"poolReserves":{"pools":0,
+"read":0,"lastReadAt":null,"lastError":null}`, 23 seconds after the API
+started. That is not a fault. The reader learns which v3 pools to follow from
+the first snapshot build, and that build had not finished yet.
+
+Two things were wrong around it, though. First, a reading that landed was not
+used until something else rebuilt the snapshot. `LiveReserves` now takes an
+`onUpdate` callback, and the API wires it to the same coalesced rebuild a
+market refresh triggers. So today's liquidity reaches the fee yield within
+seconds of being read. Second, the doctor said nothing about the reader. It
+now prints one line for it:
+
+- how many pools have been read;
+- when it is waiting for the first snapshot;
+- when it is off;
+- the endpoint's error, if there is one.
+
+The operator no longer has to grep `/api/health` for it.
