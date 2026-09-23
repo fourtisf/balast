@@ -3,7 +3,7 @@
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { count, duration, shortWallet, usdExact, usdHeadline } from '@/lib/format';
-import { TOKEN_CA } from '@/lib/site';
+import { TOKEN_CA, TOKEN_TICKER } from '@/lib/site';
 
 /**
  * The facts column in the masthead: the four global figures, and the
@@ -92,7 +92,7 @@ export function Facts() {
         <dt>Contract address</dt>
         <dd data-fact="ca">
           {TOKEN_CA ? (
-            <button className="ca num" onClick={copyAddress} title={`${TOKEN_CA} — click to copy`}>
+            <button className="ca num" onClick={copyAddress} title={`$${TOKEN_TICKER} · ${TOKEN_CA} — click to copy. This is the only official address; any other is not ours.`}>
               {shortWallet(TOKEN_CA)}
             </button>
           ) : (

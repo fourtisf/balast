@@ -5377,3 +5377,21 @@ with the handle beside it (`@Balastdotfi`, from `X_HANDLE`) in a pill.
 Below 640px the handle drops and the mark stays; below 440px the pill
 leaves the top bar so the wallet button keeps its row, and X stays in the
 footer.
+
+### $BLST, and the address on the site
+
+The owner launched the token on Pons as **$BLST** —
+`0xe8f7E3d2D4B9733E13aBb173F4c1BDDBEAFbEE83` — and asked for it on the
+site. `TOKEN_CA` in `lib/site.ts` is that address as a **constant**, not the
+`NEXT_PUBLIC_TOKEN_CA` it used to read: the masthead says any other
+address is not ours, and a blank or stale value in the box's `.env` would
+have made that sentence point at "coming soon" or at the wrong token. The
+X link was moved to a constant for the same reason (§19). `lib/site.test.ts`
+asserts the address stays valid and checksummed.
+
+The masthead shows it short with copy, the tooltip carries it in full; the
+footer reads `$BLST · CA 0xe8f7…EE83`. The p10 banner still says there is
+no token and should not be posted. §13's recommendation to ship without a
+token was the doc's; the launch is the owner's decision, and nothing on the
+site says the token earns anything — Balast takes no fee, so there is
+nothing for it to earn.

@@ -31,8 +31,10 @@ export const DEFENSIVE_DOMAINS = ['www.balast.xyz'] as const;
  * the real account as a default the placeholder overrode. A fact this
  * public belongs in the repository, where a change is a reviewed commit.
  *
- * An unset contract address renders as "CA · coming soon" — the words the
- * owner asked for, and true until there is one.
+ * The contract address is a constant for the same reason. It was an
+ * environment variable read at build time, and a blank or stale value in
+ * the box's .env would have shown "coming soon", or the wrong address, on
+ * a site that tells people any other address is not ours.
  */
 export const SOCIAL = {
   x: 'https://x.com/Balastdotfi',
@@ -41,8 +43,13 @@ export const SOCIAL = {
 /** The X handle, for the site's own metadata; derived so it cannot disagree with the link. */
 export const X_HANDLE = `@${SOCIAL.x.replace(/\/+$/, '').split('/').pop()}`;
 
-/** The token's contract address, once it exists. Empty until then. */
-export const TOKEN_CA = process.env.NEXT_PUBLIC_TOKEN_CA ?? '';
+/**
+ * $BLST, launched on Pons (ponsfamily.com), 23 September 2026. The address
+ * the owner gave, checksummed; a test asserts it stays valid. Empty would
+ * render "CA · coming soon".
+ */
+export const TOKEN_CA: string = '0xe8f7E3d2D4B9733E13aBb173F4c1BDDBEAFbEE83';
+export const TOKEN_TICKER = 'BLST';
 
 /**
  * Where the API lives, from the browser's point of view. Empty means the

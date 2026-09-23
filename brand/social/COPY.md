@@ -328,9 +328,14 @@ p04, p05–p07 one a day, p08, p09. p11 is the profile header (1500 × 500).
 > Numbers you can check. Swap fees only, no emissions, no Balast fee, read from the chain — and the indexer's lag always on screen. balast.xyz
 
 **p10 · Contract address** (pin this)
-> There is no Balast token yet.
+> The official $BLST contract address:
 >
-> When there is one, its address appears on balast.xyz first. Anything circulating before that — or sent to you in a DM — is not ours.
+> 0xe8f7E3d2D4B9733E13aBb173F4c1BDDBEAFbEE83
+>
+> It is also shown on balast.xyz. Any other address — in a DM, a reply, or under a similar ticker — is not ours.
+
+(The p10 image still reads "there is no token yet"; it is out of date since
+the launch and should not be posted.)
 
 **p13 · Portfolio**
 > Your fees, day by day. Every position you hold, marked to market, with the fees it has actually earned and its price impact right beside them. Collect or withdraw any time, from your own wallet. balast.xyz

@@ -1,6 +1,6 @@
 import { CHAIN, CONTRACTS, EXPLORER_URL } from '@/lib/chain';
 import { shortWallet } from '@/lib/format';
-import { TOKEN_CA } from '@/lib/site';
+import { TOKEN_CA, TOKEN_TICKER } from '@/lib/site';
 import { Community } from './Community';
 import { Mark } from './Logo';
 
@@ -13,8 +13,8 @@ export function Footer() {
       </div>
       <div className="foot-r">
         <Community className="foot" />
-        <span className="foot-ca" title={TOKEN_CA || 'The token has not launched; its contract address will be published here first.'}>
-          {TOKEN_CA ? `CA ${shortWallet(TOKEN_CA)}` : 'CA · coming soon'}
+        <span className="foot-ca" title={TOKEN_CA ? `$${TOKEN_TICKER} · ${TOKEN_CA} — the only official address` : 'The token has not launched; its contract address will be published here first.'}>
+          {TOKEN_CA ? `$${TOKEN_TICKER} · CA ${shortWallet(TOKEN_CA)}` : 'CA · coming soon'}
         </span>
         {/* Balast deploys no contract of its own (§20): every position is
             minted through Uniswap's PositionManager, and the audits and the
