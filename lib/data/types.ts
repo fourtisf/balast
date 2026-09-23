@@ -97,6 +97,13 @@ export interface MarketQuote {
   liquidityUsd: number | null;
   /** The row's own pool, when the source lists that pair. Null when it does not. */
   poolLiquidityUsd: number | null;
+  /**
+   * WHICH pool `poolLiquidityUsd` describes — a v3 pool's address or a v4
+   * pool's id, lowercase. The quote is fetched once per token and attached to
+   * every pool of it, so without this the board row's figure was read as the
+   * figure of the token's other pools too.
+   */
+  poolLiquidityPool?: string | null;
   fdvUsd: number | null;
   marketCapUsd: number | null;
   /** When it was fetched, ISO. */
@@ -221,6 +228,14 @@ export interface Pool {
   market?: MarketQuote | null;
   /** See ChainNow. */
   now?: ChainNow | null;
+  /**
+   * The pool's liquidity NOW, in USD: a v3 pool's own token balances read
+   * from the chain a minute ago (server/api/live-reserves.ts), or an
+   * aggregator's figure for exactly this pool. Null when neither is current.
+   * It is what today's fees are divided by for a yield — never `tvlUsd`,
+   * which is as old as the indexer's last block.
+   */
+  liveLiquidity?: { usd: number; source: 'chain' | MarketSourceName; at: string | null } | null;
   feeYield: FeeYield;
 }
 

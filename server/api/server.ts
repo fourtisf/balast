@@ -30,6 +30,7 @@ import { chainPortfolioReader, chainScannerSource } from './chain-portfolio';
 import { buildPortfolio, type ChainPortfolioReader } from './portfolio';
 import { V4TokenScanner } from './v4-scanner';
 import { ExplorerPositions, type ExplorerFetch } from './explorer-positions';
+import { LiveReserves, type ReservesReader } from './live-reserves';
 import { recentHead } from './recent';
 import { buildSnapshot, nextRevision } from './snapshot';
 import { agedSnapshot, isServable, loadPersistedSnapshot, persistSnapshot } from './snapshot-store';
@@ -203,6 +204,11 @@ export async function buildServer(
      * `PORTFOLIO_EXPLORER=false`; a test passes a fake fetch or null.
      */
     explorerFetch?: ExplorerFetch | null;
+    /**
+     * Reads listed v3 pools' balances for a current fee yield. Defaults to
+     * the chain unless `LIVE_RESERVES=false`; null turns it off (tests).
+     */
+    reservesReader?: ReservesReader | null;
   } = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
@@ -222,6 +228,12 @@ export async function buildServer(
       ? new ExplorerPositions({ base: env.explorerApiUrl, fetch: options.explorerFetch ?? undefined })
       : null;
   const startedAt = Date.now();
+  const reserves =
+    options.reservesReader === null || (options.reservesReader === undefined && process.env.LIVE_RESERVES === 'false')
+      ? null
+      : new LiveReserves({ read: options.reservesReader ?? undefined, log: (line) => app.log.warn(line) });
+  reserves?.start();
+  app.addHook('onClose', async () => reserves?.stop());
 
   await app.register(cors, {
     // The browser reaches the API through nginx on the same origin, so CORS
@@ -393,7 +405,7 @@ export async function buildServer(
   /** One query at a time, whoever asks. */
   function rebuild(): Promise<MarketSnapshot | null> {
     if (!building) {
-      building = buildSnapshot({ usdgAddress: USDG || null, market })
+      building = buildSnapshot({ usdgAddress: USDG || null, market, reserves })
         .then((value) => {
           if (value) {
             cached = { snapshot: value, at: Date.now() };
@@ -619,6 +631,9 @@ export async function buildServer(
       // portfolio's completeness depends on it, so it is visible from outside.
       portfolioScan: v4Scanner ? v4Scanner.status() : null,
       portfolioExplorer: explorerPositions ? explorerPositions.status() : null,
+      // The listed v3 pools' balances, read for a fee yield whose liquidity is
+      // as current as its fees.
+      poolReserves: reserves ? reserves.status() : null,
       // How long this process has been up, and when it last built the board:
       // right after a deploy "no snapshot yet" is the first build running,
       // not a fault, and the doctor says which.

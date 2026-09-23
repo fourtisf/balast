@@ -42,6 +42,8 @@ function quote(overrides: Partial<MarketQuote> = {}): MarketQuote {
     priceChange24hPct: -3.8,
     liquidityUsd: 926_000,
     poolLiquidityUsd: 25_500,
+    // The pool the fixture's `pool()` is, so its per-pool figure applies.
+    poolLiquidityPool: '0x9999',
     fdvUsd: 22_530_000,
     marketCapUsd: 22_920_000,
     at: new Date().toISOString(),
@@ -217,6 +219,12 @@ describe('liquidity', () => {
     expect(shownLiquidity(pool({ market: quote({ poolLiquidityUsd: null, liquidityUsd: null }) })).value).toBeNull();
   });
 
+  /** A token's quote is attached to every pool of it; its per-pool figure is only the one pool's. */
+  it('does not give a token’s other pools the board row’s pool liquidity', () => {
+    const other = pool({ address: '0x7777', market: quote({ poolLiquidityUsd: 25_500, poolLiquidityPool: '0x9999' }) });
+    expect(shownLiquidity(other)).toEqual({ value: 926_000, basis: 'live', scope: 'token' });
+  });
+
   it('will not print a sub-dollar figure as $0, which reads as a measurement', () => {
     // The live board: `FDV $17.79M · liquidity $0`. usd() rounds to whole
     // dollars, so thirty-four cents became a hard zero beside an FDV in the
@@ -314,14 +322,19 @@ describe('shownYield', () => {
    * single day", so the basis travels with the figure and the label never
    * says "trailing 7d" over a day.
    */
-  it('annualises the day the head reader actually saw', () => {
-    const p = pool({ tvlUsd: 100_000, feeYield: { basis: 'trailing7d', pct: 1445 } });
+  it('annualises the day the head reader actually saw, over the liquidity the pool holds now', () => {
+    const p = pool({
+      tvlUsd: 3_000,
+      liveLiquidity: { usd: 100_000, source: 'chain', at: new Date().toISOString() },
+      feeYield: { basis: 'trailing7d', pct: 1445 },
+    });
     p.now = chainNow({ fees24hUsd: 100 });
     const y = shownYield(p);
     expect(y.basis).toBe('now24h');
     expect(y.current).toBe(true);
-    // 100 x 365 / 100_000 x 100
+    // 100 x 365 / 100_000 x 100 — the live figure, not the indexer's 3,000.
     expect(y.pct).toBeCloseTo(36.5, 6);
+    expect(y.liquiditySource).toBe('chain');
     expect(yieldLabel(y)).toBe('fee yield · 24h, annualised');
     // Nothing to add beside the figure: the label under it names the basis,
     // the pool has a week of history, and the figure is today's.
@@ -369,8 +382,27 @@ describe('shownYield', () => {
     expect(shownYield(p).basis).toBe('trailing7d');
   });
 
+  /**
+   * VIRTUAL/ETH read 1897%: today's fees over the liquidity the indexer
+   * recorded seventy-four days ago. Two halves measured two months apart are
+   * not a yield. With no liquidity from today, the indexer's own figure —
+   * both halves the same day — is shown, with its age beside it.
+   */
+  it('never divides today’s fees by a liquidity as old as the indexer', () => {
+    const p = pool({ tvlUsd: 5_000, feeYield: { basis: 'trailing7d', pct: 40 } });
+    p.now = chainNow({ fees24hUsd: 260 });
+    const y = shownYield(p);
+    expect(y.basis).toBe('trailing7d');
+    expect(y.pct).toBe(40);
+    expect(y.current).toBe(false);
+  });
+
   it('shows a quiet day as a quiet day rather than reaching for a better number', () => {
-    const p = pool({ tvlUsd: 100_000, feeYield: { basis: 'trailing7d', pct: 1445 } });
+    const p = pool({
+      tvlUsd: 100_000,
+      liveLiquidity: { usd: 100_000, source: 'chain', at: null },
+      feeYield: { basis: 'trailing7d', pct: 1445 },
+    });
     p.now = chainNow({ fees24hUsd: 0, volume24hUsd: 0 });
     const y = shownYield(p);
     expect(y.basis).toBe('now24h');

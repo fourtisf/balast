@@ -25,6 +25,7 @@ process.env.LOGO_SOURCES ??= 'none';
 // hand buildPortfolio their own reader.
 process.env.PORTFOLIO_CHAIN ??= 'false';
 process.env.PORTFOLIO_EXPLORER ??= 'false';
+process.env.LIVE_RESERVES ??= 'false';
 // Never allow a test run to migrate or truncate a real database.
 if (!/balast_test/.test(url)) {
   throw new Error(

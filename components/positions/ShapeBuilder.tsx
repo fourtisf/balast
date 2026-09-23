@@ -114,7 +114,7 @@ export function ShapeBuilder() {
 
 function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePools: Pool[]; live: boolean }) {
   const { global, indexerLagSeconds } = useMarket();
-  const { wallet } = useUi();
+  const { wallet, showToast } = useUi();
 
   // The drawer hands over here: ?pool= picks the pool, ?range=full is a stake.
   const params = useSearchParams();
@@ -305,8 +305,15 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
   // Draw against a sane range even while the inputs are mid-edit.
   const safeMin = Math.min(minPct, 0);
   const safeMax = Math.max(maxPct, safeMin + 1);
-  const lo = pool.priceUsd * (1 + safeMin / 100);
-  const hi = pool.priceUsd * (1 + safeMax / 100);
+  // The token's price NOW, in dollars: the chain's slot0 in the quote, times
+  // the quote's dollar price; else the head reader's; the indexer's only as a
+  // last resort. The axis read the indexer's alone — $0.46–$0.62 beside a
+  // live price of 0.75 — because that one is as old as its last block.
+  const quoteUsd = pool.quote === 'USDG' ? 1 : global.ethPriceUsd;
+  const priceNowUsd =
+    flow.live && quoteUsd > 0 ? flow.live.tokenPriceInQuote * quoteUsd : (pool.now?.priceUsd ?? pool.priceUsd);
+  const lo = priceNowUsd * (1 + safeMin / 100);
+  const hi = priceNowUsd * (1 + safeMax / 100);
 
   // Share of the deposit that has to sit above the current price, i.e. in the
   // token rather than in the quote — the simulated estimate of the split.
@@ -420,6 +427,44 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
               ))}
             </select>
           </div>
+          {/* Which token this is, exactly: a ticker is not unique here (two
+              CASHCATs), and a site that asks for a wallet should show the
+              contract it is about to put money next to. */}
+          {pool.token.address.toLowerCase() === NATIVE_ETH ? (
+            <p className="hint" style={{ marginTop: 8 }}>
+              Ether is the chain&rsquo;s native asset: no contract.
+            </p>
+          ) : (
+            <div className="ca" style={{ marginTop: 8 }} data-testid="token-ca">
+              <code className="num" title={pool.token.address}>
+                {pool.token.address}
+              </code>
+              <div className="ca-actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost sm"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(pool.token.address);
+                      showToast(`${pool.token.symbol} contract address copied`);
+                    } catch {
+                      showToast('Could not copy — select the address instead');
+                    }
+                  }}
+                >
+                  Copy
+                </button>
+                <a
+                  className="btn btn-ghost sm"
+                  href={`${EXPLORER_URL}/token/${pool.token.address}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Explorer
+                </a>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* This token's markets. A pair is a different pool to be in: the
@@ -746,7 +791,7 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
             </p>
           </div>
         ) : (
-          <BinChart weights={weights} minPct={safeMin / 100} maxPct={safeMax / 100} currentPrice={pool.priceUsd} shape={shape} symbol={tokenSymbol} />
+          <BinChart weights={weights} minPct={safeMin / 100} maxPct={safeMax / 100} currentPrice={priceNowUsd} shape={shape} symbol={tokenSymbol} />
         )}
 
         {/* The legend reads the bin chart, and a full-range position draws
@@ -831,6 +876,13 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
           {fullRange
             ? `Fee yield is this pool\u2019s own ${yieldLabel(shownY)} figure: a full-range position concentrates nothing, so there is nothing to scale. It is arithmetic on fees already paid, not a forecast.`
             : `Est. fee yield scales this pool\u2019s ${yieldLabel(shownY)} by how tightly your range concentrates them. It is arithmetic on fees already paid, not a forecast, and it earns nothing while price sits outside the range.`}
+          {shownY.current && shownY.feesUsd !== null && shownY.liquidityUsd !== null
+            ? ` Today: ${usd(shownY.feesUsd)} of fees over ${usd(shownY.liquidityUsd)} in the pool now, ${
+                shownY.liquiditySource === 'chain' ? 'read from the pool on chain' : `per ${shownY.liquiditySource}`
+              }.`
+            : !shownY.current && shownY.pct !== null
+              ? ' No current liquidity figure for this pool, so this is the indexer’s figure, fees and liquidity from the same day — its age is beside it.'
+              : ''}
           {onChain && !wallet ? ' Connect a wallet to see the exact amounts for your deposit.' : ''}
         </p>
       </div>

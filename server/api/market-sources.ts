@@ -270,6 +270,7 @@ export function aggregate(
     priceChange24hPct: priced?.priceChange24hPct ?? null,
     liquidityUsd: liquidity,
     poolLiquidityUsd: own?.liquidityUsd ?? null,
+    poolLiquidityPool: own ? own.pairAddress : null,
     fdvUsd: withCap?.fdvUsd ?? null,
     marketCapUsd: withCap?.marketCapUsd ?? null,
     at,
@@ -576,6 +577,7 @@ export function geckoterminal(
         // reads to say "the token's total" rather than "across N pairs".
         quote.pairs = 0;
         quote.poolLiquidityUsd = geckoPoolLiquidity(answer.body, ask.pool);
+        quote.poolLiquidityPool = quote.poolLiquidityUsd !== null && ask.pool ? ask.pool.toLowerCase() : null;
         quotes.set(ask.address, quote);
       }
 

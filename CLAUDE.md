@@ -4806,3 +4806,95 @@ it, and printed *the API did not answer* on every healthy deploy. It now
 waits up to a minute. The doctor also read the scan's `lastError` from the
 next object in the body whenever the scan's own was null. Each object is cut
 at its closing brace now.
+
+---
+
+## 31. A yield of 1897%: today's fees over July's liquidity
+
+ALFA, on the builder with VIRTUAL / ETH at full range: *fee yield mengapa
+terlalu besar, estimasi ngaco ini*. The figure read `1897% · 24h`. Then,
+on VIRTUAL / USDG: the token's contract address should be on the page,
+copyable.
+
+### Why 1897%
+
+§27 put the yield on Uniswap's basis: the fees a pool took in the last 24
+hours, annualised, over the pool's liquidity. The numerator was right. It
+comes from the head reader (§25), so it is today's fees. The denominator
+was `pool.tvlUsd`, which is the indexer's. The indexer was seventy-four days
+behind, so that figure is the pool's liquidity in July. Pools on this chain
+have grown several times over since then. A quotient whose top and bottom
+were measured two months apart is not a yield. The formula was not the
+fault; the dates were.
+
+### What the yield divides by now
+
+The rule is that today's fees are divided only by a liquidity figure that
+is also current. `Pool.liveLiquidity` carries that figure and says where it
+came from:
+
+- **v3 pools: the chain.** A v3 pool is its own contract and holds its own
+  tokens, so its reserves right now are two `balanceOf` calls.
+  `server/api/live-reserves.ts` reads every listed v3 pool once a minute,
+  in one multicall, and prices both sides at today's prices:
+  - the token at the head reader's price;
+  - ether at the live price or the head's price;
+  - USDG at a dollar.
+
+  The balance includes fees not yet collected, which is how Uniswap's own
+  analytics count it. That makes the yield a shade conservative and never
+  flattering. A reading older than five minutes is not used. A pool the
+  node did not answer for has no reading, and never a zero.
+- **v4 pools: an aggregator's figure, but only for this exact pool.** A v4
+  pool holds nothing of its own, because the PoolManager holds every
+  pool's tokens together. So the chain has no two-call answer for it.
+  An aggregator's liquidity is used only when the pair it describes
+  (`MarketQuote.poolLiquidityPool`) is this pool's own id. That guard
+  exists because §27 found four pools of one token each wearing the
+  token's figure.
+- **Neither, and the yield is the indexer's trailing figure.** It is
+  labelled with its age, as before. It is never today's fees over an old
+  denominator.
+
+`lib/market-figures.ts` still makes the choice once, for the board, the
+drawer, the vault cards and the builder. `ShownYield.liquiditySource` says
+which source was used, and the tooltip names it.
+
+### The axis was July's too
+
+The builder turned the range's percentages into prices using `pool.priceUsd`,
+which is the indexer's price. For VIRTUAL / USDG the chart read *current
+price 0.75289* over an axis of `$0.4595 – $0.6217`: a range around a price
+from two months ago, drawn under today's. The builder now uses the price it
+plans against, which is the pool's own `slot0`, read live (§20). When no
+wallet flow is reading, it falls back to the head reader's price, and only
+then to the indexer's.
+
+### The contract address, under the token
+
+Under the token select, the builder now shows the token's address in full,
+with **Copy** and **Explorer** beside it. Ether shows *native asset*,
+because it has no contract. It is the same rule the drawer already follows
+(§20): a site that asks people to put money into a token should show them
+which token. That matters most on a chain with two CASHCATs (§24).
+
+### What this does not fix
+
+- The indexer is still behind. The liquidity *column* on the board is still
+  the indexer's figure, labelled as such.
+- A v4 pool that no aggregator lists as its own pair still shows the
+  trailing figure, with its age.
+- `/api/health` reports the reader under `poolReserves`: how many pools it
+  follows, how many it has read, and its last error. `LIVE_RESERVES=false`
+  turns it off.
+
+Unverified from here, as always: the sandbox reaches no RPC, so the reader
+has run against a fake and not against the chain. The first `poolReserves`
+on the box says whether it answers.
+
+### Verified here
+
+`typecheck`, `lint`, the full suite (51 files, 513 tests, with the
+live-reserves cases and a test that today's fees are never divided by a
+liquidity as old as the indexer), the production build, and 41 Playwright
+tests, one of them new: the address copies.

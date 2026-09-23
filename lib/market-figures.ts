@@ -17,7 +17,7 @@
  */
 
 import { isEther } from './chain';
-import type { Pool } from './data/types';
+import type { MarketSourceName, Pool } from './data/types';
 import { duration, usd } from './format';
 import { MIN_DATA_HOURS, YIELD_WINDOW_HOURS } from './yield';
 
@@ -138,12 +138,19 @@ export interface ShownLiquidity {
  */
 const LIVE_LIQUIDITY_FLOOR_USD = 1;
 
+/** Whether a quote's per-pool liquidity is this pool's. */
+function describesPool(quote: NonNullable<Pool['market']>, pool: Pool): boolean {
+  return !!quote.poolLiquidityPool && quote.poolLiquidityPool.toLowerCase() === pool.address.toLowerCase();
+}
+
 export function shownLiquidity(pool: Pool): ShownLiquidity {
   if (pool.tvlUsd > 0) return { value: pool.tvlUsd, basis: 'chain', scope: 'pool' };
   const live = pool.market;
   const usable = (n: number | null | undefined): n is number =>
     n !== null && n !== undefined && n >= LIVE_LIQUIDITY_FLOOR_USD;
-  if (usable(live?.poolLiquidityUsd)) {
+  // The source's figure for THIS pool — not the board row's pool, which the
+  // same token-wide quote also carries onto the token's other pools.
+  if (usable(live?.poolLiquidityUsd) && describesPool(live!, pool)) {
     return { value: live!.poolLiquidityUsd as number, basis: 'live', scope: 'pool' };
   }
   if (usable(live?.liquidityUsd)) {
@@ -330,6 +337,8 @@ export interface ShownYield {
   /** What went into a `now24h` figure, for the tooltip. */
   feesUsd: number | null;
   liquidityUsd: number | null;
+  /** Where that liquidity was read: the pool's own balances on chain, or an aggregator's figure for this pool. */
+  liquiditySource: 'chain' | MarketSourceName | null;
 }
 
 export function shownYield(pool: Pool): ShownYield {
@@ -339,23 +348,28 @@ export function shownYield(pool: Pool): ShownYield {
   // Either is enough — §7's qualifier must not be dropped because one field
   // disagreed with the other.
   const young = pool.ageHours < YIELD_WINDOW_HOURS || pool.feeYield.basis === 'estimate';
-  // The pool's own reserves. Never an aggregator's figure here: its quote is
-  // fetched once per token and describes the token or the one pair it chose,
-  // so for a token with six pools it is the same number six times (§27).
-  const liquidity = pool.tvlUsd > 0 ? pool.tvlUsd : null;
+  // The pool's liquidity NOW — the same moment as the fees above it. It used
+  // to be `tvlUsd`, which is as old as the indexer's last block: seventy-four
+  // days on the box, so today's fees were divided by July's liquidity and
+  // VIRTUAL/ETH read 1897%. A yield whose numerator and denominator were
+  // measured two months apart is not a yield. With no current liquidity the
+  // figure falls back to the indexer's own, whose two halves are the same
+  // day, and says how old that day is.
+  const live = pool.liveLiquidity && pool.liveLiquidity.usd > 0 ? pool.liveLiquidity : null;
   // §7's floor, which ALFA's decision did not move: never a yield from fewer
   // than 24 hours of data. A pool three hours old has three hours of fees in
   // the head reader's window, and annualising them as if they were a day is
   // the "1-day-old pool showing 1200%" that rule exists to stop.
   const enough = pool.ageHours >= MIN_DATA_HOURS;
-  if (now && enough && liquidity !== null && Number.isFinite(now.fees24hUsd)) {
+  if (now && enough && live !== null && Number.isFinite(now.fees24hUsd)) {
     return {
-      pct: (now.fees24hUsd * 365) / liquidity * 100,
+      pct: (now.fees24hUsd * 365) / live.usd * 100,
       basis: 'now24h',
       current: true,
       young,
       feesUsd: now.fees24hUsd,
-      liquidityUsd: liquidity,
+      liquidityUsd: live.usd,
+      liquiditySource: live.source,
     };
   }
   const y = pool.feeYield;
@@ -366,6 +380,7 @@ export function shownYield(pool: Pool): ShownYield {
     young,
     feesUsd: null,
     liquidityUsd: null,
+    liquiditySource: null,
   };
 }
 

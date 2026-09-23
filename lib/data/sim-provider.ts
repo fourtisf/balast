@@ -217,6 +217,9 @@ export class SimProvider implements DataProvider {
             change24hPct: s.change24hPct,
             at: null,
           },
+          // The simulator's liquidity is the same moment as its fees, which
+          // is what the live one has to be for a yield to mean anything.
+          liveLiquidity: { usd: s.tvlUsd, source: 'chain' as const, at: null },
         };
       })(),
       volumeHistory: Array.from({ length: 14 }, (_, i) =>
@@ -357,6 +360,7 @@ export class SimProvider implements DataProvider {
           sellVolume24hUsd: p.sellVolume24hUsd,
         };
       }
+      if (p.liveLiquidity) p.liveLiquidity = { ...p.liveLiquidity, usd: p.tvlUsd };
     }
 
     this.global.ethPriceUsd = Math.max(100, this.global.ethPriceUsd * (1 + (rng() - 0.5) * 0.004));

@@ -1,6 +1,17 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('shape builder', () => {
+  test('shows the token\u2019s contract address, and copies it', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto('/positions', { waitUntil: 'networkidle' });
+    const ca = page.getByTestId('token-ca');
+    await expect(ca).toBeVisible();
+    const address = (await ca.locator('code').innerText()).trim();
+    expect(address).toMatch(/^0x[0-9a-fA-F]{40}$/);
+    await ca.getByRole('button', { name: 'Copy' }).click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(address);
+  });
+
   test('the bin chart follows shape, range and bin count', async ({ page }) => {
     await page.goto('/positions', { waitUntil: 'networkidle' });
     const bars = page.locator('.bins rect');

@@ -24,6 +24,7 @@
 import { CONTRACTS, PROTOCOL_FEE_BPS, REWARD_WINDOW_SECONDS, NATIVE_ETH, isEther, isStablecoinSql } from '../../lib/chain';
 import { feeTierBpsFromPips } from '../../lib/format';
 import type { MarketFeed } from './market';
+import type { LiveReserves } from './live-reserves';
 import type {
   FeeYield,
   MarketSnapshot,
@@ -55,6 +56,12 @@ export interface SnapshotOptions {
    * quoting. Absent — tests, scripts — `market` is null on every pool.
    */
   market?: MarketFeed | null;
+  /**
+   * The listed v3 pools' own balances, read from the chain a minute ago
+   * (live-reserves.ts): the liquidity a current fee yield is divided by.
+   * Absent — tests, scripts — no pool has a live liquidity from the chain.
+   */
+  reserves?: LiveReserves | null;
   /**
    * USDG's address. Optional: when absent it is discovered from the chain's
    * own tokens, the same way the indexer does it.
@@ -806,6 +813,27 @@ export async function buildSnapshot(
   // which is the same derivation as the row below over blocks minutes old
   // rather than weeks (§25).
   const nowEth = liveEth ? null : await recentEthPrice(anchor.address);
+
+  // Each pool's liquidity NOW, for a yield whose two halves are the same day
+  // (Pool.liveLiquidity). Valued at today's prices: the token at the head
+  // reader's price, ether at the live or head price, USDG at a dollar — never
+  // the indexer's, which are as old as its last block.
+  const usdg = anchor.address.toLowerCase();
+  const ethNow = liveEth?.usd ?? nowEth?.usd ?? null;
+  const priceNow = (pool: Pool, address: string): number | null => {
+    const a = address.toLowerCase();
+    if (a === usdg) return 1;
+    if (isEther(a)) return ethNow;
+    if (a === pool.token.address.toLowerCase()) return pool.now?.priceUsd ?? null;
+    return null;
+  };
+  for (const pool of [...pools, ...otherPools]) pool.liveLiquidity = currentLiquidity(pool, options.reserves ?? null, priceNow);
+  options.reserves?.follow(
+    [...pools, ...otherPools]
+      .filter((p) => p.protocol === 'v3' && p.key)
+      .map((p) => ({ id: p.id, address: p.address, token0: p.key!.currency0, token1: p.key!.currency1 })),
+  );
+
   return {
     pools,
     otherPools,
@@ -856,4 +884,47 @@ function bucketSum(series: number[][]): number[] {
     for (let i = 0; i < Math.min(row.length, SPARK_BUCKETS); i++) out[i] += row[i];
   }
   return out;
+}
+
+/**
+ * A pool's liquidity now, or null. A v3 pool's own balances from the chain
+ * first — the chain's answer, a minute old; else an aggregator's figure for
+ * exactly this pool (a v4 pool holds nothing of its own to read). A side whose
+ * price is not known today makes the whole figure unknown rather than smaller.
+ */
+export function currentLiquidity(
+  pool: Pool,
+  reserves: LiveReserves | null,
+  priceNow: (pool: Pool, address: string) => number | null,
+): Pool['liveLiquidity'] {
+  const reading = pool.protocol === 'v3' && pool.key ? reserves?.get(pool.id) ?? null : null;
+  if (reading && pool.key) {
+    const sides: [bigint, string, number][] = [
+      [reading.amount0, pool.key.currency0, pool.key.decimals0],
+      [reading.amount1, pool.key.currency1, pool.key.decimals1],
+    ];
+    let usd = 0;
+    let known = true;
+    for (const [amount, address, decimals] of sides) {
+      if (amount === 0n) continue;
+      const price = priceNow(pool, address);
+      if (price === null || !(price > 0)) {
+        known = false;
+        break;
+      }
+      usd += (Number(amount) / 10 ** decimals) * price;
+    }
+    if (known && usd > 0 && Number.isFinite(usd)) return { usd, source: 'chain', at: new Date(reading.at).toISOString() };
+  }
+  const quote = pool.market;
+  if (
+    quote &&
+    quote.poolLiquidityUsd !== null &&
+    quote.poolLiquidityUsd >= 1 &&
+    quote.poolLiquidityPool &&
+    quote.poolLiquidityPool.toLowerCase() === pool.address.toLowerCase()
+  ) {
+    return { usd: quote.poolLiquidityUsd, source: quote.source, at: quote.at };
+  }
+  return null;
 }
