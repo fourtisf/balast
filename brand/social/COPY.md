@@ -340,7 +340,7 @@ p04, p05–p07 one a day, p08, p09. p11 is the profile header (1500 × 500).
 **1/2 · with the screen recording**
 > How to add liquidity on Balast, in 90 seconds.
 >
-> Pick a token. Deposit ETH — Balast swaps the other side for you through Uniswap. Choose full range or a shape, sign, and the position mints straight to your wallet as an NFT.
+> Pick a token. Deposit ETH — Balast swaps the other side for you through Uniswap. Choose full range or a shape, sign, and the position goes straight to your wallet. Only you can withdraw it.
 >
 > No lockup. No Balast fee.
 >
