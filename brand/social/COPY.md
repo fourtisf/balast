@@ -268,6 +268,22 @@ Post `11-shapes.png` first, then one shape a day.
 
 > Three Balast cards comparing liquidity shapes over a ±15% range in 24 bins: Spot with even bars (1.00× at the price), Curve peaked at the current price (2.25×), and Bid-ask tallest at both edges (0.31×).
 
+## 12–13 · Stake a token, premium · `12-premium-stake.png` (paper) `13-premium-stake-ink.png` (night)
+
+The same artboard in two editions, built from `premium-stake.template.html`
+(`npm run brand:premium`). Paper matches the site; ink is for the feed,
+where a dark image stands out. Use one, not both on the same day.
+
+> Stake a token. Keep every fee.
+>
+> One signature on Robinhood Chain: Uniswap mints the position to your wallet, and every swap through the pool pays you your share. 0% Balast fee. No lockup.
+>
+> balast.xyz
+
+**Image description**
+
+> A Balast stake card in perspective for an example VIRTUAL / ETH pool on Uniswap v4: full range from 0 to infinity, a deposit of 0.10 ETH and 330 VIRTUAL, Balast fee none, custody in your wallet as an NFT, no lockup. Behind it, a Uniswap v4 position NFT card; beside it, a note that the position was minted to your wallet.
+
 ## Order
 
 Pin the contract-address post first, before anything else goes out: the

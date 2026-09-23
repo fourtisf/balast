@@ -35,7 +35,8 @@ for (const [name, path] of Object.entries(FONTS)) {
   if (!existsSync(out)) execFileSync('curl', ['-sSfL', '-o', out, FONT_SOURCE + path]);
 }
 const files = readdirSync(dir)
-  .filter((f) => f.endsWith('.html') && (only.length === 0 || only.some((o) => f.includes(o))))
+  // A *.template.html is a source for other artboards, not one itself.
+  .filter((f) => f.endsWith('.html') && !f.endsWith('.template.html') && (only.length === 0 || only.some((o) => f.includes(o))))
   .sort();
 
 // The preinstalled Chromium when there is one (PLAYWRIGHT_BROWSERS_PATH), so
