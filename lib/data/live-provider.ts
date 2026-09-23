@@ -1,3 +1,4 @@
+import { restorePortfolio, storePortfolio } from './portfolio-cache';
 import { restoreSnapshot, storeSnapshot } from './snapshot-cache';
 import { closedV3, mintedV4Ids, v3TxHints } from '../tx-history';
 import type { DataProvider, MarketListener, MarketSnapshot, Portfolio, Unsubscribe, UserPosition } from './types';
@@ -58,6 +59,8 @@ export class LiveProvider implements DataProvider {
   /** The wallet whose positions the portfolio carries, and the last answer for it. */
   private wallet: string | null = null;
   private portfolio: Portfolio | null = null;
+  /** The wallet's read failed and nothing is on screen for it: say so rather than "loading" for ever. */
+  private portfolioFailed = false;
 
   getSnapshot(): MarketSnapshot | null {
     return this.snapshot;
@@ -73,7 +76,10 @@ export class LiveProvider implements DataProvider {
     const next = address ? address.toLowerCase() : null;
     if (next === this.wallet) return;
     this.wallet = next;
-    this.portfolio = null;
+    // The positions this browser last read for the wallet, shown at once and
+    // marked as kept until the chain answers (portfolio-cache.ts).
+    this.portfolio = next ? restorePortfolio(browserStorage(), next) : null;
+    this.portfolioFailed = false;
     this.reissue();
     if (next) void this.fetchPortfolio();
   }
@@ -161,7 +167,10 @@ export class LiveProvider implements DataProvider {
       ].filter(Boolean);
       const query = params.length > 0 ? `?${params.join('&')}` : '';
       const response = await fetch(`${API_BASE}/api/portfolio/${wallet}${query}`, { cache: 'no-store' });
-      if (!response.ok) return;
+      if (!response.ok) {
+        this.portfolioMissed(wallet);
+        return;
+      }
       const body = (await response.json()) as {
         wallet: string;
         positions: UserPosition[];
@@ -212,15 +221,32 @@ export class LiveProvider implements DataProvider {
         // when a later read cannot place it (the explorer slow, the node busy).
         closed: mergeClosed(previous?.closed, body.closed),
       };
+      this.portfolioFailed = false;
+      storePortfolio(browserStorage(), wallet, this.portfolio);
       this.reissue();
     } catch {
-      /* the last answer stays; the next poll asks again */
+      // The last answer stays; the next poll asks again.
+      this.portfolioMissed(wallet);
     }
+  }
+
+  /** A read that did not answer: with nothing on screen for the wallet, the page says so. */
+  private portfolioMissed(wallet: string): void {
+    if (this.wallet !== wallet || this.portfolio) return;
+    this.portfolioFailed = true;
+    this.reissue();
   }
 
   /** The snapshot's portfolio, with the wallet's over it when there is one. */
   private withPortfolio(snapshot: MarketSnapshot): MarketSnapshot {
-    if (!this.portfolio) return this.wallet ? { ...snapshot, portfolio: { ...snapshot.portfolio, wallet: this.wallet } } : snapshot;
+    if (!this.portfolio) {
+      // A wallet whose read has not answered: the snapshot's empty portfolio
+      // is not a statement about it, and is marked so the page does not say
+      // "no positions yet" over positions it has not looked for.
+      return this.wallet
+        ? { ...snapshot, portfolio: { ...snapshot.portfolio, wallet: this.wallet, status: this.portfolioFailed ? 'error' : 'loading' } }
+        : snapshot;
+    }
     return { ...snapshot, portfolio: this.portfolio };
   }
 

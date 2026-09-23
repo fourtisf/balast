@@ -5344,3 +5344,22 @@ But a one-click button that closes a position was too easy to hit. **Withdraw
 and Rebalance now ask on the page first** — *Yes, close the position* or
 *Keep it open*, with a line saying what closing does and that Collect fees
 is the one that keeps it open — and the question lapses after eight seconds.
+
+### "No positions yet" on every reload
+
+ALFA, on a refreshed `/portfolio` showing dashes and *No positions yet* over a
+wallet holding a CASHCAT position: *mengapa setelah di refresh jadi ngelag
+baca datanya*. The wallet's read goes to the chain on every load and can take
+many seconds on the free endpoints; until it answered, the page drew the
+snapshot's empty portfolio, which says *no positions yet* — a claim about a
+wallet nobody had looked at yet (§7).
+
+- **The last read is kept per wallet** (`lib/data/portfolio-cache.ts`, a
+  week at most) and shown at once on the next load, marked `kept` with the
+  time it was read. The first fresh answer replaces it.
+- **A read that has not answered says so.** `Portfolio.status` is `loading`
+  until the first answer and `error` when it failed with nothing kept; the
+  cards read *reading from the chain…* and the list *Reading your
+  positions…*, never *no positions yet*.
+- **The closed positions' history is asked for at the start** of the
+  server's read, beside the others, rather than after every other read.

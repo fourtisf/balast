@@ -375,6 +375,14 @@ export interface ClosedPosition {
 }
 
 export interface Portfolio {
+  /**
+   * Live: how current this portfolio is. `loading` — the wallet's read has
+   * not answered yet, so the empty lists mean nothing; `kept` — the last
+   * read this browser saw, shown until a fresh one lands (`keptAt` is when);
+   * `error` — no read has answered and none is kept. Absent: a fresh read.
+   */
+  status?: 'loading' | 'kept' | 'error';
+  keptAt?: string;
   /** Live: v3 positions this wallet withdrew, so the totals are all time and not only what is open. */
   closed?: ClosedPosition[];
   netValueUsd: number;

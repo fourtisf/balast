@@ -323,6 +323,15 @@ export function PositionList({
           first. The page asks again on its next refresh.
         </p>
       )}
+      {live && portfolio.status === 'kept' && !only && (
+        <p className="hint" role="status" style={{ margin: '10px 0' }}>
+          Shown as this browser last read them
+          {portfolio.keptAt
+            ? ` (${new Date(portfolio.keptAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC)`
+            : ''}
+          , while the chain is asked again. Collect and Withdraw ask the chain first either way.
+        </p>
+      )}
       {live && portfolio.chain?.v3Unavailable && (
         <p className="hint" role="status" style={{ margin: '10px 0' }}>
           Uniswap v3 positions could not be read from the chain just now, so any this wallet holds are not listed.
@@ -359,6 +368,16 @@ export function PositionList({
           {q !== '' ? (
             <>
               <b>No match</b>Nothing in your portfolio matches that search.
+            </>
+          ) : live && wallet && portfolio.status === 'loading' ? (
+            <>
+              <b>Reading your positions…</b>Asking Uniswap&rsquo;s position managers what this wallet holds. On the free
+              endpoints this can take a few seconds.
+            </>
+          ) : live && wallet && portfolio.status === 'error' ? (
+            <>
+              <b>Not read yet</b>The chain did not answer for this wallet just now. Nothing is wrong with the positions
+              themselves; the page asks again shortly.
             </>
           ) : live && !wallet ? (
             <>

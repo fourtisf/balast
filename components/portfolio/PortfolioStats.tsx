@@ -52,7 +52,11 @@ export function PortfolioBody() {
   const closed = useMemo(() => portfolio.closed ?? [], [portfolio.closed]);
   const empty = positions.length === 0 && portfolio.stakes.length === 0 && closed.length === 0;
   const noWallet = live && !wallet;
-  const why = noWallet ? 'connect a wallet' : 'no positions yet';
+  // A wallet whose read has not answered yet is not a wallet with nothing in
+  // it: the page says it is reading, not "no positions yet" (§7).
+  const reading = live && !noWallet && portfolio.status === 'loading';
+  const unread = live && !noWallet && portfolio.status === 'error';
+  const why = noWallet ? 'connect a wallet' : reading ? 'reading from the chain…' : unread ? 'not read yet · asking again' : 'no positions yet';
 
   // Uncollected fees across the live positions, from the chain. Summed only
   // over positions with a reading; a position the node did not answer for
@@ -318,7 +322,12 @@ export function PortfolioBody() {
             <FeeHeatmap values={portfolio.dailyFeesWeth} />
           ) : (
             <div className="empty">
-              {empty ? (
+              {empty && (reading || unread) ? (
+                <>
+                  <b>{reading ? 'Reading your positions…' : 'Not read yet'}</b>
+                  {reading ? 'Asking the chain what this wallet holds.' : 'The chain did not answer just now; the page asks again shortly.'}
+                </>
+              ) : empty ? (
                 <>
                   <b>No fees yet</b>The daily grid fills in as your positions earn.
                 </>

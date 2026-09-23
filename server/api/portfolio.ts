@@ -456,6 +456,23 @@ export async function buildPortfolio(
   }
   const readPositions = chain ? { v4: v4Read, v3: v3Read } : null;
 
+  // The histories of the v3 positions this wallet withdrew, asked for now
+  // rather than after every other read: they do not depend on anything
+  // below, and on the free endpoints a read left for last is a read the
+  // page waits on (closedPositions, further down).
+  const closedIds = (() => {
+    const wanted = options.v3Closed;
+    if (!chain?.v3History || !wanted || wanted.size === 0) return [];
+    const open = new Set((v3Read ?? []).map((p) => p.tokenId.toString()));
+    return [...wanted.keys()].filter((id) => !open.has(id)).slice(0, 30);
+  })();
+  const closedHistories =
+    closedIds.length > 0
+      ? chain!
+          .v3History!(closedIds.map((id) => ({ tokenId: BigInt(id), liquidity: 0n, hints: options.v3TxHints?.get(id) })))
+          .catch(() => new Map<string, V3History>())
+      : Promise.resolve(new Map<string, V3History>());
+
   // The indexer's record, where the chain could not be asked: unchecked, and
   // only what it last saw holding liquidity.
   const unchecked = (): Entry[] => indexed.filter((r) => BigInt(r.liquidity) > 0n).map(fromIndex);
@@ -783,13 +800,12 @@ export async function buildPortfolio(
   // did not hold it.
   const closedPositions = async (): Promise<ClosedPosition[]> => {
     const wanted = options.v3Closed;
-    if (!chain?.v3History || !wanted || wanted.size === 0) return [];
+    if (!chain || !wanted || closedIds.length === 0) return [];
+    // A position the chain says is open is not closed, whatever the browser remembers.
     const open = new Set(positions.filter((p) => p.live?.protocol === 'v3').map((p) => p.tokenId));
-    const ids = [...wanted.keys()].filter((id) => !open.has(id)).slice(0, 30);
+    const ids = closedIds.filter((id) => !open.has(id));
     if (ids.length === 0) return [];
-    const histories = await chain
-      .v3History(ids.map((id) => ({ tokenId: BigInt(id), liquidity: 0n, hints: options.v3TxHints?.get(id) })))
-      .catch(() => new Map<string, V3History>());
+    const histories = await closedHistories;
     const metas = await poolsById([...new Set(ids.map((id) => wanted.get(id)!))]);
     const unread = [...metas.values()].filter((m) => m.protocol === 'v3' && !live.has(m.id));
     const extra =
