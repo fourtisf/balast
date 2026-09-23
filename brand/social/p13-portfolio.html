@@ -1,0 +1,50 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="social.css"><link rel="stylesheet" href="premium.css">
+<style>
+/* The site itself as the ground: two windows of balast.xyz, tilted and
+   softened. They carry the look of the product, not its figures — the
+   screenshots are simulated data, so they are blurred past reading and
+   faded under the type (§7: no number on a banner a reader could take
+   as real). */
+.live-bg{position:absolute;inset:0;z-index:0;overflow:hidden;perspective:2200px;pointer-events:none}
+.win{position:absolute;border-radius:22px;overflow:hidden;background:#F4F2ED;
+  box-shadow:0 0 0 1.5px rgba(255,255,255,.14),0 80px 160px -40px rgba(0,0,0,.95),0 0 140px -30px rgba(61,214,140,.35)}
+.win .bar{height:38px;background:#E9E6DF;display:flex;align-items:center;gap:9px;padding:0 16px;border-bottom:1px solid rgba(0,0,0,.06)}
+.win .bar i{width:11px;height:11px;border-radius:50%;background:#CFCBC2}
+.win .bar span{margin-left:18px;height:22px;flex:0 0 280px;border-radius:99px;background:#F6F4EF;font:500 12px/22px var(--mono);color:#7B857F;padding-left:14px}
+.win img{display:block;width:100%;filter:blur(3.6px) saturate(1.05)}
+.win.back img{filter:blur(5px)}
+.win.back{width:1080px;right:-300px;top:40px;transform:rotateY(-24deg) rotateX(9deg) rotateZ(2deg);opacity:.42}
+.win.front{width:980px;right:-170px;top:250px;transform:rotateY(-22deg) rotateX(8deg) rotateZ(2deg);opacity:.62}
+/* The windows sink into the ink toward the type, and toward the foot. */
+.live-bg::after{content:"";position:absolute;inset:0;background:
+  linear-gradient(90deg,#0B1210 0%,rgba(11,18,16,.97) 34%,rgba(11,18,16,.55) 58%,rgba(11,18,16,.12) 100%),
+  linear-gradient(180deg,rgba(11,18,16,0) 55%,rgba(11,18,16,.92) 100%)}
+.live-copy{max-width:830px}
+.live-copy .h{font-size:112px;line-height:.96;margin-top:18px}
+.win img{filter:blur(4.4px) saturate(1.05)}
+.ticks{display:flex;flex-direction:column;gap:13px;margin-top:26px}
+.ticks>div{display:flex;align-items:center;gap:16px;font-family:var(--sans);font-size:23px;color:var(--soft)}
+.ticks b{color:var(--ink-t);font-weight:600}
+.go{display:flex;align-items:center;gap:18px;margin-top:34px}
+.go .cta{margin-top:0;padding:0 32px;height:64px;font-size:22px}
+.go .url{font-family:var(--mono);font-size:22px;color:var(--muted)}
+</style></head><body>
+<div class="banner glow-l" data-w="1600" data-h="900" style="width:1600px;height:900px">
+<div class="live-bg" aria-hidden="true">
+  <div class="win back"><div class="bar"><i></i><i></i><i></i><span>balast.xyz/portfolio</span></div><img src="assets/site-portfolio-top.png" alt=""></div>
+  <div class="win front"><div class="bar"><i></i><i></i><i></i><span>balast.xyz/portfolio</span></div><img src="assets/site-portfolio.png" alt=""></div>
+</div>
+<div class="top"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M 5 6 L 13.5 13 L 13.5 26 L 5 26 Z" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/><path d="M 27 6 L 18.5 13 L 18.5 26 L 27 26 Z" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg><span>Balast</span></div><div class="chip"><i></i>Live on Robinhood Chain</div></div>
+<div class="stackv live-copy">
+  <div class="eyebrow2">Portfolio · Robinhood Chain</div>
+  <h1 class="h">Your fees,<br><em>day by day.</em></h1>
+  <p class="lede2" style="max-width:30em;margin-top:20px;font-size:24px">Every position you hold, marked to market, with the fees it has actually earned. Nothing here is projected.</p>
+  <div class="ticks">
+    <div><span class="check"><svg viewBox="0 0 16 16" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3L13 4.5"/></svg></span><span><b>Read from the chain.</b> Every fee, every position, checked.</span></div>
+    <div><span class="check"><svg viewBox="0 0 16 16" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3L13 4.5"/></svg></span><span><b>Price impact, shown.</b> Next to your fees, never buried.</span></div>
+    <div><span class="check"><svg viewBox="0 0 16 16" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3L13 4.5"/></svg></span><span><b>Collect or withdraw.</b> Any time, from your own wallet.</span></div>
+  </div>
+  <div class="go"><span class="cta">Open your portfolio <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span><span class="url">balast.xyz</span></div>
+</div>
+<div class="foot"><span class="site">balast.xyz</span><span class="r"><span>Liquidity layer for Robinhood Chain</span><span>No custody · No emissions</span></span></div>
+</div></body></html>

@@ -332,6 +332,9 @@ p04, p05–p07 one a day, p08, p09. p11 is the profile header (1500 × 500).
 >
 > When there is one, its address appears on balast.xyz first. Anything circulating before that — or sent to you in a DM — is not ours.
 
+**p13 · Portfolio**
+> Your fees, day by day. Every position you hold, marked to market, with the fees it has actually earned and its price impact right beside them. Collect or withdraw any time, from your own wallet. balast.xyz
+
 ## Order
 
 Pin the contract-address post first, before anything else goes out: the
