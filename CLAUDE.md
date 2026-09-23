@@ -1866,8 +1866,8 @@ Uniswap's own registry — `sdks/sdk-core/src/addresses.ts` and
 lists Robinhood Chain (chainId 4663). Every v4 address in §2 matches it
 byte for byte: PoolManager, StateView, V4Quoter, and the Universal Router
 (v2.1.1, created at block 18127). It also supplied the two the handoff did
-not have: the **PositionManager**, `0x58daEc3116aae6D93017bAaEA7749052E8a04FA7`,
-and the **v3 factory**, `0x1F7d7550B1B028f7571E69A784071F0205fd2Efa`, which
+not have: the **PositionManager**, `0x58daec3116aae6D93017bAAea7749052E8a04fA7`,
+and the **v3 factory**, `0x1f7d7550B1b028f7571E69A784071F0205FD2EfA`, which
 §14 had been waiting on and the indexer now follows by default.
 
 ### Positions: built, through PositionManager
@@ -4743,3 +4743,24 @@ the scan too — off, failing (with the reason), mid-sweep, or complete.
 `PORTFOLIO_CHAIN=false` is not the remedy for a failing scan. It turns off
 the chain reads altogether, and the portfolio goes back to the indexer's
 record, which is weeks behind — exactly what §30 was written to stop.
+
+### Two addresses with the right bytes and the wrong case
+
+With the scan's whole reason finally on screen, the box said it:
+`rpc.mainnet.chain.robinhood.com: Address "0x58daEc31…" is invalid`. The
+v4 PositionManager and the v3 factory in `lib/chain.ts` were typed with
+correct bytes and a mixed case whose EIP-55 checksum does not validate. The
+indexer never noticed, because it lowercases both. viem does not lowercase:
+it refuses such an address in `readContract`, `estimateGas`,
+`sendTransaction` and every ABI encoding of an address argument. So on the
+live site **every v4 action failed before it reached the chain** — the
+Permit2 approval (PositionManager is its spender argument), the mint's dry
+run, collect and withdraw — along with this scan and the v3 factory lookup.
+No funds were ever at risk, since nothing could be sent, but nothing v4
+worked either.
+
+Nothing had caught it. The unit tests use fake clients, and
+`npm run check:lp` replaces these addresses with freshly deployed ones.
+`lib/chain.test.ts` now asserts that every address in `CONTRACTS` is valid
+and checksummed. The scan's error also turns `"` into `'`, because viem
+quotes the address and the quote cut the doctor's reading of it short.

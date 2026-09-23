@@ -187,7 +187,12 @@ export class V4TokenScanner {
       // Everything read so far stays; the next pass resumes from here. The
       // whole reason — every endpoint's answer, URLs trimmed to their host —
       // is kept, because "failed on all 4 endpoints" alone says nothing.
-      const reason = redactEndpoints((e as Error).message).replace(/\s*\n\s*/g, ' | ').slice(0, 600);
+      // Double quotes become single: viem quotes addresses in its messages,
+      // and a quote inside a JSON string cut the doctor's reading of it short.
+      const reason = redactEndpoints((e as Error).message)
+        .replace(/\s*\n\s*/g, ' | ')
+        .replace(/"/g, "'")
+        .slice(0, 600);
       if (reason !== this.lastError) this.options.log?.(`v4 scan: ${reason}`);
       this.lastError = reason;
     }

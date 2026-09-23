@@ -44,13 +44,13 @@ export const CONTRACTS = {
    * settles and sweeps, and the position NFT goes to the owner it names.
    * Balast mints through it rather than through a contract of its own.
    */
-  positionManager: '0x58daEc3116aae6D93017bAaEA7749052E8a04FA7',
+  positionManager: '0x58daec3116aae6D93017bAAea7749052E8a04fA7',
   v4Quoter: '0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94',
   stateView: '0xF3334192D15450CdD385c8B70e03f9A6bD9E673b',
   permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
   multicall3: '0xcA11bde05977b3631167028862bE2a173976CA11',
   /** Uniswap v3 factory on this chain, per the same registry (§14, §15). */
-  v3Factory: '0x1F7d7550B1B028f7571E69A784071F0205fd2Efa',
+  v3Factory: '0x1f7d7550B1b028f7571E69A784071F0205FD2EfA',
   /**
    * Uniswap v3's own NonfungiblePositionManager, from the same registry
    * entry as every address above (`ROBINHOOD_ADDRESSES` in
