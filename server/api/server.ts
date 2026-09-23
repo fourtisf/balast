@@ -214,7 +214,14 @@ export async function buildServer(
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
   const chainOff = process.env.PORTFOLIO_CHAIN === 'false' || process.env.PORTFOLIO_V3 === 'false';
   const portfolioChain =
-    options.portfolioChain !== undefined ? options.portfolioChain : chainOff ? null : chainPortfolioReader();
+    options.portfolioChain !== undefined
+      ? options.portfolioChain
+      : chainOff
+        ? null
+        : chainPortfolioReader({
+            // A v3 position's history is located through the explorer and read from receipts (v3-history.ts).
+            explorerBase: process.env.PORTFOLIO_EXPLORER === 'false' ? null : env.explorerApiUrl,
+          });
   const v4Scanner =
     options.v4Scanner !== undefined
       ? options.v4Scanner
@@ -789,6 +796,9 @@ export async function buildServer(
     const listed = explorerPositions ? await explorerPositions.owned(wallet) : null;
     const built = await buildPortfolio(wallet, USDG || null, {
       chain: portfolioChain,
+      // Today's ether price when the snapshot has one (§24), so positions are
+      // valued at today's prices rather than the indexer's.
+      ethUsd: cached?.snapshot && cached.snapshot.global.ethPriceBasis !== 'chain' ? cached.snapshot.global.ethPriceUsd : null,
       v4Candidates: [...scanned, ...hinted, ...(listed ?? [])],
       // Complete when the explorer answered for this wallet, or the scan
       // covers every id; otherwise the page says the list may be missing some.

@@ -11,7 +11,16 @@ const DAYS_PER_ROW = 14;
  * The grid itself is decorative — every value it encodes is also written out
  * in the summary below it, which is where a screen reader reads the data from.
  */
-export function FeeHeatmap({ values }: { values: number[] }) {
+export function FeeHeatmap({
+  values,
+  format = ether,
+  caption = 'Daily fees over the last 8 weeks, oldest first',
+}: {
+  values: number[];
+  /** How one day's figure is written: ether for the simulator, dollars for the live page. */
+  format?: (n: number) => string;
+  caption?: string;
+}) {
   const max = Math.max(...values, 0.0001);
   const total = values.reduce((a, v) => a + v, 0);
   const best = values.reduce((a, v) => Math.max(a, v), 0);
@@ -37,21 +46,21 @@ export function FeeHeatmap({ values }: { values: number[] }) {
                         12 + intensity * 88,
                       )}%, var(--raise))`,
               }}
-              title={ether(v)}
+              title={format(v)}
             />
           );
         })}
       </div>
 
       <p className="hint">
-        {ether(total)} over {values.length} days · best day {ether(best)}
+        {format(total)} over {values.length} day{values.length === 1 ? '' : 's'} · best day {format(best)}
       </p>
 
       {/* A block wrapper does the clipping: overflow:hidden is ignored on a
           table box, so an unwrapped sr-only table widens the whole page. */}
       <div className="sr-only">
         <table>
-          <caption>Daily fees over the last 8 weeks, oldest first</caption>
+          <caption>{caption}</caption>
           <tbody>
             {weeks.map((week, w) => (
               <tr key={w}>
@@ -59,7 +68,7 @@ export function FeeHeatmap({ values }: { values: number[] }) {
                   Days {w * DAYS_PER_ROW + 1}–{w * DAYS_PER_ROW + week.length}
                 </th>
                 {week.map((v, d) => (
-                  <td key={d}>{ether(v)}</td>
+                  <td key={d}>{format(v)}</td>
                 ))}
               </tr>
             ))}

@@ -157,6 +157,7 @@ export class LiveProvider implements DataProvider {
         positions: UserPosition[];
         netValueUsd: number;
         priceImpactUsd: number;
+        pricedToday?: boolean;
         chain?: Portfolio['chain'];
       };
       // The wallet may have changed while this was in flight.
@@ -176,6 +177,7 @@ export class LiveProvider implements DataProvider {
         positions: body.positions,
         claimableWeth: 0,
         wallet,
+        pricedToday: body.pricedToday,
         chain: body.chain,
       };
       this.reissue();

@@ -13,6 +13,8 @@ import { poolId } from '../../lib/v4/pool';
 import { readNextTokenId, readOwners, readV4Positions } from '../../lib/v4/positions';
 import { rpc } from '../chain/client';
 import type { ChainPortfolioReader } from './portfolio';
+import { V3HistoryReader } from './v3-history';
+import type { ExplorerFetch } from './explorer-positions';
 import type { ScannerSource } from './v4-scanner';
 
 const FACTORY_ABI = parseAbi(['function getPool(address, address, uint24) view returns (address)']);
@@ -44,8 +46,19 @@ const POSITIONS_MS = 8_000;
 /** Prices and descriptions: nice to have, so shorter. */
 const EXTRAS_MS = 5_000;
 
-export function chainPortfolioReader(): ChainPortfolioReader {
+/** A v3 position's history: the explorer locates it, receipts on chain count it. */
+const HISTORY_MS = 10_000;
+
+export function chainPortfolioReader(options: { explorerBase?: string | null; explorerFetch?: ExplorerFetch } = {}): ChainPortfolioReader {
+  const history = options.explorerBase
+    ? new V3HistoryReader({
+        base: options.explorerBase,
+        fetch: options.explorerFetch,
+        withClient: (fn) => rpc((c) => fn(c as never), 'v3 position history'),
+      })
+    : null;
   return {
+    ...(history ? { v3History: (positions) => bounded(history.read(positions), HISTORY_MS, 'v3 position history') } : {}),
     v3Positions: (owner) => bounded(rpc((c) => readV3Positions(c, owner), 'v3 positions'), POSITIONS_MS, 'v3 positions'),
     v4Positions: (owner, candidates) =>
       bounded(rpc((c) => readV4Positions(c, owner, candidates), 'v4 positions'), POSITIONS_MS, 'v4 positions'),

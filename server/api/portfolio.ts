@@ -37,6 +37,7 @@ import { CHAIN, NATIVE_ETH, isEther } from '../../lib/chain';
 import { feeTierBpsFromPips } from '../../lib/format';
 import type { LivePosition, Quote, UserPosition } from '../../lib/data/types';
 import type { V3OnchainPosition } from '../../lib/v3/positions';
+import type { V3History } from './v3-history';
 import type { V4OnchainPosition, V4Read } from '../../lib/v4/positions';
 import { indexerPoolId, maxUsableTick, minUsableTick, poolId as v4PoolId, type PoolKey } from '../../lib/v4/pool';
 import { amountsForLiquidity } from '../chain/tick-math';
@@ -76,6 +77,8 @@ export interface PortfolioResponse {
   positions: UserPosition[];
   netValueUsd: number;
   priceImpactUsd: number;
+  /** Every position was valued at today's prices (live slot0, live ether) rather than the indexer's. */
+  pricedToday?: boolean;
   chain: ChainStatus;
 }
 
@@ -93,6 +96,13 @@ export interface ChainPortfolioReader {
   v3PoolAddresses(keys: { token0: string; token1: string; fee: number }[]): Promise<Map<string, string>>;
   /** Symbol, name and decimals for tokens the indexer has not met. A token that does not answer is absent. */
   tokens(addresses: string[]): Promise<Map<string, { symbol: string; name: string; decimals: number }>>;
+  /**
+   * v3 positions' own history — principal, fees collected, minted when —
+   * checked against the liquidity each holds now (v3-history.ts). Absent
+   * when there is no explorer to locate it; a position missing from the
+   * answer has no history the page can trust.
+   */
+  v3History?(positions: { tokenId: bigint; liquidity: bigint }[]): Promise<Map<string, V3History>>;
 }
 
 export interface LivePoolRef {
@@ -140,6 +150,8 @@ interface Entry {
   liquidity: bigint;
   /** Net principal, when the indexer's record of it is current; null otherwise. */
   deposited: { d0: bigint; d1: bigint } | null;
+  /** Fees already collected, from a v3 position's own history; null when not known. */
+  collected?: { c0: bigint; c1: bigint } | null;
   mintedAt: Date | null;
   /** Confirmed on chain on this read; false for the indexer's record, unchecked. */
   verified: boolean;
@@ -337,6 +349,12 @@ export async function buildPortfolio(
     v4Candidates?: bigint[];
     /** The v4 scanner could not reach back to the indexer's last id. */
     scanPartial?: boolean;
+    /**
+     * Ether in dollars now — the snapshot's live figure (§24). With it and a
+     * pool's live slot0 every position is valued at today's prices; without
+     * it, at the indexer's, and the response says which.
+     */
+    ethUsd?: number | null;
   } = {},
 ): Promise<PortfolioResponse | null> {
   const owner = wallet.toLowerCase() as Address;
@@ -350,7 +368,8 @@ export async function buildPortfolio(
   const [ethRow] = await prisma.$queryRaw<{ price_usd: number }[]>`
     SELECT COALESCE(weth_usd, 0)::float8 AS price_usd FROM weth_usd_hourly ORDER BY hour DESC LIMIT 1
   `;
-  const ethUsd = ethRow?.price_usd ?? 0;
+  const liveEth = options.ethUsd && options.ethUsd > 0 ? options.ethUsd : null;
+  const ethUsd = liveEth ?? ethRow?.price_usd ?? 0;
 
   // The indexer's record for this wallet: candidates to confirm, the only
   // source of a principal, and the fallback when the node does not answer.
@@ -537,6 +556,23 @@ export async function buildPortfolio(
       pricesStale = refs.size > 0;
       return new Map();
     });
+    // A v3 position's principal and the fees it has already paid out, from
+    // its own logs (v3-history.ts). Best effort: without them the page shows
+    // a dash, as it did, never a guess.
+    const v3Unknown = entries.filter((e) => e.pool.protocol === 'v3' && e.deposited === null);
+    if (v3Unknown.length > 0 && chain!.v3History) {
+      const histories = await chain!
+        .v3History(v3Unknown.map((e) => ({ tokenId: BigInt(e.tokenId), liquidity: e.liquidity })))
+        .catch(() => new Map<string, V3History>());
+      for (const e of v3Unknown) {
+        const h = histories.get(e.tokenId);
+        if (!h) continue;
+        e.deposited = { d0: h.deposited0, d1: h.deposited1 };
+        e.collected = { c0: h.collectedFees0, c1: h.collectedFees1 };
+        e.mintedAt = e.mintedAt ?? h.mintedAt;
+      }
+    }
+
     chainStatus = {
       status: readPositions.v4 ? 'read' : 'unavailable',
       ...(readPositions.v4
@@ -559,6 +595,8 @@ export async function buildPortfolio(
   });
 
   const positions: UserPosition[] = [];
+  // How many positions were valued at today's prices; the page says which.
+  let todayCount = 0;
   for (const entry of entries) {
     const pool = entry.pool;
     const tokenFirst = tokenIsCurrency0(pool.token0, pool.token1, usdg);
@@ -572,13 +610,31 @@ export async function buildPortfolio(
       // not the traded token's price borrowed.
       return a === traded ? pool.priceUsd : 0;
     };
-    const p0 = priceOf(pool.token0);
-    const p1 = priceOf(pool.token1);
-
     // Today's price when the chain answered for the pool, else the indexer's.
     const now = live.get(pool.id);
     const sqrt = now?.sqrtPriceX96 ?? pool.sqrt;
     const tick = now?.tick ?? pool.tick;
+
+    // The traded side at the pool's own price NOW when the chain answered and
+    // the quote's dollar price is today's — USDG, or ether from the live feed
+    // — else at the indexer's. The same one path (§4.3); only its date moves.
+    let p0 = priceOf(pool.token0);
+    let p1 = priceOf(pool.token1);
+    const quoteToday = (address: string) => address.toLowerCase() === usdg || (isEther(address) && liveEth !== null);
+    let pricedToday = false;
+    if (now && now.sqrtPriceX96 > 0n) {
+      const ratio = (Number(now.sqrtPriceX96) / 2 ** 96) ** 2 * 10 ** (pool.d0 - pool.d1);
+      if (Number.isFinite(ratio) && ratio > 0) {
+        if (tokenFirst && quoteToday(pool.token1)) {
+          p0 = ratio * p1;
+          pricedToday = true;
+        } else if (!tokenFirst && quoteToday(pool.token0)) {
+          p1 = p0 / ratio;
+          pricedToday = true;
+        }
+      }
+    }
+    if (pricedToday) todayCount += 1;
     const priced = sqrt > 0n;
     const amounts = priced
       ? amountsForLiquidity({ sqrtPriceX96: sqrt, tickLower: entry.tickLower, tickUpper: entry.tickUpper, liquidityDelta: entry.liquidity })
@@ -655,6 +711,8 @@ export async function buildPortfolio(
       holdUsd,
       priceUsd0: p0,
       priceUsd1: p1,
+      collectedFees0: entry.collected ? entry.collected.c0.toString() : null,
+      collectedFees1: entry.collected ? entry.collected.c1.toString() : null,
       mintedAt: entry.mintedAt ? new Date(entry.mintedAt).toISOString() : null,
       verified: entry.verified,
       unindexedPool: !pool.indexed,
@@ -683,6 +741,7 @@ export async function buildPortfolio(
     positions,
     netValueUsd: positions.reduce((a, p) => a + (p.valueUnknown ? 0 : p.valueUsd), 0),
     priceImpactUsd: positions.reduce((a, p) => a + (p.priceImpactUsd ?? 0), 0),
+    pricedToday: positions.length > 0 && todayCount === positions.length,
     chain: chainStatus,
   };
 }

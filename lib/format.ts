@@ -24,6 +24,20 @@ export function usdExact(n: number, fractionDigits = 0): string {
   })}`;
 }
 
+/**
+ * Dollars for small figures — a position's fees, a small deposit — where
+ * whole dollars round the answer away: `$0.37`, `$19.42`, and `<$0.01` for a
+ * figure that is real and under a cent, rather than a `$0` that reads as none.
+ */
+export function usdFine(n: number): string {
+  if (!Number.isFinite(n) || n === 0) return '$0';
+  const a = Math.abs(n);
+  const sign = n < 0 ? '−' : '';
+  if (a < 0.01) return `${sign}<$0.01`;
+  if (a < 1000) return `${sign}${usdExact(a, 2)}`;
+  return `${sign}${usdExact(a)}`;
+}
+
 /** A signed percentage, e.g. +11.2% / −4.0%. Unknown is an em dash, never +0.0%. */
 export function signedPct(n: number | null, digits = 1): string {
   if (n === null || !Number.isFinite(n)) return '—';

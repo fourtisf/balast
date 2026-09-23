@@ -295,6 +295,14 @@ export interface LivePosition {
    */
   priceUsd0: number;
   priceUsd1: number;
+  /**
+   * Fees this position has already paid out to its owner, per side, in raw
+   * units — a v3 position's own Collect logs less what its decreases
+   * released. Null when not known (every v4 position: v4 emits no amounts
+   * for a collect). Earned so far is this plus what is uncollected.
+   */
+  collectedFees0?: string | null;
+  collectedFees1?: string | null;
   mintedAt: string | null;
   /** Confirmed on chain on this read: owner, pool, range and liquidity. False when the node did not answer and this is the indexer's record. */
   verified?: boolean;
@@ -348,6 +356,8 @@ export interface Portfolio {
   claimableWeth: number;
   /** Live: the wallet these positions belong to. */
   wallet?: string | null;
+  /** Live: every position was valued at today's prices rather than the indexer's (server/api/portfolio.ts). */
+  pricedToday?: boolean;
   /**
    * Live: whether the positions were confirmed on the chain just now
    * (server/api/portfolio.ts). `unavailable` means the node did not answer:

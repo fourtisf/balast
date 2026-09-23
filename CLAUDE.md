@@ -5199,3 +5199,54 @@ router, three positions minted. 112 checks, all passing.
 
 Unverified from here, as before: the chain itself. The first one should be
 small and watched.
+
+---
+
+## 36. Price impact and fees earned, for a position the chain holds
+
+ALFA's first real position — VIRTUAL / ETH, v3 #1284575, full range, minted
+through the site — sat on `/portfolio` with *Price impact on holdings: — · 0 of
+1 positions measured*, *Uncollected fees $0*, and *No fee history yet*:
+*price impact dan no fee harusnya di fixkan*.
+
+**The principal is the position's own logs now.** A v3 position's funding was
+never indexed (§29), so the portfolio had no principal to compare against.
+The v3 manager emits it, indexed by token id: `IncreaseLiquidity` in,
+`DecreaseLiquidity` out, `Collect` paid. `server/api/v3-history.ts` asks the
+explorer only *which transactions* carry those logs (its logs API, one query
+per event) and reads every amount from those transactions' receipts on chain
+— §4's rule, an outside source may locate but never count. The sums are then
+**checked**: the liquidity they add up to must equal the liquidity the chain
+says the position holds. A history the explorer served incompletely fails
+that check and is not used; the page keeps its dash rather than show a
+principal that is wrong. Principal = Σincrease − Σdecrease; fees already
+collected = Σcollect − Σdecrease. A v4 position's principal is still the
+indexer's record when current (v4 emits no amounts for a mint or a collect).
+
+**Valued at today's prices.** The portfolio priced everything at the
+indexer's last block (74 days old on the box). It now takes the pool's own
+live `slot0` for the token and today's ether price from the snapshot (§24,
+not when that price is itself the chain's old one), so *net value* and *price
+impact* are about today; the card says `at today's pool prices` when every
+position was, and `at the last indexed block` when not.
+
+**Fees earned.** The second card is *Fees earned*: collected so far plus
+uncollected now, per position and in total, with the uncollected part
+beneath it. A v4 position's collected half is not knowable (no amounts in its
+collect), so its figure is its uncollected fees and says so. Small figures
+read `$0.37` or `<$0.01` (`usdFine`), not a `$0` that means none.
+
+**The daily grid is measured, not reconstructed.** A past day's fees would
+need the pool's fee growth at that day's block, which only an archive node
+serves and the free endpoints are not. So the page records each position's
+earned figure once a day, in raw units, in this browser
+(`lib/fee-samples.ts`), and a day's fees are the growth since the previous
+recorded day, valued at today's prices — so a price move is never counted as
+fees, and a fall (a withdrawal) never as negative fees. The grid starts the
+first day the browser saw the position and says so; the list beside it gives
+each position's earned figure since its mint and the average per day.
+
+Verified: 545 unit tests (the history's sums and its refusal of an
+incomplete list, the explorer query, today's pricing, the daily arithmetic),
+the build and 41 Playwright tests. Unverified from here: the explorer's logs
+API on this chain — if it refuses, the dash stays, and nothing wrong is shown.

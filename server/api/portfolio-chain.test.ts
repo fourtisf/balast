@@ -374,6 +374,48 @@ describe('v3 positions, enumerated on chain', () => {
     expect(p.live!.holdUsd).toBeNull();
   });
 
+  it('takes the principal and the fees collected from the position’s own history, when it adds up', async () => {
+    const asked: bigint[][] = [];
+    const chain = fakeChain({
+      v3Positions: async () => [v3held],
+      v3History: async (positions) => {
+        asked.push(positions.map((p) => p.liquidity));
+        return new Map([
+          ['5', { deposited0: 10n ** 18n, deposited1: 10n ** 17n, collectedFees0: 7n, collectedFees1: 9n, liquidity: v3held.liquidity, mintedAt: new Date('2026-09-20T00:00:00Z') }],
+        ]);
+      },
+    });
+    const [p] = (await buildPortfolio(BOB, USDG, { chain }))!.positions;
+    // Asked with the chain's liquidity, which the history is checked against.
+    expect(asked).toEqual([[v3held.liquidity]]);
+    expect(p.live!.holdUsd).not.toBeNull();
+    expect(p.priceImpactUsd).toBeCloseTo(p.valueUsd - p.live!.holdUsd!, 6);
+    expect(p.live!.collectedFees0).toBe('7');
+    expect(p.live!.collectedFees1).toBe('9');
+    expect(p.live!.mintedAt).toBe('2026-09-20T00:00:00.000Z');
+  });
+
+  it('values a position at today’s price when the chain answered for the pool and ether is priced live', async () => {
+    const at = async (ethUsd: number | null, tick: number) =>
+      (
+        await buildPortfolio(BOB, USDG, {
+          chain: fakeChain({
+            v3Positions: async () => [v3held],
+            slot0s: async (pools) => new Map(pools.map((p) => [p.id, { sqrtPriceX96: getSqrtRatioAtTick(tick), tick }])),
+          }),
+          ethUsd,
+        })
+      )!;
+    const today = await at(2000, TICK);
+    expect(today.pricedToday).toBe(true);
+    // The traded token is priced off the live tick: a higher token1-per-token0 price is worth more.
+    const higher = await at(2000, TICK + 600);
+    expect(higher.positions[0].live!.priceUsd0).toBeGreaterThan(today.positions[0].live!.priceUsd0);
+    expect(today.positions[0].live!.priceUsd1).toBe(2000);
+    // Without a live ether price the valuation is the indexer's, and says so.
+    expect((await at(null, TICK)).pricedToday).toBe(false);
+  });
+
   it('finds the pool on the factory when the indexer has not met it, and counts one the factory does not know', async () => {
     const other = { ...v3held, tokenId: 6n, fee: 500 };
     const nowhere = { ...v3held, tokenId: 7n, fee: 10_000 };
