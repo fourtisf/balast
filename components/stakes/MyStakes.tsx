@@ -108,13 +108,13 @@ export function MyStakes() {
                     <div className="row" style={{ justifyContent: 'flex-end' }}>
                       <button
                         className="btn btn-ghost btn-sm"
-                        onClick={() => showToast('Claimed to wallet')}
+                        onClick={() => showToast('Simulated data. Nothing was claimed.')}
                       >
                         Claim
                       </button>
                       <button
                         className="btn btn-ghost btn-sm"
-                        onClick={() => showToast('Compounded into stake')}
+                        onClick={() => showToast('Simulated data. Nothing was compounded.')}
                       >
                         Compound
                       </button>

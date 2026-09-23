@@ -167,7 +167,9 @@ export function StakeDrawer() {
                   <div className="k">Fees 24h</div>
                   <div className="v num">{usd(pool.fees24hUsd)}</div>
                   <div className="k" style={{ marginTop: 6 }}>
-                    {(pool.feeTierBps / 100).toFixed(2).replace(/\.?0+$/, '')}% of every trade, paid to the pool
+                    {pool.feeTierBps === null
+                      ? 'a fee its hook sets on every trade, paid to the pool'
+                      : `${feeTierLabel(pool.feeTierBps)} of every trade, paid to the pool`}
                   </div>
                 </div>
                 <div>

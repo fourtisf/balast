@@ -107,8 +107,24 @@ export function shortWallet(hex: string): string {
  * `6.9%`. The tier is what a position earns on every trade, so it names a
  * market as much as the pair does.
  */
-export function feeTierLabel(feeTierBps: number): string {
+export function feeTierLabel(feeTierBps: number | null): string {
+  if (feeTierBps === null) return 'dynamic';
   return `${(feeTierBps / 100).toFixed(2).replace(/\.?0+$/, '')}%`;
+}
+
+/**
+ * Uniswap v4's dynamic-fee flag, as it sits in a PoolKey's `fee`.
+ *
+ * A pool whose hook sets the fee per swap carries this bit in its key instead
+ * of a tier — 8,388,608 pips, which read as a tier is "838.86%". The key has
+ * to keep it (it is part of the pool's identity), but it is not a fee.
+ */
+export const DYNAMIC_FEE_FLAG = 0x800000;
+
+/** A pool's fee tier in bips from its key's fee in pips; null for a v4 dynamic-fee pool. */
+export function feeTierBpsFromPips(protocol: string, feePips: number): number | null {
+  if (protocol !== 'v3' && (feePips & DYNAMIC_FEE_FLAG) !== 0) return null;
+  return Math.round(feePips / 100);
 }
 
 /**

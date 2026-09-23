@@ -19,8 +19,11 @@
  * position is worth today. That is what holding would have been worth.
  */
 
+import type { Address } from 'viem';
 import { CONTRACTS, NATIVE_ETH, isEther } from '../../lib/chain';
+import { feeTierBpsFromPips } from '../../lib/format';
 import type { LivePosition, Quote, UserPosition } from '../../lib/data/types';
+import type { V3OnchainPosition } from '../../lib/v3/positions';
 import { maxUsableTick, minUsableTick } from '../../lib/v4/pool';
 import { amountsForLiquidity } from '../chain/tick-math';
 import { prisma } from '../db';
@@ -35,7 +38,23 @@ export interface PortfolioResponse {
   positions: UserPosition[];
   netValueUsd: number;
   priceImpactUsd: number;
+  /**
+   * The v3 half, which is read from the chain rather than the indexer (see
+   * `V3PositionReader`). `off` when this server was not given a reader;
+   * `unavailable` when the node did not answer — the portfolio then lists v4
+   * alone and says so, rather than implying the wallet holds no v3 position.
+   * `unindexed` counts positions whose pool the indexer has not met, which
+   * cannot be valued and are left out.
+   */
+  v3: { status: 'read' | 'unavailable' | 'off'; message?: string; unindexed: number };
 }
+
+/**
+ * Reads a wallet's v3 positions from the NonfungiblePositionManager
+ * (lib/v3/positions.ts). Injected, so a test never reaches a node and the
+ * server bounds how long a slow one may hold a request.
+ */
+export type V3PositionReader = (owner: Address) => Promise<V3OnchainPosition[]>;
 
 interface Row {
   token_id: string;
@@ -50,8 +69,9 @@ interface Row {
   tick_lower: number;
   tick_upper: number;
   liquidity: string;
-  deposited0: string;
-  deposited1: string;
+  /** Net principal. Null for a v3 position: read live, its funding history is not indexed. */
+  deposited0: string | null;
+  deposited1: string | null;
   minted_at: Date | null;
   d0: number;
   d1: number;
@@ -83,7 +103,68 @@ function human(raw: bigint, decimals: number): number {
   return Number(raw) / 10 ** decimals;
 }
 
-export async function buildPortfolio(wallet: string, usdgAddress?: string | null): Promise<PortfolioResponse | null> {
+/** What a v3 position's pool row carries: everything in `Row` that is not the position's own. */
+type PoolRow = Omit<Row, 'token_id' | 'tick_lower' | 'tick_upper' | 'liquidity' | 'deposited0' | 'deposited1' | 'minted_at'>;
+
+/**
+ * The v3 positions, as rows the valuation below already understands.
+ *
+ * Each on-chain position is matched to the pool the indexer knows by its
+ * two tokens and fee — the three things that identify a v3 pool. A position
+ * whose pool the indexer has not met cannot be valued or named, so it is
+ * counted and left out rather than shown with invented figures (§7).
+ */
+async function v3Rows(onchain: V3OnchainPosition[]): Promise<{ rows: Row[]; unindexed: number }> {
+  const rows: Row[] = [];
+  let unindexed = 0;
+  const pools = new Map<string, PoolRow | null>();
+  for (const position of onchain) {
+    const t0 = position.token0.toLowerCase();
+    const t1 = position.token1.toLowerCase();
+    const id = `${t0}|${t1}|${position.fee}`;
+    if (!pools.has(id)) {
+      const [pool] = await prisma.$queryRaw<PoolRow[]>`
+        SELECT
+          pl.id AS pool_id, pl.address AS pool_address, pl.protocol, pl.fee_tier, pl.tick_spacing, pl.hooks,
+          pl.token0, pl.token1,
+          t0.decimals AS d0, t1.decimals AS d1, t0.symbol AS s0, t1.symbol AS s1, t0.name AS n0, t1.name AS n1,
+          t0.logo_color AS c0, t1.logo_color AS c1, t0.logo_url AS l0, t1.logo_url AS l1,
+          COALESCE(ps.sqrt_price_x96, pl.init_sqrt_price_x96, 0)::text AS sqrt,
+          COALESCE(ps.tick, pl.init_tick, 0) AS tick,
+          COALESCE(ps.price_usd, 0)::float8 AS price_usd
+        FROM pools pl
+        JOIN tokens t0 ON lower(t0.address) = lower(pl.token0)
+        JOIN tokens t1 ON lower(t1.address) = lower(pl.token1)
+        LEFT JOIN pool_state ps ON ps.pool_id = pl.id
+        WHERE pl.protocol = 'v3' AND lower(pl.token0) = ${t0} AND lower(pl.token1) = ${t1} AND pl.fee_tier = ${position.fee}
+        LIMIT 1
+      `;
+      pools.set(id, pool ?? null);
+    }
+    const pool = pools.get(id);
+    if (!pool) {
+      unindexed += 1;
+      continue;
+    }
+    rows.push({
+      ...pool,
+      token_id: position.tokenId.toString(),
+      tick_lower: position.tickLower,
+      tick_upper: position.tickUpper,
+      liquidity: position.liquidity.toString(),
+      deposited0: null,
+      deposited1: null,
+      minted_at: null,
+    });
+  }
+  return { rows, unindexed };
+}
+
+export async function buildPortfolio(
+  wallet: string,
+  usdgAddress?: string | null,
+  options: { readV3?: V3PositionReader | null } = {},
+): Promise<PortfolioResponse | null> {
   const owner = wallet.toLowerCase();
   const cursor = await prisma.indexerCursor.findUnique({ where: { contract: POOL_MANAGER_CURSOR } });
   if (!cursor) return null;
@@ -116,6 +197,28 @@ export async function buildPortfolio(wallet: string, usdgAddress?: string | null
     ORDER BY p.minted_at ASC NULLS LAST, p.token_id ASC
   `;
 
+  // The v3 half, from the chain. A node that does not answer costs the v3
+  // rows and says so; it never costs the v4 ones.
+  let v3: PortfolioResponse['v3'] = { status: 'off', unindexed: 0 };
+  if (options.readV3) {
+    let onchain: V3OnchainPosition[] | null = null;
+    try {
+      onchain = await options.readV3(owner as Address);
+    } catch (e) {
+      // The detail goes to the log, not to the page: an endpoint's error can
+      // carry its URL, and a paid endpoint's URL carries its key.
+      console.warn(`portfolio: v3 positions unreadable for ${owner}: ${(e as Error).message.split('\n')[0]}`);
+      v3 = { status: 'unavailable', message: 'The chain did not answer for Uniswap v3 positions.', unindexed: 0 };
+    }
+    // A database fault here is a fault like any other query's, not a node
+    // that did not answer, so it is outside the catch.
+    if (onchain) {
+      const read = await v3Rows(onchain);
+      rows.push(...read.rows);
+      v3 = { status: 'read', unindexed: read.unindexed };
+    }
+  }
+
   const positions: UserPosition[] = [];
   for (const row of rows) {
     const tokenFirst = tokenIsCurrency0(row.token0, row.token1, usdg);
@@ -134,8 +237,18 @@ export async function buildPortfolio(wallet: string, usdgAddress?: string | null
       ? amountsForLiquidity({ sqrtPriceX96: sqrt, tickLower: row.tick_lower, tickUpper: row.tick_upper, liquidityDelta: liquidity })
       : { amount0: 0n, amount1: 0n };
     const valueUsd = priced ? human(amounts.amount0, row.d0) * p0 + human(amounts.amount1, row.d1) * p1 : 0;
-    const holdUsd = priced ? human(BigInt(row.deposited0), row.d0) * p0 + human(BigInt(row.deposited1), row.d1) * p1 : 0;
+    // What the principal would be worth held, at the same prices. Unknown for
+    // a v3 position — its funding is not indexed — and unknown is not zero.
+    const holdUsd =
+      row.deposited0 === null || row.deposited1 === null
+        ? null
+        : priced
+          ? human(BigInt(row.deposited0), row.d0) * p0 + human(BigInt(row.deposited1), row.d1) * p1
+          : 0;
     const inRange = priced && row.tick >= row.tick_lower && row.tick < row.tick_upper;
+    // No price for the pool, or no dollar price for one of its sides: the
+    // figures above are zero because they are unknown, and say so.
+    const valueUnknown = !priced || !(p0 > 0) || !(p1 > 0);
 
     // The range as the builder describes it: around the token's price, so a
     // currency1 token's range is the pool's mirrored (lib/v4/mint.ts).
@@ -174,7 +287,7 @@ export async function buildPortfolio(wallet: string, usdgAddress?: string | null
       },
       poolAddress: row.pool_address,
       protocol: row.protocol === 'v3' ? 'v3' : 'v4',
-      feeTierBps: Math.round(row.fee_tier / 100),
+      feeTierBps: feeTierBpsFromPips(row.protocol, row.fee_tier),
       token: {
         address: tokenAddress,
         symbol: tokenFirst ? row.s0 : row.s1,
@@ -205,8 +318,12 @@ export async function buildPortfolio(wallet: string, usdgAddress?: string | null
       range,
       inRange,
       outOfRangeSinceHours,
+      ...(priced ? {} : { rangeUnknown: true }),
+      ...(valueUnknown ? { valueUnknown: true } : {}),
       valueUsd,
-      priceImpactUsd: valueUsd - holdUsd,
+      // Unknown principal, or an unknown value: no figure, rather than a
+      // difference of two numbers one of which is not real.
+      priceImpactUsd: holdUsd === null || valueUnknown ? undefined : valueUsd - holdUsd,
       live,
     });
   }
@@ -217,8 +334,9 @@ export async function buildPortfolio(wallet: string, usdgAddress?: string | null
     positions,
     netValueUsd: positions.reduce((a, p) => a + p.valueUsd, 0),
     priceImpactUsd: positions.reduce((a, p) => a + (p.priceImpactUsd ?? 0), 0),
+    v3,
   };
 }
 
-/** Which contract every position here was minted through. */
-export const POSITION_MANAGER = CONTRACTS.positionManager;
+/** Which contracts the positions here were minted through: v4's PositionManager, v3's NonfungiblePositionManager. */
+export const POSITION_MANAGERS = { v4: CONTRACTS.positionManager, v3: CONTRACTS.v3PositionManager } as const;

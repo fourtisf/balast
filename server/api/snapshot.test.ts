@@ -258,7 +258,7 @@ describe('buildSnapshot', () => {
 
   it('marks the fee tier in bips, from the pool\'s hundredths-of-a-bip on chain', () => {
     // 3000 pips on chain is 0.30%, which the UI renders from 30 bips.
-    const tiers = snapshot.pools.map((p) => p.feeTierBps).sort((a, b) => a - b);
+    const tiers = snapshot.pools.map((p) => p.feeTierBps ?? -1).sort((a, b) => a - b);
     expect(tiers).toEqual([5, 30, 30, 100]);
   });
 });

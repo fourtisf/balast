@@ -6,6 +6,8 @@ import {
   countdown,
   duration,
   feeTierLabel,
+  feeTierBpsFromPips,
+  DYNAMIC_FEE_FLAG,
   inHours,
   price,
   quoteCurrencyOf,
@@ -115,6 +117,18 @@ describe('feeTierLabel', () => {
     expect(feeTierLabel(500)).toBe('5%');
     expect(feeTierLabel(690)).toBe('6.9%');
     expect(feeTierLabel(5)).toBe('0.05%');
+  });
+
+  /**
+   * A v4 pool whose hook sets the fee carries a flag in its key, not a tier.
+   * Read as a tier it is 8,388,608 pips — "838.86%" on the board.
+   */
+  it('names a v4 dynamic-fee pool "dynamic" rather than reading its flag as a tier', () => {
+    expect(feeTierBpsFromPips('v4', DYNAMIC_FEE_FLAG)).toBeNull();
+    expect(feeTierBpsFromPips('v4', 3000)).toBe(30);
+    // v3 has no such flag; its fee is always a tier.
+    expect(feeTierBpsFromPips('v3', 10_000)).toBe(100);
+    expect(feeTierLabel(feeTierBpsFromPips('v4', DYNAMIC_FEE_FLAG))).toBe('dynamic');
   });
 });
 

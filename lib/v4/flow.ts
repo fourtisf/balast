@@ -94,6 +94,39 @@ export async function sendWrap(provider: Eip1193Provider, owner: Address, amount
   });
 }
 
+/**
+ * How much ether to wrap so a market quoted in the wrapper can be minted, or
+ * null when nothing needs wrapping or the wallet cannot cover it.
+ *
+ * What Permit2 is asked to move is the pool's own figure, which rounds UP from
+ * the planned amount — by a wei a position — and can grow by the tolerance if
+ * the price moves. Wrapping exactly the planned amount left the dry run one
+ * wei short and the person stuck on a mint that could not be prepared. So:
+ * never less than the planned amount plus that rounding (the floor), and up
+ * to the plan's cap as far as the spare ether allows. `reserve` is kept back
+ * for the mint's own gas.
+ */
+export function wrapShortfall(args: {
+  /** The plan's quote amount at the live price. */
+  planned: bigint;
+  /** The plan's cap on the quote side, slippage included. */
+  cap: bigint;
+  positions: number;
+  wrappedBalance: bigint;
+  nativeBalance: bigint;
+  reserve: bigint;
+}): bigint | null {
+  if (args.planned === 0n) return null;
+  const floor = args.planned + BigInt(args.positions);
+  if (args.wrappedBalance >= floor) return null;
+  const spare = args.nativeBalance > args.reserve ? args.nativeBalance - args.reserve : 0n;
+  const toFloor = floor - args.wrappedBalance;
+  const toCap = args.cap > args.wrappedBalance ? args.cap - args.wrappedBalance : 0n;
+  const upTo = toCap < spare ? toCap : spare;
+  const shortfall = upTo > toFloor ? upTo : toFloor;
+  return shortfall > 0n && spare >= shortfall ? shortfall : null;
+}
+
 export async function readBalance(client: PublicClient, owner: Address, currency: Address): Promise<bigint> {
   if (isNative(currency)) return client.getBalance({ address: owner });
   return client.readContract({ address: currency, abi: ERC20_ABI, functionName: 'balanceOf', args: [owner] });
@@ -160,20 +193,35 @@ export async function approve(provider: Eip1193Provider, owner: Address, step: A
   });
 }
 
-/** Any PositionManager transaction the site builds: a mint, a collect, a withdrawal. */
+/** Any position-manager transaction the site builds: a mint, a collect, a withdrawal. */
 export interface PositionCall {
   calldata: Hex;
   value: bigint;
 }
 
-/** The node runs the exact transaction; a revert surfaces here, before any signature. Returns the gas it would take. */
-export async function simulateCall(client: PublicClient, owner: Address, call: PositionCall): Promise<bigint> {
-  return client.estimateGas({ account: owner, to: CONTRACTS.positionManager, data: call.calldata, value: call.value });
+/**
+ * The node runs the exact transaction; a revert surfaces here, before any
+ * signature. Returns the gas it would take. `to` is v4's PositionManager
+ * unless the caller names v3's manager.
+ */
+export async function simulateCall(
+  client: PublicClient,
+  owner: Address,
+  call: PositionCall,
+  to: Address = CONTRACTS.positionManager,
+): Promise<bigint> {
+  return client.estimateGas({ account: owner, to, data: call.calldata, value: call.value });
 }
 
-export async function sendCall(provider: Eip1193Provider, owner: Address, call: PositionCall, gas?: bigint): Promise<Hex> {
+export async function sendCall(
+  provider: Eip1193Provider,
+  owner: Address,
+  call: PositionCall,
+  gas?: bigint,
+  to: Address = CONTRACTS.positionManager,
+): Promise<Hex> {
   return walletClient(provider, owner).sendTransaction({
-    to: CONTRACTS.positionManager,
+    to,
     data: call.calldata,
     value: call.value,
     gas: gas ? (gas * 12n) / 10n : undefined,

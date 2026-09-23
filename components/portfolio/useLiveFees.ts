@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { formatUnits } from 'viem';
+import { formatUnits, type Address } from 'viem';
 import { useUi } from '@/components/providers/UiProvider';
 import { useWalletChainId } from '@/components/providers/useWalletChainId';
 import { CHAIN } from '@/lib/chain';
 import type { UserPosition } from '@/lib/data/types';
+import { positionRef } from '@/lib/position-ref';
+import { readV3Fees } from '@/lib/v3/positions';
 import { readPositionFees, type FeeQuery } from '@/lib/v4/fees';
 import { describeTxError, readClient } from '@/lib/v4/flow';
 import { toPoolKey } from '@/lib/v4/pool';
@@ -21,7 +23,7 @@ export interface LiveFees {
 }
 
 export interface LiveFeesState {
-  /** By token id. A position the node did not answer for is absent, not zero (§7). */
+  /** By `positionRef` — manager and token id. A position the node did not answer for is absent, not zero (§7). */
   fees: Map<string, LiveFees>;
   /** True while the first read for this set of positions is in flight. */
   reading: boolean;
@@ -29,7 +31,9 @@ export interface LiveFeesState {
 }
 
 /**
- * Uncollected fees for the wallet's live positions, read from StateView.
+ * Uncollected fees for the wallet's live positions, read from the chain:
+ * v4's from StateView, v3's by asking the manager what a collect would pay
+ * (lib/v3/positions.ts).
  *
  * Fees are state, not events (lib/v4/fees.ts), so the indexer cannot know
  * them and the page asks the chain. Reads go through the wallet's own
@@ -41,6 +45,9 @@ export interface LiveFeesState {
 export function useLiveFees(positions: UserPosition[], version = 0): LiveFeesState {
   const { wallet } = useUi();
   const provider = wallet?.provider ?? null;
+  // A v3 collect is asked as the owner — only the owner may collect — so it
+  // is the connected wallet's positions that can be read, and only those.
+  const owner = (wallet?.address ?? null) as Address | null;
   const { chainId } = useWalletChainId(provider);
   const readVia = chainId === CHAIN.id ? provider : null;
 
@@ -52,7 +59,7 @@ export function useLiveFees(positions: UserPosition[], version = 0): LiveFeesSta
   const signature = live
     .map((p) => {
       const k = p.live!.key;
-      return [p.tokenId, p.live!.tickLower, p.live!.tickUpper, k.currency0, k.currency1, k.fee, k.tickSpacing, k.hooks].join('|');
+      return [positionRef(p), p.live!.tickLower, p.live!.tickUpper, k.currency0, k.currency1, k.fee, k.tickSpacing, k.hooks].join('|');
     })
     .join(',')
     .toLowerCase();
@@ -69,17 +76,31 @@ export function useLiveFees(positions: UserPosition[], version = 0): LiveFeesSta
     let cancelled = false;
     setState((s) => ({ ...s, reading: true }));
     const client = readClient(readVia);
-    const queries: FeeQuery[] = liveRef.current.map((p) => ({
-      tokenId: BigInt(p.tokenId),
-      key: toPoolKey(p.live!.key),
-      tickLower: p.live!.tickLower,
-      tickUpper: p.live!.tickUpper,
-    }));
+    const current = liveRef.current;
+    const queries: FeeQuery[] = current
+      .filter((p) => p.live!.protocol === 'v4')
+      .map((p) => ({
+        tokenId: BigInt(p.tokenId),
+        key: toPoolKey(p.live!.key),
+        tickLower: p.live!.tickLower,
+        tickUpper: p.live!.tickUpper,
+      }));
+    const v3Ids = current.filter((p) => p.live!.protocol === 'v3').map((p) => BigInt(p.tokenId));
     const tick = async () => {
       try {
-        const answer = await readPositionFees(client, queries);
+        // Each manager on its own: a v3 read that fails must not take the v4
+        // readings with it, or the other way round. A half that failed leaves
+        // its positions absent (unread), never zero.
+        const [v4, v3] = await Promise.allSettled([
+          readPositionFees(client, queries),
+          owner && v3Ids.length > 0 ? readV3Fees(client, owner, v3Ids) : Promise.resolve(new Map<string, LiveFees>()),
+        ]);
         if (cancelled) return;
-        setState({ fees: answer, reading: false, error: null });
+        const answer = new Map<string, LiveFees>();
+        if (v4.status === 'fulfilled') for (const [id, fees] of v4.value) answer.set(`v4:${id}`, fees);
+        if (v3.status === 'fulfilled') for (const [id, fees] of v3.value) answer.set(`v3:${id}`, fees);
+        const failed = [v4, v3].find((r): r is PromiseRejectedResult => r.status === 'rejected');
+        setState({ fees: answer, reading: false, error: failed ? describeTxError(failed.reason) : null });
       } catch (e) {
         if (!cancelled) setState((s) => ({ fees: s.fees, reading: false, error: describeTxError(e) }));
       }
@@ -90,7 +111,7 @@ export function useLiveFees(positions: UserPosition[], version = 0): LiveFeesSta
       cancelled = true;
       clearInterval(id);
     };
-  }, [signature, readVia, version]);
+  }, [signature, readVia, version, owner]);
 
   return state;
 }
@@ -102,7 +123,7 @@ export function useLiveFees(positions: UserPosition[], version = 0): LiveFeesSta
  * position has no fee reading yet.
  */
 export function feesUsd(position: UserPosition, fees: Map<string, LiveFees>): number | null {
-  const entry = fees.get(position.tokenId);
+  const entry = fees.get(positionRef(position));
   const live = position.live;
   if (!entry || !live) return null;
   return (

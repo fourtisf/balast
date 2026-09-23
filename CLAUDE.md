@@ -4420,3 +4420,138 @@ on the explorer is that the refund came back.
 
 **Verified**: typecheck, lint, 455 unit tests — the seven new v3 cases
 among them — the production build and 40 Playwright tests. All green.
+
+---
+
+## 29. An audit of the path to Uniswap, before mainnet
+
+ALFA asked for the whole codebase audited as a senior engineer would before
+calling mainnet live, and for every liquidity action to go through Uniswap.
+The second is already true, and this section starts by saying exactly how;
+the rest is what the audit found wrong and fixed.
+
+### Where the money goes
+
+Balast deploys no contract. Every transaction the site can send goes to one
+of Uniswap's own contracts on this chain, each checked byte for byte
+against Uniswap's registry (§20, §28), or is an approval for one of them:
+
+| Action | Contract | Built by |
+|---|---|---|
+| Mint, v4 pool | v4 PositionManager `0x58da…4FA7` | `lib/v4/mint.ts` |
+| Mint, v3 pool | v3 NonfungiblePositionManager `0x7399…E0D3` | `lib/v3/mint.ts` |
+| Collect / withdraw, v4 | v4 PositionManager | `lib/v4/manage.ts` |
+| Collect / withdraw, v3 | v3 NonfungiblePositionManager | `lib/v3/manage.ts` (new) |
+| Approve for v4 | the token → Permit2 → PositionManager | `lib/v4/flow.ts` |
+| Approve for v3 | the token → the v3 manager | `lib/v3/flow.ts` |
+| Wrap ether for a v4 pool quoted in aeWETH | aeWETH `deposit()` | `lib/v4/flow.ts` |
+
+Every encoder is compared as bytes with Uniswap's own SDK building the same
+call, every transaction is run by the node (`eth_estimateGas`) before the
+wallet is asked to sign, and the position NFT is minted to the person's
+wallet. No live action claims success without a receipt: the one pair of
+buttons that did — *Claim* and *Compound* on `/stakes` — only render on
+simulated data, and now say so.
+
+### v3 positions were a one-way door
+
+§28 made `/positions` mint into v3 pools. Nothing else followed it: the
+indexer follows only v4's PositionManager, so a v3 position minted here
+never appeared in the portfolio, and if it had, `usePositionActions`
+refused it ("manage it on Uniswap"). The site could put money into a v3
+pool and could not show it or take it back out — exactly the fault §22
+recorded for v4 and §23 closed.
+
+**The portfolio reads v3 positions from the chain.** v3's manager is an
+ERC721Enumerable, so what a wallet holds there is `balanceOf`,
+`tokenOfOwnerByIndex` and `positions` — current state, three multicalls,
+no history to index (`lib/v3/positions.ts`). The API reads them through
+the same RPC failover as everything else, bounded at eight seconds, and
+matches each to the pool the indexer knows by its two tokens and fee, so
+it is valued through the same one path to dollars (§4.3) as a v4
+position. Three honest limits, each on the page:
+
+- **Principal is not known**, because the funding history is not indexed,
+  so a v3 position has no *price impact on holdings*. The card says
+  `N of M positions measured`, and a dash when none are — never a $0 that
+  reads as "no loss".
+- **A pool the indexer has not met** cannot be valued or named, so its
+  position is counted (`v3.unindexed`) and left out, and the page says to
+  manage it on Uniswap.
+- **A node that does not answer** costs the v3 rows and never the v4 ones;
+  the page says v3 could not be read. The endpoint's own error goes to the
+  log, not the page — a paid endpoint's URL carries its key.
+
+`PORTFOLIO_V3=false` turns the v3 half off.
+
+**Uncollected fees** are read the way Uniswap's own interface reads them:
+an `eth_call` of `collect(max, max)` from the owner, which returns what a
+collect would pay now and changes nothing. A failed v3 read no longer takes
+the v4 readings with it, or the other way round.
+
+**Collect and withdraw** (`lib/v3/manage.ts`) are laid out as the SDK's
+`collectCallParameters` and `removeCallParameters` lay them out — the test
+compares the bytes — with the withdrawal's minimums from Uniswap's own
+`burnAmountsWithSlippage`, ported and compared at prices below, inside and
+above the range. For an ether pair the wrapped side is collected into the
+manager, unwrapped, and sent as ETH (§27) — **but only after the manager's
+own `WETH9()` is read and matches aeWETH.** Were it anything else,
+`unwrapWETH9` would unwrap nothing and the wrapped side would sit in the
+manager where anyone could sweep it; on a mismatch or an unanswered read
+both sides are collected straight to the owner instead. Uniswap's SDK
+names aeWETH as this chain's WETH9, so the check is expected to pass; it
+exists because the failure would be silent.
+
+v3 and v4 number their NFTs independently, so a token id alone is not a
+position's identity: `lib/position-ref.ts` keys fee readings, busy rows and
+React keys by manager and id.
+
+### Faults in the mint path
+
+- **A wrap one wei short.** For a v4 pool quoted in aeWETH, the flow
+  wrapped exactly the planned quote amount — but the pool rounds each
+  position's amount up by a wei, so Permit2 was asked for slightly more
+  than the wallet held, the dry run refused, and the page had no step left
+  to offer. `wrapShortfall` wraps at least the planned amount plus a wei a
+  position and up to the slippage cap as far as the spare ether allows,
+  and has tests for the edges, including a cap below the floor.
+- **A v3 pay-in-ETH decision made against the wrong figure.** Whether the
+  wrapped side is paid in ether was decided against the deposit rather than
+  what the plan actually pulls, and the balance shown summed the wrapped
+  balance and the ether — but v3's manager pays a side from one or the
+  other, never both, so a wallet with half of each passed the check and
+  failed the dry run. The decision is made against the plan's own amount,
+  the spendable figure is the larger of the two, and the plan no longer
+  changes (with a fresh dry run) on every balance re-read.
+- **A v4 dynamic-fee pool's tier read "838.86%".** Its key carries the
+  `0x800000` flag instead of a tier. `feeTierBpsFromPips` makes it null, and
+  it reads *dynamic* on the board, the builder and the drawer.
+
+### Also fixed
+
+- A position in a pool with no indexed price read `$0` and "out of range —
+  earning nothing" in red, with a rebalance prompt. A v3 pool is announced
+  without a price and gets one at its first swap; until then the row says
+  the range status is not known and the value is a dash, and neither is
+  counted as earning nothing.
+
+### Verified here
+
+On a fresh Postgres: `typecheck`, `lint`, the full suite (46 files, 471
+tests — the v3 manage, portfolio-v3 and wrap suites among them), the
+production build and the 40 Playwright tests. An independent review pass
+over the diff checked the collect/withdraw layout against v3-periphery's
+`PeripheryPayments` and found the edges fixed above.
+
+**Unverified from here**, as always: the sandbox reaches no RPC, so no v3
+collect or withdrawal has been sent. **The first one on the live site
+should be a small position, watched on the explorer** — and the thing to
+check is that the ether side arrived as ETH and nothing was left in the
+manager.
+
+### Still open
+
+Unchanged: `STAKEABLE_HOOKS` and `LAUNCHPAD_HOOKS` (§14, §20), the listing
+bar's thresholds, the §12 questions, and the single-token zap (§23). The
+single-token zap is still the one Uniswap-routed action that is not built:
+every mint is two-sided until it is.

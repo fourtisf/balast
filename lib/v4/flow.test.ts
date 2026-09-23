@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { encodeAbiParameters, type PublicClient } from 'viem';
 import { CONTRACTS } from '../chain';
-import { approvalsNeeded, describeTxError, simulateWrap, waitForMint, WRAP_CALLDATA } from './flow';
+import { approvalsNeeded, describeTxError, simulateWrap, waitForMint, wrapShortfall, WRAP_CALLDATA } from './flow';
 import type { PoolKey } from './pool';
 
 const ZERO = '0x0000000000000000000000000000000000000000' as const;
@@ -127,5 +127,40 @@ describe('wrapping ether', () => {
       },
     } as unknown as PublicClient;
     await expect(simulateWrap(client, OWNER, 1n)).rejects.toThrow(/reverted/);
+  });
+});
+
+describe('wrapShortfall', () => {
+  const RESERVE = 1_000n;
+  const base = { planned: 1_000_000n, cap: 1_010_001n, positions: 3, wrappedBalance: 0n, reserve: RESERVE };
+
+  it('wraps up to the plan’s cap when the ether is there', () => {
+    expect(wrapShortfall({ ...base, nativeBalance: 10n ** 18n })).toBe(1_010_001n);
+  });
+
+  /**
+   * The pool rounds each position's amount up by a wei. Wrapping exactly the
+   * planned amount left Permit2 a wei short and the dry run refusing a mint
+   * the page then offered no way forward from.
+   */
+  it('never wraps less than the planned amount plus a wei a position', () => {
+    // Spare ether covers the floor and not the cap: the floor, not the plan.
+    expect(wrapShortfall({ ...base, nativeBalance: 1_000_003n + RESERVE })).toBe(1_000_003n);
+    // Spare ether between the two: all of it.
+    expect(wrapShortfall({ ...base, nativeBalance: 1_005_000n + RESERVE })).toBe(1_005_000n);
+    // A wrapped balance that covers the plan but not its rounding still wraps the difference.
+    expect(wrapShortfall({ ...base, wrappedBalance: 1_000_000n, nativeBalance: 10n ** 18n })).toBe(10_001n);
+  });
+
+  it('is null when nothing is needed, or the wallet cannot cover even the floor', () => {
+    expect(wrapShortfall({ ...base, planned: 0n, cap: 0n, nativeBalance: 10n ** 18n })).toBeNull();
+    expect(wrapShortfall({ ...base, wrappedBalance: 1_000_003n, nativeBalance: 10n ** 18n })).toBeNull();
+    expect(wrapShortfall({ ...base, nativeBalance: 1_000_002n + RESERVE })).toBeNull();
+  });
+
+  it('never asks for a negative or zero wrap when the cap is below the floor', () => {
+    // A dust quote amount: the slippage cap can sit under the rounding floor.
+    const out = wrapShortfall({ planned: 5n, cap: 6n, positions: 3, wrappedBalance: 7n, nativeBalance: 10n ** 18n, reserve: RESERVE });
+    expect(out).toBe(1n);
   });
 });

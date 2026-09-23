@@ -21,6 +21,9 @@ process.env.LISTING_MIN_FDV_USD ??= '0';
 // No external logo lookups from a test run: the one suite that exercises
 // them hands the poller its own sources and a fake fetch.
 process.env.LOGO_SOURCES ??= 'none';
+// No v3 portfolio reads against a real node: the suite that exercises them
+// hands buildPortfolio its own reader.
+process.env.PORTFOLIO_V3 ??= 'false';
 // Never allow a test run to migrate or truncate a real database.
 if (!/balast_test/.test(url)) {
   throw new Error(

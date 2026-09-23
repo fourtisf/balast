@@ -147,7 +147,8 @@ export interface Pool {
   address: string;
   token: TokenMeta;
   quote: Quote;
-  feeTierBps: number;
+  /** Null for a v4 dynamic-fee pool: its hook sets the fee per swap (lib/format.ts `DYNAMIC_FEE_FLAG`). */
+  feeTierBps: number | null;
   /**
    * Present for any live pool, so /positions can mint into it — v4 through
    * Uniswap's PositionManager, v3 through its NonfungiblePositionManager,
@@ -255,7 +256,8 @@ export interface LivePosition {
   key: PoolKeyInfo;
   poolAddress: string;
   protocol: Protocol;
-  feeTierBps: number;
+  /** Null for a v4 dynamic-fee pool: its hook sets the fee per swap (lib/format.ts `DYNAMIC_FEE_FLAG`). */
+  feeTierBps: number | null;
   token: TokenMeta;
   quote: Quote;
   /** The quote side's address (ether as the zero address, or the wrapper, or USDG). */
@@ -269,7 +271,8 @@ export interface LivePosition {
   amount0: string;
   amount1: string;
   /** What the net principal put in would be worth today, in USD. */
-  holdUsd: number;
+  /** Null when the principal is not known — a v3 position, read live, whose funding is not indexed. */
+  holdUsd: number | null;
   /**
    * Each currency's USD price at the last indexed block — the same one path
    * the value above was priced through (§4.3) — so the page can value what
@@ -292,6 +295,15 @@ export interface UserPosition {
   inRange: boolean;
   /** Set when inRange is false: how long it has been earning nothing. */
   outOfRangeSinceHours?: number;
+  /**
+   * The indexer has no price for this position's pool yet — a v3 pool is
+   * announced without one, and gets one at its first swap — so whether it is
+   * in range is not known. `inRange` is then false and means nothing; the
+   * row says "not known yet" rather than "earning nothing" (§7).
+   */
+  rangeUnknown?: boolean;
+  /** No USD price for one of its sides yet: `valueUsd` is zero and means nothing, and the row shows a dash. */
+  valueUnknown?: boolean;
   valueUsd: number;
   /** Simulated data only: fees in WETH. A live position's fees are read from the chain by the page. */
   feesWeth?: number;
@@ -317,6 +329,13 @@ export interface Portfolio {
   claimableWeth: number;
   /** Live: the wallet these positions belong to. */
   wallet?: string | null;
+  /**
+   * Live: whether the v3 half was read. v3 positions come from the chain
+   * rather than the indexer (server/api/portfolio.ts), so a node that did not
+   * answer leaves them out — and the page says so rather than implying the
+   * wallet holds none.
+   */
+  v3?: { status: 'read' | 'unavailable' | 'off'; message?: string; unindexed: number };
 }
 
 export interface GlobalStats {

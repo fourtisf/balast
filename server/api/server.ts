@@ -26,12 +26,37 @@ import { resolveUsdg } from '../indexer/anchor';
 import { readWork } from '../indexer/working';
 import { busKind, subscribeTicks } from './bus';
 import { MarketFeed } from './market';
-import { buildPortfolio } from './portfolio';
+import { rpc } from '../chain/client';
+import { readV3Positions } from '../../lib/v3/positions';
+import { buildPortfolio, type V3PositionReader } from './portfolio';
 import { recentHead } from './recent';
 import { buildSnapshot, nextRevision } from './snapshot';
 import { agedSnapshot, isServable, loadPersistedSnapshot, persistSnapshot } from './snapshot-store';
 
 const USDG = process.env.USDG_ADDRESS ?? '';
+
+/** How long a portfolio request waits on the node for its v3 half before answering with v4 alone. */
+const V3_READ_TIMEOUT_MS = 8_000;
+
+/**
+ * The v3 half of a wallet's portfolio, from the chain through the same
+ * failover every other RPC read uses, bounded so a slow node costs the v3
+ * rows and never the request.
+ */
+export const chainV3Reader: V3PositionReader = (owner) =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`the node did not answer within ${V3_READ_TIMEOUT_MS / 1000}s`)), V3_READ_TIMEOUT_MS);
+    rpc((client) => readV3Positions(client, owner), 'v3 positions').then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 
 /**
  * Blocks behind head past which the indexer is BACKFILLING rather than
@@ -183,9 +208,21 @@ export async function buildServer(
     logoFetch?: LogoFetch;
     /** A fake for the market sources, so a test never reaches a real aggregator. */
     marketFetch?: MarketFetch;
+    /**
+     * Reads a wallet's v3 positions from the chain. Defaults to the node
+     * unless `PORTFOLIO_V3=false`; null turns the v3 half off, which is what
+     * a test that must not reach a node passes.
+     */
+    readV3Positions?: V3PositionReader | null;
   } = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
+  const readV3 =
+    options.readV3Positions !== undefined
+      ? options.readV3Positions
+      : process.env.PORTFOLIO_V3 === 'false'
+        ? null
+        : chainV3Reader;
 
   await app.register(cors, {
     // The browser reaches the API through nginx on the same origin, so CORS
@@ -704,7 +741,7 @@ export async function buildServer(
     }
     const problem = configurationProblem();
     if (problem) return reply.code(503).send({ error: 'misconfigured', message: problem });
-    const built = await buildPortfolio(wallet, USDG || null);
+    const built = await buildPortfolio(wallet, USDG || null, { readV3 });
     if (!built) {
       return reply.code(503).send({ error: 'no-data', message: 'The indexer has not priced a block yet.' });
     }

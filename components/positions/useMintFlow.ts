@@ -21,6 +21,7 @@ import {
   simulateMint,
   simulateWrap,
   waitForMint,
+  wrapShortfall,
   type ApprovalStep,
   type Slot0,
 } from '@/lib/v4/flow';
@@ -36,6 +37,7 @@ import {
   waitForV3Mint,
 } from '@/lib/v3/flow';
 import { planV3Mint } from '@/lib/v3/mint';
+import { readV3Weth9 } from '@/lib/v3/positions';
 import { describeWalletError, ensureChain } from '@/lib/wallet';
 
 /** Reads refresh on this cadence: the price for the plan, the balances for the check. */
@@ -264,24 +266,57 @@ export function useMintFlow(args: {
   const depositRaw = sides ? toRaw(deposit, sides.quoteDecimals) : 0n;
 
   /**
-   * Whether a v3 mint pays its wrapped-ether side in ether.
-   *
-   * The manager is payable and wraps what it is sent, all of it or none —
-   * `_pay` cannot mix a balance with a wrap — so this is one decision for
-   * the whole side. The wrapped balance is spent when it covers the mint,
-   * because that costs no ether and needs no wrapping; ether pays when it
-   * does not, which is what lets a wallet holding only ETH enter a v3 pair
-   * at all (§27).
+   * The v3 manager's own wrapper. Paying the wrapped side in ether relies on
+   * the manager wrapping what it is sent, which it does only for its own
+   * `WETH9()`. Uniswap's registry names aeWETH for this chain, and the dry
+   * run would refuse a mismatch anyway; this makes a known mismatch a plain
+   * "hold the wrapped token" rather than a mint that cannot be prepared.
+   * Unknown (not yet read, or unanswered) is left to the dry run.
    */
-  const v3PaysEther = useMemo(() => {
-    if (venue !== 'v3' || !sides || !balances) return null;
-    const wrapped = CONTRACTS.weth.toLowerCase();
-    if (sides.quoteCurrency.toLowerCase() !== wrapped) return null;
-    return balances.quote >= depositRaw ? null : (CONTRACTS.weth as Address);
-  }, [venue, sides, balances, depositRaw]);
+  const [v3Weth9, setV3Weth9] = useState<string | null>(null);
+  useEffect(() => {
+    if (venue !== 'v3') return;
+    let cancelled = false;
+    void readV3Weth9(readClient(readVia)).then((address) => {
+      if (!cancelled && address) setV3Weth9(address.toLowerCase());
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [venue, readVia]);
+  const v3WrapsEther = v3Weth9 === null || v3Weth9 === CONTRACTS.weth.toLowerCase();
 
-  const { plan, planError } = useMemo(() => {
-    if (!key || !sides || !live || !valid || depositRaw <= 0n) return { plan: null, planError: null };
+  const v3PoolInfo = useMemo(
+    () =>
+      key && info
+        ? {
+            address: v3Pool,
+            token0: key.currency0,
+            token1: key.currency1,
+            fee: key.fee,
+            tickSpacing: key.tickSpacing,
+            decimals0: info.decimals0,
+            decimals1: info.decimals1,
+          }
+        : null,
+    [key, info, v3Pool],
+  );
+
+  /**
+   * The plan, and — for a v3 pool quoted in the wrapper — whether it pays that
+   * side in ether.
+   *
+   * The v3 manager is payable and wraps what it is sent, all of it or none:
+   * `pay` cannot mix a wrapped balance with a wrap, so it is one decision for
+   * the whole side. The wrapped balance is spent when it covers what the
+   * plan takes, because that costs no ether; ether pays when it does not,
+   * which is what lets a wallet holding only ETH enter a v3 pair at all
+   * (§27). The decision is made against the plan's own quote amount — the
+   * amount the manager will pull — not the deposit figure, which it can
+   * exceed by the rounding of each bin.
+   */
+  const planned = useMemo(() => {
+    if (!key || !sides || !live || !valid || depositRaw <= 0n) return null;
     const common = {
       sqrtPriceX96: live.sqrtPriceX96,
       tick: live.tick,
@@ -297,27 +332,31 @@ export function useMintFlow(args: {
       deadline: BigInt(Math.floor(Date.now() / 1000) + DEADLINE_SECONDS),
     };
     try {
-      if (venue === 'v3' && info) {
-        const v3 = planV3Mint({
-          ...common,
-          pool: {
-            address: v3Pool,
-            token0: key.currency0,
-            token1: key.currency1,
-            fee: key.fee,
-            tickSpacing: key.tickSpacing,
-            decimals0: info.decimals0,
-            decimals1: info.decimals1,
-          },
-          payWithEtherFor: v3PaysEther ?? undefined,
-        });
-        return { plan: { ...v3, unlockData: '0x' as Hex }, planError: null };
+      if (venue === 'v3' && v3PoolInfo) {
+        const base = planV3Mint({ ...common, pool: v3PoolInfo });
+        const quoteIsWrapped = sides.quoteCurrency.toLowerCase() === CONTRACTS.weth.toLowerCase();
+        return {
+          base: { ...base, unlockData: '0x' as Hex } as MintPlan,
+          // The same plan paid in ether: same amounts, a value and a refund.
+          withEther: quoteIsWrapped && v3WrapsEther
+            ? ({ ...planV3Mint({ ...common, pool: v3PoolInfo, payWithEtherFor: CONTRACTS.weth as Address }), unlockData: '0x' as Hex } as MintPlan)
+            : null,
+          quoteNeed: sides.tokenIsCurrency0 ? base.amount1 : base.amount0,
+          error: null,
+        };
       }
-      return { plan: planMint({ ...common, key }), planError: null };
+      return { base: planMint({ ...common, key }), withEther: null, quoteNeed: 0n, error: null };
     } catch (e) {
-      return { plan: null, planError: (e as Error).message };
+      return { base: null, withEther: null, quoteNeed: 0n, error: (e as Error).message };
     }
-  }, [key, info, sides, live, valid, depositRaw, minPct, maxPct, bins, shape, fullRange, owner, slippageBps, venue, v3Pool, v3PaysEther]);
+  }, [key, sides, live, valid, depositRaw, minPct, maxPct, bins, shape, fullRange, owner, slippageBps, venue, v3PoolInfo, v3WrapsEther]);
+
+  // A primitive, so a balance re-read that changes nothing about the
+  // decision does not produce a new plan (and a new dry run) every cadence.
+  const v3PaysEther: Address | null =
+    planned?.withEther && balances && balances.quote < planned.quoteNeed ? (CONTRACTS.weth as Address) : null;
+  const plan: MintPlan | null = planned ? (v3PaysEther ? planned.withEther : planned.base) : null;
+  const planError = planned?.error ?? null;
 
   const needs = useMemo(() => {
     if (!plan || !sides) return null;
@@ -340,21 +379,31 @@ export function useMintFlow(args: {
     // Not for v3: its manager is payable and wraps what it is sent, in the
     // mint itself, so a separate transaction would only cost a signature.
     if (venue === 'v3') return null;
-    if (!sides || !needs || !balances) return null;
+    if (!sides || !needs || !plan || !balances) return null;
     if (sides.quoteCurrency.toLowerCase() !== CONTRACTS.weth.toLowerCase()) return null;
-    if (balances.quote >= needs.quote) return null;
-    const shortfall = needs.quote - balances.quote;
-    if (balances.native < shortfall + WRAP_GAS_RESERVE_WEI) return null;
+    const shortfall = wrapShortfall({
+      planned: needs.quote,
+      cap: sides.tokenIsCurrency0 ? plan.amount1Max : plan.amount0Max,
+      positions: plan.positions.length,
+      wrappedBalance: balances.quote,
+      nativeBalance: balances.native,
+      reserve: WRAP_GAS_RESERVE_WEI,
+    });
+    if (shortfall === null) return null;
     return { shortfall };
-  }, [venue, sides, needs, balances]);
+  }, [venue, sides, needs, plan, balances]);
 
   /** One "your balance" for an ether market, whichever way the pool holds it. */
   const quoteSpendable = useMemo(() => {
     if (!sides || !balances) return null;
     if (sides.quoteCurrency.toLowerCase() !== CONTRACTS.weth.toLowerCase()) return balances.quote;
     const wrappable = balances.native > WRAP_GAS_RESERVE_WEI ? balances.native - WRAP_GAS_RESERVE_WEI : 0n;
+    // A v3 mint pays the side in the wrapped token OR in ether, never a mix
+    // (see `v3PaysEther`), so what it can spend is the larger of the two —
+    // not their sum, which would pass a deposit neither could cover alone.
+    if (venue === 'v3') return !v3WrapsEther || balances.quote > wrappable ? balances.quote : wrappable;
     return balances.quote + wrappable;
-  }, [sides, balances]);
+  }, [sides, balances, venue, v3WrapsEther]);
 
   // Approvals and a dry run, whenever the plan or the wallet changes — and
   // only on this chain: an allowance read or an estimate on another network

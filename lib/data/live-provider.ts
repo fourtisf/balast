@@ -152,6 +152,7 @@ export class LiveProvider implements DataProvider {
         positions: UserPosition[];
         netValueUsd: number;
         priceImpactUsd: number;
+        v3?: Portfolio['v3'];
       };
       // The wallet may have changed while this was in flight.
       if (this.wallet !== wallet) return;
@@ -170,6 +171,7 @@ export class LiveProvider implements DataProvider {
         positions: body.positions,
         claimableWeth: 0,
         wallet,
+        v3: body.v3,
       };
       this.reissue();
     } catch {

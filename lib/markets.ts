@@ -62,7 +62,7 @@ export function poolLiquidityUsd(pool: Pool): number | null {
 function byDepth(a: Pool, b: Pool): number {
   return (
     (poolLiquidityUsd(b) ?? -1) - (poolLiquidityUsd(a) ?? -1) ||
-    a.feeTierBps - b.feeTierBps ||
+    (a.feeTierBps ?? Number.MAX_SAFE_INTEGER) - (b.feeTierBps ?? Number.MAX_SAFE_INTEGER) ||
     // Both are named ETH (§27), so this only settles which is picked first:
     // the native one, whose balance the wallet already shows.
     Number(quoteIsNativeEther(b)) - Number(quoteIsNativeEther(a))

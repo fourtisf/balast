@@ -32,14 +32,22 @@ export function PortfolioBody() {
   const readings = livePositions.map((p) => feesUsd(p, fees.fees)).filter((n): n is number => n !== null);
   const uncollectedUsd = readings.length > 0 ? readings.reduce((a, b) => a + b, 0) : null;
   const inRange = positions.filter((p) => p.inRange).length;
+  // A position whose pool has no indexed price is neither earning nor idle as
+  // far as the page can tell, so it is not counted as "earning nothing".
+  const rangeKnown = positions.filter((p) => !p.rangeUnknown).length;
 
   // Impermanent loss, under the name that tells the truth (§7): what the
   // position is worth against what holding its principal would be worth.
   // It cannot be positive in theory and can be by a cent in practice, so a
   // figure under half a dollar either way is a plain zero in no colour.
   const impact = portfolio.priceImpactUsd;
-  const impactClass = empty ? '' : impact <= -0.5 ? ' down' : impact >= 0.5 ? ' up' : '';
-  const impactText = empty
+  // Positions whose principal is known. A v3 position is read live and its
+  // funding is not indexed, so with none measured the figure is unknown — a
+  // dash, not a $0 that reads as "no loss" (§7).
+  const measured = positions.filter((p) => p.priceImpactUsd !== undefined).length;
+  const impactClass = empty || (live && measured === 0) ? '' : impact <= -0.5 ? ' down' : impact >= 0.5 ? ' up' : '';
+  const impactText =
+    empty || (live && measured === 0)
     ? '—'
     : impact <= -0.5
       ? `−${usdExact(Math.abs(impact))}`
@@ -95,18 +103,29 @@ export function PortfolioBody() {
         <div className="card stat">
           <div className="k">Price impact on holdings</div>
           <div className={`v num${impactClass}`}>{impactText}</div>
-          <div className="d">{live ? 'vs holding the principal, at the same prices' : 'vs holding tokens'}</div>
+          <div className="d">
+            {!live
+              ? 'vs holding tokens'
+              : measured < positions.length && !empty
+                ? // A v3 position is read live, and its funding is not indexed;
+                  // a pool with no indexed price has no value. No figure for
+                  // those — said, not summed as zero.
+                  `${measured} of ${positions.length} positions measured`
+                : 'vs holding the principal, at the same prices'}
+          </div>
         </div>
         {live ? (
           <div className="card stat">
             <div className="k">In range</div>
-            <div className="v num">{empty ? '—' : `${inRange} of ${positions.length}`}</div>
+            <div className="v num">{empty ? '—' : `${inRange} of ${rangeKnown}`}</div>
             <div className="d">
               {empty
                 ? why
-                : positions.length - inRange === 0
-                  ? 'every position is earning'
-                  : `${positions.length - inRange} earning nothing`}
+                : rangeKnown - inRange === 0
+                  ? rangeKnown < positions.length
+                    ? `${positions.length - rangeKnown} not known yet`
+                    : 'every position is earning'
+                  : `${rangeKnown - inRange} earning nothing`}
             </div>
           </div>
         ) : (

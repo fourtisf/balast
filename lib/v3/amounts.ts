@@ -181,3 +181,52 @@ export function mintAmountsWithSlippage(args: {
   const atLower = mintAmounts({ sqrtPriceX96: lower, tickLower, tickUpper, liquidity: created });
   return { amount0: atUpper.amount0, amount1: atLower.amount1 };
 }
+
+/**
+ * What this liquidity is worth taken out of the pool — `Position.amount0` and
+ * `amount1`, which round DOWN: a burn pays at most this, never more.
+ */
+export function burnAmounts(args: {
+  sqrtPriceX96: bigint;
+  tickLower: number;
+  tickUpper: number;
+  liquidity: bigint;
+}): { amount0: bigint; amount1: bigint } {
+  const { sqrtPriceX96, tickLower, tickUpper, liquidity } = args;
+  const lower = getSqrtRatioAtTick(tickLower);
+  const upper = getSqrtRatioAtTick(tickUpper);
+  // `tickCurrent < tickLower` in the SDK is `sqrtPrice < sqrt(tickLower)`: the
+  // current tick is the greatest tick whose ratio is at or below the price.
+  if (sqrtPriceX96 < lower) {
+    return { amount0: amount0Delta(lower, upper, liquidity, false), amount1: 0n };
+  }
+  if (sqrtPriceX96 < upper) {
+    return {
+      amount0: amount0Delta(sqrtPriceX96, upper, liquidity, false),
+      amount1: amount1Delta(lower, sqrtPriceX96, liquidity, false),
+    };
+  }
+  return { amount0: 0n, amount1: amount1Delta(lower, upper, liquidity, false) };
+}
+
+/**
+ * The minimums a withdrawal should ask for — `Position.burnAmountsWithSlippage`.
+ *
+ * The mirror of `mintAmountsWithSlippage`: each side is priced at the end of
+ * the tolerance where it is worth least — amount0 at the upper price, amount1
+ * at the lower — so a price that moves further than that makes the pool
+ * revert rather than pay less.
+ */
+export function burnAmountsWithSlippage(args: {
+  sqrtPriceX96: bigint;
+  tickLower: number;
+  tickUpper: number;
+  liquidity: bigint;
+  slippageBps: bigint;
+}): { amount0: bigint; amount1: bigint } {
+  const { sqrtPriceX96, tickLower, tickUpper, liquidity, slippageBps } = args;
+  const { lower, upper } = ratiosAfterSlippage(sqrtPriceX96, slippageBps);
+  const atUpper = burnAmounts({ sqrtPriceX96: upper, tickLower, tickUpper, liquidity });
+  const atLower = burnAmounts({ sqrtPriceX96: lower, tickLower, tickUpper, liquidity });
+  return { amount0: atUpper.amount0, amount1: atLower.amount1 };
+}

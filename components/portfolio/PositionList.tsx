@@ -9,6 +9,7 @@ import { EXPLORER_URL } from '@/lib/chain';
 import { getProvider } from '@/lib/data';
 import type { TokenMeta, UserPosition } from '@/lib/data/types';
 import { countdown, quoteLabel, usdExact } from '@/lib/format';
+import { positionRef } from '@/lib/position-ref';
 import { SHAPES } from '@/lib/shapes';
 import { amount as fmtAmount } from '@/lib/v4/format';
 import { feesUsd, type LiveFeesState } from './useLiveFees';
@@ -42,7 +43,9 @@ export function PositionList({ fees, actions }: { fees: LiveFeesState; actions: 
     q === '' || (token !== null && (token.symbol.toLowerCase().includes(q) || token.name.toLowerCase().includes(q)));
   const positions = portfolio.positions.filter((p) => matchesToken(tokenOf(p)));
   const stakes = portfolio.stakes.filter((s) => matchesToken(pools.find((p) => p.id === s.poolId)?.token ?? null));
-  const stranded = positions.find((p) => !p.inRange);
+  // Out of range, and known to be: a pool the indexer has no price for is not
+  // "stranded", it is unread (UserPosition.rangeUnknown).
+  const stranded = positions.find((p) => !p.inRange && !p.rangeUnknown);
   const strandedToken = stranded ? tokenOf(stranded) : null;
   const strandedOnBoard = stranded ? pools.find((p) => p.id === stranded.poolId && p.stakeable) : undefined;
 
@@ -67,18 +70,19 @@ export function PositionList({ fees, actions }: { fees: LiveFeesState; actions: 
 
         // Uncollected fees, from the chain (useLiveFees), in the token and
         // the quote and in dollars at the prices the value beside them used.
-        const entry = lp ? fees.fees.get(position.tokenId) : undefined;
+        const ref = positionRef(position);
+        const entry = lp ? fees.fees.get(ref) : undefined;
         const feeUsd = lp ? feesUsd(position, fees.fees) : null;
         const tokenFees = entry && lp ? (lp.tokenIsCurrency0 ? entry.fees0 : entry.fees1) : null;
         const quoteFees = entry && lp ? (lp.tokenIsCurrency0 ? entry.fees1 : entry.fees0) : null;
         const hasFees = tokenFees !== null && quoteFees !== null && (tokenFees > 0n || quoteFees > 0n);
-        const busy = actions.busy?.tokenId === position.tokenId ? actions.busy : null;
-        const error = actions.error?.tokenId === position.tokenId ? actions.error.message : null;
-        const done = actions.done?.tokenId === position.tokenId ? actions.done : null;
+        const busy = actions.busy?.ref === ref ? actions.busy : null;
+        const error = actions.error?.ref === ref ? actions.error.message : null;
+        const done = actions.done?.ref === ref ? actions.done : null;
         const canAct = Boolean(lp) && !actions.busy;
 
         return (
-          <div className="pnl-row" key={position.tokenId} data-token-id={position.tokenId}>
+          <div className="pnl-row" key={ref} data-token-id={position.tokenId} data-position={ref}>
             <div className="tok">
               <TokenBadge token={token} />
               <div>
@@ -86,13 +90,16 @@ export function PositionList({ fees, actions }: { fees: LiveFeesState; actions: 
                   {token.symbol} / {quote}
                   {lp && (
                     <span className="muted num" style={{ fontWeight: 400, fontSize: 12, marginLeft: 8 }}>
-                      #{position.tokenId}
+                      {/* v3 and v4 number their NFTs independently; the manager is part of the name. */}
+                      {lp.protocol === 'v3' ? 'v3 ' : ''}#{position.tokenId}
                     </span>
                   )}
                 </div>
                 <div className="s">
                   {rangeText} ·{' '}
-                  {position.inRange ? (
+                  {position.rangeUnknown ? (
+                    'range status not known yet — the pool has no indexed price'
+                  ) : position.inRange ? (
                     'in range'
                   ) : (
                     // §7: out of range earns nothing. Say exactly that, in red.
@@ -102,8 +109,8 @@ export function PositionList({ fees, actions }: { fees: LiveFeesState; actions: 
               </div>
             </div>
             <div style={{ textAlign: 'right', flex: '0 1 auto', minWidth: 0 }}>
-              <div className="num" style={{ fontWeight: 600 }}>
-                {usdExact(position.valueUsd)}
+              <div className="num" style={{ fontWeight: 600 }} title={position.valueUnknown ? 'No indexed price for this pool yet' : undefined}>
+                {position.valueUnknown ? '—' : usdExact(position.valueUsd)}
               </div>
               {lp ? (
                 <div
@@ -194,6 +201,20 @@ export function PositionList({ fees, actions }: { fees: LiveFeesState; actions: 
         );
       })}
 
+      {live && portfolio.v3?.status === 'unavailable' && (
+        <p className="hint" role="status" style={{ margin: '10px 0' }}>
+          Uniswap v3 positions could not be read from the chain just now, so any this wallet holds are not listed.
+          The page asks again on its next refresh.
+        </p>
+      )}
+      {live && (portfolio.v3?.unindexed ?? 0) > 0 && (
+        <p className="hint" style={{ margin: '10px 0' }}>
+          {portfolio.v3!.unindexed} Uniswap v3 position{portfolio.v3!.unindexed === 1 ? ' is' : 's are'} in a pool
+          Balast has not indexed, so {portfolio.v3!.unindexed === 1 ? 'it cannot be valued here' : 'they cannot be valued here'}.
+          Manage {portfolio.v3!.unindexed === 1 ? 'it' : 'them'} on Uniswap.
+        </p>
+      )}
+
       {positions.length === 0 && stakes.length === 0 && (
         <div className="empty">
           {q !== '' ? (
@@ -202,13 +223,13 @@ export function PositionList({ fees, actions }: { fees: LiveFeesState; actions: 
             </>
           ) : live && !wallet ? (
             <>
-              <b>Connect a wallet</b>Its positions — the NFTs Uniswap&rsquo;s PositionManager minted to it — appear here,
-              marked to market, with their uncollected fees read from the chain.
+              <b>Connect a wallet</b>Its positions — the NFTs Uniswap&rsquo;s v3 and v4 position managers minted to
+              it — appear here, marked to market, with their uncollected fees read from the chain.
             </>
           ) : live ? (
             <>
-              <b>No positions yet</b>Mint one from Positions, or stake from a pool. It appears here once the indexer has
-              read the block it was minted in.
+              <b>No positions yet</b>Mint one from Positions, or stake from a pool. A v3 position appears on the next
+              read; a v4 one once the indexer has read the block it was minted in.
             </>
           ) : (
             <>

@@ -22,6 +22,7 @@
  */
 
 import { CONTRACTS, PROTOCOL_FEE_BPS, REWARD_WINDOW_SECONDS, NATIVE_ETH, isEther, isStablecoinSql } from '../../lib/chain';
+import { feeTierBpsFromPips } from '../../lib/format';
 import type { MarketFeed } from './market';
 import type {
   FeeYield,
@@ -479,7 +480,7 @@ function toPool(row: PoolQueryRow): Pool {
     },
     quote: (row.quote_symbol ?? 'ETH') as Quote,
     // Pool fees are in hundredths of a bip on chain; the UI wants bips.
-    feeTierBps: Math.round(row.fee_tier / 100),
+    feeTierBps: feeTierBpsFromPips(row.protocol, row.fee_tier),
     // The on-chain key, so /positions can mint into the pool.
     //
     // Both protocols now: Balast mints v4 through the PositionManager and
