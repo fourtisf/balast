@@ -19,7 +19,7 @@ import {
   type Transport,
 } from 'viem';
 import { CHAIN } from '../../lib/chain';
-import { RPC_URLS } from './endpoints';
+import { RPC_URLS, rpcStartIndex } from './endpoints';
 
 export const robinhoodChain = defineChain({
   id: CHAIN.id,
@@ -64,8 +64,8 @@ const batchedClients: PublicClient<Transport, typeof robinhoodChain>[] = RPC_URL
 
 if (clients.length === 0) throw new Error('No RPC endpoints configured. Set RPC_URLS.');
 
-/** Endpoint currently believed good. Stays put until it fails. */
-let preferred = 0;
+/** Endpoint currently believed good. Stays put until it fails; starts where RPC_START says. */
+let preferred = rpcStartIndex(RPC_URLS.length);
 
 export interface FailoverResult<T> {
   value: T;

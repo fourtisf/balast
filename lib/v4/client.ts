@@ -3,8 +3,8 @@
  * over the EIP-1193 provider the dialog connected.
  */
 
-import { createPublicClient, createWalletClient, custom, defineChain, http, type Address, type PublicClient } from 'viem';
-import { CHAIN, CONTRACTS, EXPLORER_URL, PUBLIC_RPC_URL } from '../chain';
+import { createPublicClient, createWalletClient, custom, defineChain, fallback, http, type Address, type PublicClient, type Transport } from 'viem';
+import { CHAIN, CONTRACTS, EXPLORER_URL, PUBLIC_RPC_URL, PUBLIC_RPC_URLS } from '../chain';
 import type { Eip1193Provider } from '../wallet';
 
 export const robinhoodChain = defineChain({
@@ -18,11 +18,22 @@ export const robinhoodChain = defineChain({
   contracts: { multicall3: { address: CONTRACTS.multicall3 } },
 });
 
+/**
+ * The free public endpoints, one after another: an endpoint that refuses
+ * (a rate limit, a timeout, a CORS answer) hands the call to the next. On
+ * free RPC a single endpoint refusing a busy browser is the normal failure,
+ * and it used to read as "Pool unreadable".
+ */
+export function publicTransport(first?: Transport): Transport {
+  const endpoints = PUBLIC_RPC_URLS.map((url) => http(url, { timeout: 10_000, retryCount: 1, retryDelay: 300 }));
+  return fallback(first ? [first, ...endpoints] : endpoints, { rank: false, retryCount: 1 });
+}
+
 let shared: PublicClient | null = null;
 
 /** Reads go to the public RPC, wallet or no wallet. */
 export function publicClient(): PublicClient {
-  if (!shared) shared = createPublicClient({ chain: robinhoodChain, transport: http(PUBLIC_RPC_URL) });
+  if (!shared) shared = createPublicClient({ chain: robinhoodChain, transport: publicTransport() });
   return shared;
 }
 

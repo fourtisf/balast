@@ -12,7 +12,6 @@ import {
   createPublicClient,
   custom,
   encodeFunctionData,
-  http,
   parseAbi,
   type Address,
   type Hex,
@@ -20,10 +19,10 @@ import {
   type PublicClient,
   toFunctionSelector,
 } from 'viem';
-import { CONTRACTS, NATIVE_ETH, PUBLIC_RPC_URL } from '../chain';
+import { CONTRACTS, NATIVE_ETH } from '../chain';
 import type { Eip1193Provider } from '../wallet';
 import { POSITION_MANAGER_ABI } from './actions';
-import { robinhoodChain, walletClient } from './client';
+import { publicTransport, robinhoodChain, walletClient } from './client';
 import type { MintPlan } from './mint';
 import { ERC20_ABI, MAX_UINT160, MAX_UINT256, PERMIT2_ABI, PERMIT2_EXPIRATION_SECONDS } from './permit2';
 import { poolId, type PoolKey } from './pool';
@@ -33,9 +32,15 @@ export const STATE_VIEW_ABI = parseAbi([
   'function getLiquidity(bytes32 poolId) view returns (uint128 liquidity)',
 ]);
 
-/** Reads go through the wallet's own connection when there is one (no CORS to negotiate), else the public RPC. */
+/**
+ * Reads go through the wallet's own connection when there is one (no CORS to
+ * negotiate), and on to the free public endpoints when the wallet's RPC
+ * refuses — a rate-limited wallet RPC is the likeliest failure on free
+ * endpoints, and it used to read as "Pool unreadable". A revert is not
+ * retried elsewhere: viem's fallback throws it straight back.
+ */
 export function readClient(provider?: Eip1193Provider | null): PublicClient {
-  return createPublicClient({ chain: robinhoodChain, transport: provider ? custom(provider) : http(PUBLIC_RPC_URL) });
+  return createPublicClient({ chain: robinhoodChain, transport: publicTransport(provider ? custom(provider) : undefined) });
 }
 
 export interface Slot0 {

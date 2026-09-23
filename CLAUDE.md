@@ -5124,3 +5124,44 @@ wallet.
 Unchanged: `STAKEABLE_HOOKS` and `LAUNCHPAD_HOOKS`, the listing bar's
 thresholds, the §12 questions, and — if a vault is ever wanted again — the
 protocol fee and its immutable cap. Balast takes no fee today.
+
+---
+
+## 34. Free RPC, and why mainnet does not need anything else
+
+ALFA, on §33's checklist that put a paid RPC first: *pake rpc free intinya
+mainnet should be works*. Keep the free endpoints; mainnet has to work on
+them. It does, and this section records why, and what changed to make the
+free path sturdier.
+
+**Nothing a person signs goes through the site's RPC.** The zap's swap, the
+mint, collect, withdraw and every approval are built in the browser and sent
+through the person's own wallet connection (§20). The site's endpoints feed
+the indexer, the API's reads and the page's reads when there is no wallet.
+
+What changed:
+
+- **The page reads through all four free endpoints.** `publicTransport()` in
+  `lib/v4/client.ts` is a viem `fallback` over `PUBLIC_RPC_URLS` (now in
+  `lib/chain.ts`, the one list the server's `endpoints.ts` also defaults to).
+  With a wallet connected the wallet's own connection is tried first and the
+  free endpoints after it, so a rate-limited wallet RPC no longer reads as
+  *Pool unreadable*. A revert is thrown straight back, not retried elsewhere.
+  The wallet is given all four when it adds the chain.
+- **The server's processes start on different endpoints** (`RPC_START`,
+  `rpcStartIndex` in `server/chain/endpoints.ts`): the indexer on the first,
+  the API on the second, the logo process on the third. Free endpoints
+  rate-limit per IP and every process shares the box's IP, so with all of
+  them starting on the first, the backfill — which asks as fast as it is
+  allowed — spent that endpoint's allowance and a wallet's portfolio read
+  queued behind it for a 429. Failover still walks the whole list.
+- **`deploy/MAINNET.md` no longer lists a paid endpoint as required.** It is
+  optional and only makes the backfill faster.
+
+What free RPC still limits, unchanged and labelled: the backfill's pace, so
+the board's history figures (liquidity, trailing yield, market cap) are as old
+as the top bar says. Today's volume and the price are the head reader's and
+the aggregators', and current either way. A pool created since the backfill's
+cursor is not listed until the backfill reaches it — the one real cost of free
+RPC for the product, and the next thing worth building if it matters: the head
+reader discovering new pools from today's swaps.

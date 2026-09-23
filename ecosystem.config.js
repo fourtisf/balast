@@ -64,6 +64,9 @@ module.exports = {
         NODE_ENV: 'production',
         API_PORT: 3001,
         API_HOST: '127.0.0.1',
+        // Start on the second free endpoint: the indexer's backfill starts
+        // on the first and spends its per-IP allowance (endpoints.ts).
+        RPC_START: 1,
       },
       error_file: '/var/log/balast/api.error.log',
       out_file: '/var/log/balast/api.out.log',
@@ -113,6 +116,8 @@ module.exports = {
       max_restarts: 10,
       env: {
         NODE_ENV: 'production',
+        // Its own endpoint, clear of the backfill and the API (endpoints.ts).
+        RPC_START: 2,
       },
       error_file: '/var/log/balast/logos.error.log',
       out_file: '/var/log/balast/logos.out.log',

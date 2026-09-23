@@ -18,14 +18,31 @@ bash /var/www/balast/deploy/doctor.sh
 The doctor's last lines say what to do next. `indexer: syncing` or `working`
 is normal while the backfill runs; `stalled` or `misconfigured` is not.
 
-## 2. Inputs only a person can supply
+## 2. Free RPC is enough for mainnet
+
+Every transaction a person signs — the zap's swap, the mint, collect,
+withdraw, every approval — is built in their browser and sent through **their
+own wallet's connection** to Robinhood Chain. The site's RPC list is not on
+that path. Reads the page makes without a wallet go through all four free
+public endpoints in turn, so one endpoint rate-limiting a browser does not
+stop anything.
+
+What free RPC does limit is the **indexer's backfill**: the board's history
+figures (liquidity, trailing yield, market cap) stay as old as the backfill,
+and the top bar says how old. Today's volume and the live price come from the
+head reader and the aggregators and are current either way. The API and the
+logo process start on different free endpoints from the indexer (`RPC_START`
+in `ecosystem.config.js`), so the reads a person is waiting on are not queued
+behind the backfill's.
+
+Optional, and never required for mainnet:
 
 | What | Why | How |
 |---|---|---|
-| A paid RPC endpoint | The public endpoints rate-limit the backfill; it has been ~74 days behind. A paid endpoint (Alchemy, QuickNode, dRPC…) is the one thing that makes it catch up. | `bash deploy/set-env.sh RPC_URLS "https://your-endpoint,https://rpc.mainnet.chain.robinhood.com"` then deploy |
-| WalletConnect project id | Phone wallets by QR. Free at cloud.reown.com. | `bash deploy/set-env.sh NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID <id>` then deploy (it is built into the page) |
-| `STAKEABLE_HOOKS` | v4 pools with a hook are not offered until their hook is looked at and allowed. Empty is the safe default. | `bash deploy/set-env.sh STAKEABLE_HOOKS 0xhook1,0xhook2` |
-| `LAUNCHPAD_HOOKS` | Names launchpad pools (Pons, Bags, Bottom.fun) and keeps them unstakeable before graduation. | `bash deploy/set-env.sh LAUNCHPAD_HOOKS "Pons:0x…,Bags:0x…"` |
+| A paid RPC endpoint | Only makes the backfill catch up faster. | `bash deploy/set-env.sh RPC_URLS "https://your-endpoint,https://rpc.mainnet.chain.robinhood.com"` then deploy |
+| WalletConnect project id | Phone wallets by QR. Free at cloud.reown.com. Browser wallets work without it. | `bash deploy/set-env.sh NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID <id>` then deploy |
+| `STAKEABLE_HOOKS` | v4 pools with a hook stay unoffered until their hook is looked at and allowed. Empty is the safe default; plain pools and every v3 pool work without it. | `bash deploy/set-env.sh STAKEABLE_HOOKS 0xhook1,0xhook2` |
+| `LAUNCHPAD_HOOKS` | Names launchpad pools and keeps them unstakeable before graduation. | `bash deploy/set-env.sh LAUNCHPAD_HOOKS "Pons:0x…,Bags:0x…"` |
 
 ## 3. Verify the addresses once
 

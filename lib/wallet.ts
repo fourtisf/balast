@@ -15,7 +15,7 @@
  */
 
 import { getAddress } from 'viem';
-import { CHAIN, EXPLORER_URL, PUBLIC_RPC_URL } from './chain';
+import { CHAIN, EXPLORER_URL, PUBLIC_RPC_URL, PUBLIC_RPC_URLS } from './chain';
 
 export interface WalletInfo {
   uuid: string;
@@ -44,7 +44,7 @@ export const CHAIN_PARAMS = {
   chainId: CHAIN_ID_HEX,
   chainName: CHAIN.name,
   nativeCurrency: CHAIN.nativeCurrency,
-  rpcUrls: [PUBLIC_RPC_URL],
+  rpcUrls: [...PUBLIC_RPC_URLS],
   blockExplorerUrls: [EXPLORER_URL],
 } as const;
 

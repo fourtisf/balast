@@ -98,11 +98,22 @@ export const EXPLORER_URL = 'https://robinhoodchain.blockscout.com';
 export const GECKOTERMINAL_NETWORK = 'robinhood';
 
 /**
- * The chain's public RPC, for a wallet that does not know the chain yet.
- * The first of the registry's endpoints (server/chain/endpoints.ts carries
- * the full list, with failover, for the indexer).
+ * The chain's free public endpoints, from the chain registry
+ * (ethereum-lists/chains, eip155-4663) — the same list the server fails over
+ * across (server/chain/endpoints.ts). The page reads through all of them in
+ * turn (`publicTransport` in lib/v4/client.ts), so one endpoint rate-limiting
+ * a browser does not make a pool unreadable; the wallet is told about all of
+ * them when it adds the chain.
  */
-export const PUBLIC_RPC_URL = 'https://rpc.mainnet.chain.robinhood.com';
+export const PUBLIC_RPC_URLS = [
+  'https://rpc.mainnet.chain.robinhood.com',
+  'https://robinhood-rpc.publicnode.com',
+  'https://rpc.arrowrpc.com',
+  'https://rpc.ordofi.network',
+] as const;
+
+/** The first of them: the chain's own, for the places that take exactly one. */
+export const PUBLIC_RPC_URL = PUBLIC_RPC_URLS[0];
 
 /**
  * How Uniswap v4 spells native ether: the zero address.
