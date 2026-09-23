@@ -228,7 +228,7 @@ Reply to it, as 2/:
 
 **Image description** (X's "Add description")
 
-> A Balast stake card for an example VIRTUAL / ETH pool on Uniswap v4: full range from 0 to infinity, a deposit of 0.10 ETH and 330 VIRTUAL, Balast fee none, custody in your wallet as an NFT, no lockup, and a "Stake full range" button.
+> A Balast stake card for an example VIRTUAL / ETH pool on Uniswap v4: full range from 0 to infinity, a deposit of 0.10 ETH and 330 VIRTUAL, Balast fee none, custody in your wallet, no lockup, and a "Stake full range" button.
 
 ## 8–11 · Shapes · `08-shape-spot.png` `09-shape-curve.png` `10-shape-bid-ask.png` `11-shapes.png`
 
@@ -282,7 +282,7 @@ where a dark image stands out. Use one, not both on the same day.
 
 **Image description**
 
-> A Balast stake card in perspective for an example VIRTUAL / ETH pool on Uniswap v4: full range from 0 to infinity, a deposit of 0.10 ETH and 330 VIRTUAL, Balast fee none, custody in your wallet as an NFT, no lockup. Behind it, a Uniswap v4 position NFT card; beside it, a note that the position was minted to your wallet.
+> A Balast stake card in perspective for an example VIRTUAL / ETH pool on Uniswap v4: full range from 0 to infinity, a deposit of 0.10 ETH and 330 VIRTUAL, Balast fee none, custody in your wallet, no lockup. Behind it, the Uniswap position NFT the stake creates, as a receipt; beside it, a note that the position was minted to your wallet.
 
 ## Order
 
