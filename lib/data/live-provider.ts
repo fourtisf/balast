@@ -1,5 +1,5 @@
 import { restoreSnapshot, storeSnapshot } from './snapshot-cache';
-import { mintedV4Ids } from '../tx-history';
+import { mintedV4Ids, v3TxHints } from '../tx-history';
 import type { DataProvider, MarketListener, MarketSnapshot, Portfolio, Unsubscribe, UserPosition } from './types';
 
 /**
@@ -149,7 +149,11 @@ export class LiveProvider implements DataProvider {
       // The v4 positions this browser saw minted, so each is on the page the
       // moment its receipt is in; the API shows only what the chain confirms.
       const hints = mintedV4Ids(wallet);
-      const query = hints.length > 0 ? `?v4=${hints.join(',')}` : '';
+      // And the transactions it sent for v3 positions, so a position minted
+      // here is measured even when the explorer does not answer.
+      const v3tx = v3TxHints(wallet);
+      const params = [hints.length > 0 ? `v4=${hints.join(',')}` : '', v3tx.length > 0 ? `v3tx=${v3tx.join(',')}` : ''].filter(Boolean);
+      const query = params.length > 0 ? `?${params.join('&')}` : '';
       const response = await fetch(`${API_BASE}/api/portfolio/${wallet}${query}`, { cache: 'no-store' });
       if (!response.ok) return;
       const body = (await response.json()) as {
@@ -162,23 +166,41 @@ export class LiveProvider implements DataProvider {
       };
       // The wallet may have changed while this was in flight.
       if (this.wallet !== wallet) return;
+      // v3 unreadable just now, and the API had no earlier read to fall back
+      // on (it restarted): keep the v3 positions this page already showed
+      // rather than drop them, marked as not re-checked. Withdraw and Collect
+      // still ask the chain before anything is signed.
+      let positions = body.positions;
+      let chain = body.chain;
+      let netValueUsd = body.netValueUsd;
+      let priceImpactUsd = body.priceImpactUsd;
+      const previous = this.portfolio?.wallet === wallet ? this.portfolio : null;
+      if (chain?.v3Unavailable && previous) {
+        const keptV3 = previous.positions.filter((p) => p.live?.protocol === 'v3');
+        if (keptV3.length > 0) {
+          positions = [...positions.filter((p) => p.live?.protocol !== 'v3'), ...keptV3];
+          chain = { ...chain, v3Unavailable: false, v3Unchecked: true };
+          netValueUsd = positions.reduce((a, p) => a + (p.valueUnknown ? 0 : p.valueUsd), 0);
+          priceImpactUsd = positions.reduce((a, p) => a + (p.priceImpactUsd ?? 0), 0);
+        }
+      }
       this.portfolio = {
-        netValueUsd: body.netValueUsd,
+        netValueUsd,
         netChangeUsd: 0,
         netChangePct: 0,
         // Not tracked: a position's collected history is not indexed, and
         // the uncollected figure is read from the chain by the page (§7).
         feesEarnedWeth: null,
         feesEarnedUsd: null,
-        priceImpactUsd: body.priceImpactUsd,
+        priceImpactUsd,
         fees7dUsd: null,
         dailyFeesWeth: [],
         stakes: [],
-        positions: body.positions,
+        positions,
         claimableWeth: 0,
         wallet,
         pricedToday: body.pricedToday,
-        chain: body.chain,
+        chain,
       };
       this.reissue();
     } catch {

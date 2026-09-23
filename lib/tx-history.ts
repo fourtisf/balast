@@ -139,3 +139,23 @@ export function mintedV4Ids(wallet: string, store?: TxStorage): string[] {
     .filter((id) => /^\d{1,30}$/.test(id));
   return [...new Set(ids)].slice(0, 50);
 }
+
+/**
+ * `tokenId:txHash` pairs for the transactions this browser sent for a v3
+ * position — its mint, and any collect or withdrawal — newest first. The
+ * portfolio reads a v3 position's principal from these when the explorer
+ * does not answer; the server keeps only the v3 manager's logs for that id
+ * and checks the sum against the chain, so a pair that is not v3 adds nothing.
+ */
+export function v3TxHints(wallet: string, store?: TxStorage): string[] {
+  const pairs: string[] = [];
+  for (const r of listTx(wallet, store)) {
+    if (r.status !== 'success') continue;
+    if (r.kind === 'mint' && r.minted?.protocol === 'v3') {
+      for (const id of r.minted.tokenIds) pairs.push(`${id}:${r.hash}`);
+    } else if ((r.kind === 'collect' || r.kind === 'withdraw') && r.tokenId) {
+      pairs.push(`${r.tokenId}:${r.hash}`);
+    }
+  }
+  return [...new Set(pairs.filter((p) => /^\d{1,30}:0x[0-9a-fA-F]{64}$/.test(p)))].slice(0, 40);
+}

@@ -372,6 +372,8 @@ export interface Portfolio {
     partial?: boolean;
     /** v3 positions could not be read just now. */
     v3Unavailable?: boolean;
+    /** v3 positions could not be read just now; the last read that answered is listed. */
+    v3Unchecked?: boolean;
     /** Pool prices could not be read live; in-range status is the indexer's. */
     pricesStale?: boolean;
   };

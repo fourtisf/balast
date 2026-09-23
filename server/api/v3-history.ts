@@ -53,9 +53,18 @@ export interface V3History {
   liquidity: bigint;
   /** When the first IncreaseLiquidity landed. */
   mintedAt: Date | null;
+  /**
+   * False when the explorer did not answer and the history was summed from
+   * the browser's own transaction hints alone: the liquidity check still
+   * proves the principal, but a collect sent from somewhere else would be
+   * missing from the fees collected, so that figure is not claimed.
+   */
+  collectedKnown: boolean;
 }
 
 const TIMEOUT_MS = 6_000;
+/** A position's own transactions: a mint, some collects, a withdrawal. More than this is not a position a page lists. */
+const MAX_TXS = 60;
 
 function tokenTopic(tokenId: bigint): Hex {
   return `0x${tokenId.toString(16).padStart(64, '0')}`;
@@ -73,33 +82,40 @@ export async function explorerHistoryTxs(
   const base = options.base.replace(/\/+$/, '');
   const manager = (options.manager ?? CONTRACTS.v3PositionManager).toLowerCase();
   const hashes = new Set<Hex>();
-  for (const topic0 of Object.values(TOPICS)) {
-    const query = new URLSearchParams({
-      module: 'logs',
-      action: 'getLogs',
-      fromBlock: '0',
-      toBlock: 'latest',
-      address: manager,
-      topic0,
-      topic1: tokenTopic(tokenId),
-      topic0_1_opr: 'and',
-    });
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? TIMEOUT_MS);
-    try {
-      const response = await fetchFn(`${base}/api?${query}`, {
-        headers: { accept: 'application/json', 'user-agent': USER_AGENT },
-        signal: controller.signal,
+  // The three questions are independent, so they are asked together; any
+  // one failing fails the answer, since a missing event cannot be told from
+  // an event that never happened.
+  const answers = await Promise.all(
+    Object.values(TOPICS).map(async (topic0) => {
+      const query = new URLSearchParams({
+        module: 'logs',
+        action: 'getLogs',
+        fromBlock: '0',
+        toBlock: 'latest',
+        address: manager,
+        topic0,
+        topic1: tokenTopic(tokenId),
+        topic0_1_opr: 'and',
       });
-      if (!response.ok) throw new Error(`explorer answered ${response.status}`);
-      const body = (await response.json()) as { result?: unknown };
-      // "No logs found" arrives as status 0 with an empty result, not an error.
-      for (const row of Array.isArray(body.result) ? body.result : []) {
-        const hash = (row as { transactionHash?: unknown }).transactionHash;
-        if (typeof hash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(hash)) hashes.add(hash.toLowerCase() as Hex);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? TIMEOUT_MS);
+      try {
+        const response = await fetchFn(`${base}/api?${query}`, {
+          headers: { accept: 'application/json', 'user-agent': USER_AGENT },
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`explorer answered ${response.status}`);
+        return (await response.json()) as { result?: unknown };
+      } finally {
+        clearTimeout(timer);
       }
-    } finally {
-      clearTimeout(timer);
+    }),
+  );
+  for (const body of answers) {
+    // "No logs found" arrives as status 0 with an empty result, not an error.
+    for (const row of Array.isArray(body.result) ? body.result : []) {
+      const hash = (row as { transactionHash?: unknown }).transactionHash;
+      if (typeof hash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(hash)) hashes.add(hash.toLowerCase() as Hex);
     }
   }
   return [...hashes];
@@ -116,13 +132,15 @@ export async function historyFromReceipts(
   txs: Hex[],
   liquidityNow: bigint,
   manager: string = CONTRACTS.v3PositionManager,
+  collectedKnown = true,
 ): Promise<V3History | null> {
   const topic1 = tokenTopic(tokenId).toLowerCase();
   const wanted = manager.toLowerCase();
   const h = { inc0: 0n, inc1: 0n, dec0: 0n, dec1: 0n, col0: 0n, col1: 0n, liq: 0n };
   let firstIncrease: { block: bigint; index: number } | null = null;
-  for (const hash of txs) {
-    const receipt = await client.getTransactionReceipt({ hash });
+  const unique = [...new Set(txs.map((t) => t.toLowerCase() as Hex))].slice(0, MAX_TXS);
+  const receipts = await Promise.all(unique.map((hash) => client.getTransactionReceipt({ hash })));
+  for (const receipt of receipts) {
     if (receipt.status !== 'success') continue;
     for (const log of receipt.logs) {
       if (log.address.toLowerCase() !== wanted || (log.topics[1] ?? '').toLowerCase() !== topic1) continue;
@@ -158,44 +176,203 @@ export async function historyFromReceipts(
     collectedFees1: pos(h.col1 - h.dec1),
     liquidity: h.liq,
     mintedAt: block ? new Date(Number(block.timestamp) * 1000) : null,
+    collectedKnown,
   };
 }
 
-/** Answers kept per token id: a history changes only when its owner acts. */
-const CACHE_MS = 60_000;
+/** A verified history is re-read after this; until then it is served as is. */
+const FRESH_MS = 60_000;
+/** Histories kept, across restarts too. */
+const KEEP = 500;
 
+export interface HistoryStore {
+  load(): Promise<Record<string, SerializedHistory>>;
+  save(all: Record<string, SerializedHistory>): Promise<void>;
+}
+
+export interface SerializedHistory {
+  d0: string;
+  d1: string;
+  c0: string;
+  c1: string;
+  liquidity: string;
+  mintedAt: string | null;
+  collectedKnown: boolean;
+  at: number;
+  txs?: string[];
+}
+
+function serialize(h: V3History, at: number, txs: string[]): SerializedHistory {
+  return {
+    d0: h.deposited0.toString(),
+    d1: h.deposited1.toString(),
+    c0: h.collectedFees0.toString(),
+    c1: h.collectedFees1.toString(),
+    liquidity: h.liquidity.toString(),
+    mintedAt: h.mintedAt ? h.mintedAt.toISOString() : null,
+    collectedKnown: h.collectedKnown,
+    at,
+    txs,
+  };
+}
+
+function deserialize(s: SerializedHistory): Kept | null {
+  try {
+    return {
+      value: {
+        deposited0: BigInt(s.d0),
+        deposited1: BigInt(s.d1),
+        collectedFees0: BigInt(s.c0),
+        collectedFees1: BigInt(s.c1),
+        liquidity: BigInt(s.liquidity),
+        mintedAt: s.mintedAt ? new Date(s.mintedAt) : null,
+        collectedKnown: s.collectedKnown !== false,
+      },
+      at: Number(s.at) || 0,
+      txs: new Set((s.txs ?? []).map((t) => t.toLowerCase())),
+    };
+  } catch {
+    return null;
+  }
+}
+
+interface Kept {
+  value: V3History;
+  at: number;
+  /** The transactions it was summed from. */
+  txs: Set<string>;
+}
+
+export interface HistoryRequest {
+  tokenId: bigint;
+  liquidity: bigint;
+  /** Transactions the browser sent for this token id (lib/tx-history.ts): candidates, checked like the explorer's. */
+  hints?: Hex[];
+}
+
+/**
+ * Reads histories and keeps the last one that checked out.
+ *
+ * The first version asked the explorer on every portfolio request and showed
+ * a dash whenever the answer was slow or refused — so the same position read
+ * `$0` measured on one load and `—` on the next. Now a verified history is
+ * kept (in memory and, through `store`, across restarts) and served while it
+ * still describes the position: same liquidity, since a history is only
+ * valid for the liquidity it adds up to. It is re-read in the background
+ * after a minute, and a failed re-read keeps the last good one. The browser's
+ * own transaction hashes are a second way to find the logs, so a position
+ * minted here is measured even when the explorer does not answer.
+ */
 export class V3HistoryReader {
-  private readonly cache = new Map<string, { at: number; liquidity: bigint; value: V3History | null }>();
+  private readonly good = new Map<string, Kept>();
+  private readonly inflight = new Map<string, Promise<V3History | null>>();
+  private loaded: Promise<void> | null = null;
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly options: {
-      base: string;
+      base: string | null;
       fetch?: ExplorerFetch;
       /** The chain, for the receipts. */
       withClient: <T>(fn: (client: PublicClient) => Promise<T>) => Promise<T>;
+      store?: HistoryStore;
+      now?: () => number;
     },
   ) {}
 
+  private now(): number {
+    return this.options.now ? this.options.now() : Date.now();
+  }
+
+  private load(): Promise<void> {
+    if (!this.loaded) {
+      this.loaded = (async () => {
+        if (!this.options.store) return;
+        try {
+          const all = await this.options.store.load();
+          for (const [key, raw] of Object.entries(all)) {
+            const parsed = deserialize(raw);
+            if (parsed && !this.good.has(key)) this.good.set(key, parsed);
+          }
+        } catch {
+          /* nothing kept is the same as a fresh start */
+        }
+      })();
+    }
+    return this.loaded;
+  }
+
+  private persist(): void {
+    const store = this.options.store;
+    if (!store || this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      const entries = [...this.good.entries()].sort((a, b) => b[1].at - a[1].at).slice(0, KEEP);
+      const all: Record<string, SerializedHistory> = {};
+      for (const [key, { value, at, txs }] of entries) all[key] = serialize(value, at, [...txs]);
+      void store.save(all).catch(() => undefined);
+    }, 1_000);
+    this.saveTimer.unref?.();
+  }
+
+  /** One fresh read, shared by concurrent callers. Null when it could not be read or did not check out. */
+  private fresh(req: HistoryRequest): Promise<V3History | null> {
+    const key = req.tokenId.toString();
+    const running = this.inflight.get(key);
+    if (running) return running;
+    const work = (async () => {
+      let located: Hex[] = [];
+      let explorerAnswered = false;
+      if (this.options.base) {
+        try {
+          located = await explorerHistoryTxs(req.tokenId, { base: this.options.base, fetch: this.options.fetch });
+          explorerAnswered = true;
+        } catch {
+          /* the browser's hints may still find it */
+        }
+      }
+      const txs = [...located, ...(req.hints ?? [])];
+      if (txs.length === 0) return null;
+      const value = await this.options.withClient((c) =>
+        historyFromReceipts(c, req.tokenId, txs, req.liquidity, CONTRACTS.v3PositionManager, explorerAnswered),
+      );
+      if (value) {
+        this.good.set(key, { value, at: this.now(), txs: new Set(txs.map((t) => t.toLowerCase())) });
+        this.persist();
+      }
+      return value;
+    })()
+      .catch(() => null)
+      .finally(() => this.inflight.delete(key));
+    this.inflight.set(key, work);
+    return work;
+  }
+
   /** Histories for the positions given, by token id. A position whose history cannot be read or checked is absent. */
-  async read(positions: { tokenId: bigint; liquidity: bigint }[]): Promise<Map<string, V3History>> {
+  async read(positions: HistoryRequest[]): Promise<Map<string, V3History>> {
+    await this.load();
     const out = new Map<string, V3History>();
-    const now = Date.now();
+    const now = this.now();
     await Promise.all(
-      positions.slice(0, 30).map(async ({ tokenId, liquidity }) => {
-        const key = tokenId.toString();
-        const hit = this.cache.get(key);
-        if (hit && hit.liquidity === liquidity && now - hit.at < CACHE_MS) {
-          if (hit.value) out.set(key, hit.value);
+      positions.slice(0, 30).map(async (req) => {
+        const key = req.tokenId.toString();
+        const kept = this.good.get(key);
+        // A hint the kept history was not summed from is a transaction sent
+        // since — a collect, most likely — so it is read again now rather
+        // than served without it.
+        const newHint = (req.hints ?? []).some((h) => kept && !kept.txs.has(h.toLowerCase()));
+        const usable = kept && kept.value.liquidity === req.liquidity && !newHint ? kept : null;
+        if (usable) {
+          out.set(key, usable.value);
+          // Served now; re-read behind the answer so a collect sent since shows up.
+          if (now - usable.at >= FRESH_MS) void this.fresh(req);
           return;
         }
-        try {
-          const txs = await explorerHistoryTxs(tokenId, { base: this.options.base, fetch: this.options.fetch });
-          const value = await this.options.withClient((c) => historyFromReceipts(c, tokenId, txs, liquidity));
-          this.cache.set(key, { at: now, liquidity, value });
-          if (value) out.set(key, value);
-        } catch {
-          /* unknown, not zero: the page shows a dash */
-        }
+        const value = await this.fresh(req);
+        if (value) out.set(key, value);
+        // A fresh read that failed still leaves the last good one, if it
+        // describes this liquidity.
+        else if (kept && kept.value.liquidity === req.liquidity) out.set(key, kept.value);
       }),
     );
     return out;

@@ -73,17 +73,26 @@ export function recordEarned(wallet: string, readings: EarnedReading[], now: num
  * figure is each position's growth since its previous recorded day, per side,
  * never below zero — a collect is inside the earned figure already, so a fall
  * can only be a withdrawal, which earns nothing.
+ *
+ * A position's first recorded day counts from zero: the earned figure is
+ * everything since the mint, so on the mint day that is exactly the day's
+ * fees. For a position minted before this browser first saw it — or whose
+ * mint day is not known — the first day also carries everything earned
+ * before it, and `firstIncludesEarlier` says so, so the caption can.
+ * (It used to count from the second recorded day, and a position minted
+ * today read "$0 over 1 day" with fees plainly on the row beside it.)
  */
 export function dailyEarnedUsd(
   wallet: string,
   readings: EarnedReading[],
   options: { days?: number; now?: number; store?: Store } = {},
-): { values: number[]; since: string | null } {
+): { values: number[]; since: string | null; firstIncludesEarlier: boolean } {
   const store = options.store ?? load();
   const now = options.now ?? Date.now();
   const span = options.days ?? 56;
   const perDay = new Map<string, number>();
   let first: string | null = null;
+  let firstIncludesEarlier = false;
   for (const r of readings) {
     const days = store[`${wallet.toLowerCase()}|${r.ref}`];
     if (!days) continue;
@@ -91,21 +100,20 @@ export function dailyEarnedUsd(
     if (sorted.length === 0) continue;
     if (!first || sorted[0] < first) first = sorted[0];
     const minted = r.mintedAt ? dayOf(Date.parse(r.mintedAt)) : null;
-    let prev: [bigint, bigint] | null = minted && minted === sorted[0] ? [0n, 0n] : null;
+    if (!minted || minted < sorted[0]) firstIncludesEarlier = true;
+    let prev: [bigint, bigint] = [0n, 0n];
     for (const d of sorted) {
       const cur: [bigint, bigint] = [BigInt(days[d][0]), BigInt(days[d][1])];
-      if (prev) {
-        const g0 = cur[0] > prev[0] ? cur[0] - prev[0] : 0n;
-        const g1 = cur[1] > prev[1] ? cur[1] - prev[1] : 0n;
-        perDay.set(d, (perDay.get(d) ?? 0) + Number(g0) * r.usdPerUnit0 + Number(g1) * r.usdPerUnit1);
-      }
+      const g0 = cur[0] > prev[0] ? cur[0] - prev[0] : 0n;
+      const g1 = cur[1] > prev[1] ? cur[1] - prev[1] : 0n;
+      perDay.set(d, (perDay.get(d) ?? 0) + Number(g0) * r.usdPerUnit0 + Number(g1) * r.usdPerUnit1);
       prev = cur;
     }
   }
-  if (!first) return { values: [], since: null };
+  if (!first) return { values: [], since: null, firstIncludesEarlier: false };
   const values: number[] = [];
   const today = dayOf(now);
   const start = Math.max(Date.parse(first), Date.parse(today) - (span - 1) * 86_400_000);
   for (let t = start; dayOf(t) <= today; t += 86_400_000) values.push(perDay.get(dayOf(t)) ?? 0);
-  return { values, since: dayOf(start) };
+  return { values, since: dayOf(start), firstIncludesEarlier: firstIncludesEarlier && dayOf(start) === first };
 }

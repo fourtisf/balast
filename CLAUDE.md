@@ -5268,3 +5268,45 @@ one. Each position's row carries its own figure under its fees, or says its
 principal is not known. A positive figure carries a plus and no colour: it is
 a cent of the pool's own rounding, not a gain from holding liquidity. The
 simulator keeps its whole-dollar display.
+
+### A dash on one load, `$0` on the next, and a position that vanished after Collect
+
+Two screenshots a minute apart. The first: *Price impact on holdings —, 0 of
+1 positions measured*, over a row saying *principal not known* — the same
+position that had read as measured an hour earlier — and *Fees earned by
+day: $0 over 1 day* beside fees plainly on the row. The second, taken after
+pressing **Collect fees**: *no positions yet*, and *Uniswap v3 positions
+could not be read from the chain just now*. ALFA: *price impact mala kosong*
+and *pilih collect fee mengapa jadi ilang*.
+
+Everything behind both was a read on a free endpoint that sometimes does not
+answer, and a page that treated "did not answer" as "does not exist".
+
+- **A v3 history that checked out is kept.** `V3HistoryReader` asked the
+  explorer on every portfolio request and showed a dash whenever the answer
+  was slow. Now a verified history is kept in memory and in `indexer_state`
+  (`v3_position_histories`, so a deploy does not lose it), served while it
+  describes the same liquidity, and re-read in the background after a
+  minute; a failed re-read keeps the last good one. A new transaction for the
+  position — a collect sent since — forces a fresh read.
+- **The browser's own transactions find the history.** `?v3tx=tokenId:hash`
+  sends the mint, collect and withdraw hashes this browser recorded
+  (`v3TxHints`), so a position minted here is measured even when the
+  explorer does not answer. They are candidates like the explorer's: only
+  the v3 manager's logs for that id are summed, and the sum must equal the
+  chain's liquidity. Summed from hints alone, the principal is proven but
+  fees already collected elsewhere could be missing, so that figure is not
+  claimed (`collectedKnown`).
+- **A v3 read that does not answer lists the last one that did.** The API
+  keeps each wallet's last v3 read for thirty minutes and serves it on a
+  failure, marked `v3Unchecked`; the browser does the same across an API
+  restart. The page says the rows are as of the last read. Collect and
+  Withdraw still dry-run on the chain first, so a stale row cannot send
+  anything the chain would refuse.
+- **The first day of the grid counts.** Earned is everything since the mint,
+  so a position's first recorded day counts from zero; a position the
+  browser first saw after its mint day carries its earlier fees on that day,
+  and the caption says so.
+- **Small figures keep their digits.** `usdFine` prints a figure under a
+  cent to two significant digits (`$0.0041`), and the price impact's
+  percentage the same (`−0.0034%`), rather than `<$0.01`.

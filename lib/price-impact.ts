@@ -11,7 +11,7 @@
  */
 
 import type { UserPosition } from './data/types';
-import { usdFine } from './format';
+import { tiny, usdFine } from './format';
 
 export interface PriceImpact {
   /** Summed over the positions whose principal is known. */
@@ -39,7 +39,7 @@ export function priceImpactOf(positions: UserPosition[]): PriceImpact {
 }
 
 /**
- * The figure with its sign: "−$0.03", "−<$0.01", "$0". A positive figure is
+ * The figure with its sign: "−$0.03", "−$0.0041", "$0". A positive figure is
  * a cent of rounding in the pool's own arithmetic, never a gain from holding
  * liquidity, and carries a plus so it is not read as a loss.
  */
@@ -48,12 +48,12 @@ export function impactText(usd: number): string {
   return usd > 0 && text !== '$0' ? `+${text}` : text;
 }
 
-/** "−0.11%", or "<0.01%" for a figure too small to print, or null. */
+/** "−0.11%", "−0.0034%" for a small one, or null. */
 export function impactPctText(pct: number | null): string | null {
   if (pct === null || !Number.isFinite(pct)) return null;
   if (pct === 0) return '0%';
   const a = Math.abs(pct);
   const sign = pct < 0 ? '−' : '+';
-  if (a < 0.01) return `${sign}<0.01%`;
+  if (a < 0.01) return `${sign}${tiny(a)}%`;
   return `${sign}${a < 1 ? a.toFixed(2) : a.toFixed(1)}%`;
 }

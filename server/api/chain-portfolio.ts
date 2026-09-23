@@ -13,7 +13,7 @@ import { poolId } from '../../lib/v4/pool';
 import { readNextTokenId, readOwners, readV4Positions } from '../../lib/v4/positions';
 import { rpc } from '../chain/client';
 import type { ChainPortfolioReader } from './portfolio';
-import { V3HistoryReader } from './v3-history';
+import { V3HistoryReader, type HistoryStore } from './v3-history';
 import type { ExplorerFetch } from './explorer-positions';
 import type { ScannerSource } from './v4-scanner';
 
@@ -49,16 +49,19 @@ const EXTRAS_MS = 5_000;
 /** A v3 position's history: the explorer locates it, receipts on chain count it. */
 const HISTORY_MS = 10_000;
 
-export function chainPortfolioReader(options: { explorerBase?: string | null; explorerFetch?: ExplorerFetch } = {}): ChainPortfolioReader {
-  const history = options.explorerBase
-    ? new V3HistoryReader({
-        base: options.explorerBase,
-        fetch: options.explorerFetch,
-        withClient: (fn) => rpc((c) => fn(c as never), 'v3 position history'),
-      })
-    : null;
+export function chainPortfolioReader(
+  options: { explorerBase?: string | null; explorerFetch?: ExplorerFetch; historyStore?: HistoryStore } = {},
+): ChainPortfolioReader {
+  // Asked even without the explorer: the browser's own transaction hashes
+  // find a position minted here, and a history found once is kept.
+  const history = new V3HistoryReader({
+    base: options.explorerBase ?? null,
+    fetch: options.explorerFetch,
+    withClient: (fn) => rpc((c) => fn(c as never), 'v3 position history'),
+    store: options.historyStore,
+  });
   return {
-    ...(history ? { v3History: (positions) => bounded(history.read(positions), HISTORY_MS, 'v3 position history') } : {}),
+    v3History: (positions) => bounded(history.read(positions), HISTORY_MS, 'v3 position history'),
     v3Positions: (owner) => bounded(rpc((c) => readV3Positions(c, owner), 'v3 positions'), POSITIONS_MS, 'v3 positions'),
     v4Positions: (owner, candidates) =>
       bounded(rpc((c) => readV4Positions(c, owner, candidates), 'v4 positions'), POSITIONS_MS, 'v4 positions'),

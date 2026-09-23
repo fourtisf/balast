@@ -33,9 +33,22 @@ export function usdFine(n: number): string {
   if (!Number.isFinite(n) || n === 0) return '$0';
   const a = Math.abs(n);
   const sign = n < 0 ? '−' : '';
-  if (a < 0.01) return `${sign}<$0.01`;
+  if (a < 1e-6) return `${sign}<$0.000001`;
+  if (a < 0.01) return `${sign}$${tiny(a)}`;
   if (a < 1000) return `${sign}${usdExact(a, 2)}`;
   return `${sign}${usdExact(a)}`;
+}
+
+/**
+ * A figure under a cent to two significant digits — `0.0041`, `0.000037` —
+ * rather than `<0.01`, which reads as "not measured" beside a caption saying
+ * it was. Below a millionth it is `<0.000001`: past that the digits are the
+ * float's, not the chain's.
+ */
+export function tiny(a: number): string {
+  if (a < 1e-6) return '<0.000001';
+  const digits = Math.min(8, 1 - Math.floor(Math.log10(a)));
+  return Number(a.toPrecision(2)).toFixed(digits).replace(/0+$/, '').replace(/\.$/, '');
 }
 
 /** A signed percentage, e.g. +11.2% / −4.0%. Unknown is an em dash, never +0.0%. */

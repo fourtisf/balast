@@ -10,7 +10,7 @@
  * answer degrades to the indexer's record, said out loud, never to silence.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Address } from 'viem';
 import { prisma } from '../db';
 import { isReachable, resetDatabase } from '../test/db';
@@ -29,7 +29,7 @@ import {
   withLogs,
 } from '../test/fixture';
 import { Poller } from '../indexer/poller';
-import { buildPortfolio, type ChainPortfolioReader } from './portfolio';
+import { buildPortfolio, forgetV3Reads, type ChainPortfolioReader } from './portfolio';
 import type { V3OnchainPosition } from '../../lib/v3/positions';
 import type { V4OnchainPosition } from '../../lib/v4/positions';
 import { getSqrtRatioAtTick } from '../chain/tick-math';
@@ -87,6 +87,8 @@ beforeAll(async () => {
 afterAll(async () => {
   await prisma.$disconnect();
 });
+
+beforeEach(() => forgetV3Reads());
 
 describe('v4 positions, confirmed on chain', () => {
   beforeAll(async () => {
@@ -381,7 +383,7 @@ describe('v3 positions, enumerated on chain', () => {
       v3History: async (positions) => {
         asked.push(positions.map((p) => p.liquidity));
         return new Map([
-          ['5', { deposited0: 10n ** 18n, deposited1: 10n ** 17n, collectedFees0: 7n, collectedFees1: 9n, liquidity: v3held.liquidity, mintedAt: new Date('2026-09-20T00:00:00Z') }],
+          ['5', { deposited0: 10n ** 18n, deposited1: 10n ** 17n, collectedFees0: 7n, collectedFees1: 9n, liquidity: v3held.liquidity, mintedAt: new Date('2026-09-20T00:00:00Z'), collectedKnown: true }],
         ]);
       },
     });
@@ -393,6 +395,40 @@ describe('v3 positions, enumerated on chain', () => {
     expect(p.live!.collectedFees0).toBe('7');
     expect(p.live!.collectedFees1).toBe('9');
     expect(p.live!.mintedAt).toBe('2026-09-20T00:00:00.000Z');
+  });
+
+  it('keeps listing the last v3 read when the next one does not answer, marked unchecked', async () => {
+    const first = (await buildPortfolio(BOB, USDG, { chain: fakeChain({ v3Positions: async () => [v3held] }) }))!;
+    expect(first.positions).toHaveLength(1);
+    const next = (await buildPortfolio(BOB, USDG, {
+      chain: fakeChain({
+        v3Positions: async () => {
+          throw new Error('429');
+        },
+      }),
+    }))!;
+    // A rate limit right after a collect used to make the position vanish.
+    expect(next.positions.map((p) => p.tokenId)).toEqual(['5']);
+    expect(next.chain?.v3Unchecked).toBe(true);
+    expect(next.chain?.v3Unavailable).toBeFalsy();
+  });
+
+  it('passes the browser’s transaction hints for a v3 position to the history reader, and drops unknown collected fees', async () => {
+    const seen: unknown[] = [];
+    const chain = fakeChain({
+      v3Positions: async () => [v3held],
+      v3History: async (positions) => {
+        seen.push(positions.map((p) => p.hints));
+        return new Map([
+          ['5', { deposited0: 10n ** 18n, deposited1: 10n ** 17n, collectedFees0: 0n, collectedFees1: 0n, liquidity: v3held.liquidity, mintedAt: null, collectedKnown: false }],
+        ]);
+      },
+    });
+    const hint = `0x${'ab'.repeat(32)}` as `0x${string}`;
+    const [p] = (await buildPortfolio(BOB, USDG, { chain, v3TxHints: new Map([['5', [hint]]]) }))!.positions;
+    expect(seen).toEqual([[[hint]]]);
+    expect(p.live!.holdUsd).not.toBeNull();
+    expect(p.live!.collectedFees0 ?? null).toBeNull();
   });
 
   it('values a position at today’s price when the chain answered for the pool and ether is priced live', async () => {

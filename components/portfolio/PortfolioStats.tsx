@@ -97,8 +97,17 @@ export function PortfolioBody() {
   const earnedKnown = earned.filter((e) => e.earned !== null);
   const earnedUsd = earnedKnown.length > 0 ? earnedKnown.reduce((a, e) => a + e.earned!.usd, 0) : null;
   const earnedPartial = earnedKnown.some((e) => !e.earned!.complete);
+  // Why a figure is uncollected fees only: v4 emits no amounts for a collect;
+  // a v3 position's collects are known once its history has been read.
+  const partialNote = earnedKnown.some((e) => !e.earned!.complete && e.position.live?.protocol === 'v4')
+    ? ' · v4: uncollected only'
+    : ' · collected fees: history not read yet';
   const walletAddress = portfolio.wallet ?? wallet?.address ?? null;
-  const [daily, setDaily] = useState<{ values: number[]; since: string | null }>({ values: [], since: null });
+  const [daily, setDaily] = useState<{ values: number[]; since: string | null; firstIncludesEarlier: boolean }>({
+    values: [],
+    since: null,
+    firstIncludesEarlier: false,
+  });
   useEffect(() => {
     if (!live || !walletAddress) return;
     const readings = earnedKnown.map((e) => e.earned!.reading);
@@ -132,7 +141,7 @@ export function PortfolioBody() {
                 ? why
                 : uncollectedUsd !== null
                   ? readings.length === livePositions.length
-                    ? `${usdFine(uncollectedUsd)} uncollected · collect from the row${earnedPartial ? ' · v4: uncollected only' : ''}`
+                    ? `${usdFine(uncollectedUsd)} uncollected · collect from the row${earnedPartial ? partialNote : ''}`
                     : `${readings.length} of ${livePositions.length} positions read`
                   : fees.reading
                     ? 'reading from the chain…'
@@ -226,7 +235,13 @@ export function PortfolioBody() {
                         {since ? ` · since ${since.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}
                       </span>
                     </span>
-                    <span className="num" title={e && !e.complete ? 'Uncollected fees only: a Uniswap v4 collect emits no amounts, so fees already collected are not known here.' : 'Collected so far plus uncollected, read from the chain.'}>
+                    <span className="num" title={
+                        e && !e.complete
+                          ? lp.protocol === 'v4'
+                            ? 'Uncollected fees only: a Uniswap v4 collect emits no amounts, so fees already collected are not known here.'
+                            : 'Uncollected fees only, until this position’s history has been read from the chain; fees already collected are then added.'
+                          : 'Collected so far plus uncollected, read from the chain.'
+                      }>
                       {e ? usdFine(e.usd) : '—'}
                       {e && days ? <span className="muted"> · ≈ {usdFine(e.usd / days)}/day</span> : null}
                       {e && !e.complete ? <span className="muted"> · uncollected</span> : null}
@@ -239,6 +254,9 @@ export function PortfolioBody() {
               Earned so far is what each position has paid out plus what it holds uncollected, read from the chain. A past
               day&rsquo;s fees cannot be read back from a free endpoint, so the grid is measured by this browser from{' '}
               {daily.since ?? 'today'} and fills in day by day.
+              {daily.firstIncludesEarlier
+                ? ' The first day also carries everything earned before this browser first saw the position.'
+                : ''}
             </p>
           </div>
         ) : (

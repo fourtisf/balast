@@ -287,6 +287,12 @@ export function PositionList({
           The page asks again on its next refresh.
         </p>
       )}
+      {live && portfolio.chain?.v3Unchecked && (
+        <p className="hint" role="status" style={{ margin: '10px 0' }}>
+          The chain did not answer for Uniswap v3 just now, so these v3 positions are as of the last read that did.
+          Collect and Withdraw still ask the chain first. The page asks again on its next refresh.
+        </p>
+      )}
       {live && portfolio.chain?.pricesStale && (
         <p className="hint" style={{ margin: '10px 0' }}>
           Pool prices could not be read live, so in-range status and amounts are as of the indexer&rsquo;s last block.

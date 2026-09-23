@@ -8,7 +8,9 @@ const pos = (impact: number | undefined, hold: number | null) =>
 describe('price impact on holdings', () => {
   it('shows cents rather than rounding them to $0', () => {
     expect(impactText(-0.03)).toBe('−$0.03');
-    expect(impactText(-0.004)).toBe('−<$0.01');
+    expect(impactText(-0.004)).toBe('−$0.004');
+    expect(impactText(-0.00412)).toBe('−$0.0041');
+    expect(impactText(-1e-9)).toBe('−<$0.000001');
     expect(impactText(0)).toBe('$0');
     expect(impactText(0.02)).toBe('+$0.02');
     expect(impactText(-1234.5)).toBe('−$1,235');
@@ -28,7 +30,8 @@ describe('price impact on holdings', () => {
 
   it('prints the percentage small figures honestly', () => {
     expect(impactPctText(-0.1096)).toBe('−0.11%');
-    expect(impactPctText(-0.004)).toBe('−<0.01%');
+    expect(impactPctText(-0.004)).toBe('−0.004%');
+    expect(impactPctText(-0.000034)).toBe('−0.000034%');
     expect(impactPctText(-3.456)).toBe('−3.5%');
     expect(impactPctText(null)).toBeNull();
   });

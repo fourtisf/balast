@@ -18,6 +18,7 @@ import {
   signedPct,
   usd,
   usdExact,
+  usdFine,
 } from './format';
 
 describe('usd', () => {
@@ -214,5 +215,16 @@ describe('the quote side of a pair', () => {
     // A USDG pool is not "the wrapper" even though the address matches the
     // fixture's: the quote decides first.
     expect(quoteIsWrappedEther(usdg)).toBe(false);
+  });
+});
+
+describe('usdFine, for small figures', () => {
+  it('shows a figure under a cent to its significant digits, not as "<$0.01"', () => {
+    expect(usdFine(0.0041)).toBe('$0.0041');
+    expect(usdFine(0.000037)).toBe('$0.000037');
+    expect(usdFine(-0.0123)).toBe('−$0.01');
+    expect(usdFine(0.37)).toBe('$0.37');
+    expect(usdFine(0)).toBe('$0');
+    expect(usdFine(3e-8)).toBe('<$0.000001');
   });
 });

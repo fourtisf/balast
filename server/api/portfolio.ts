@@ -32,7 +32,7 @@
  * record of a v4 position carries, and only while that record is current.
  */
 
-import type { Address } from 'viem';
+import type { Address, Hex } from 'viem';
 import { CHAIN, NATIVE_ETH, isEther } from '../../lib/chain';
 import { feeTierBpsFromPips } from '../../lib/format';
 import type { LivePosition, Quote, UserPosition } from '../../lib/data/types';
@@ -66,6 +66,8 @@ export interface ChainStatus {
   partial?: boolean;
   /** v3 positions could not be read just now; v4 ones are listed as usual. */
   v3Unavailable?: boolean;
+  /** v3 positions could not be read just now, so the last read that answered is listed. */
+  v3Unchecked?: boolean;
   /** Pool prices could not be read live; in-range status and amounts are the indexer's, as of its last block. */
   pricesStale?: boolean;
 }
@@ -102,7 +104,7 @@ export interface ChainPortfolioReader {
    * when there is no explorer to locate it; a position missing from the
    * answer has no history the page can trust.
    */
-  v3History?(positions: { tokenId: bigint; liquidity: bigint }[]): Promise<Map<string, V3History>>;
+  v3History?(positions: { tokenId: bigint; liquidity: bigint; hints?: Hex[] }[]): Promise<Map<string, V3History>>;
 }
 
 export interface LivePoolRef {
@@ -340,6 +342,14 @@ async function describeUnindexed(
 /** v3 tick spacing by fee tier, for a pool the indexer has not met. The factory's four, fixed at deployment. */
 const V3_TICK_SPACING: Record<number, number> = { 100: 1, 500: 10, 3000: 60, 10000: 200 };
 
+/** Each wallet's last v3 read that answered, served when the next one does not. */
+const lastV3Reads = new Map<string, { at: number; positions: V3OnchainPosition[] }>();
+const V3_KEEP_MS = 30 * 60_000;
+/** For tests: each starts with no earlier read. */
+export function forgetV3Reads(): void {
+  lastV3Reads.clear();
+}
+
 export async function buildPortfolio(
   wallet: string,
   usdgAddress?: string | null,
@@ -347,6 +357,8 @@ export async function buildPortfolio(
     chain?: ChainPortfolioReader | null;
     /** v4 token ids to check beyond the indexer's: the scanner's and the browser's. Only what the chain confirms is shown. */
     v4Candidates?: bigint[];
+    /** Per v3 token id, transactions the browser sent for it: a second way to find its history. */
+    v3TxHints?: Map<string, Hex[]>;
     /** The v4 scanner could not reach back to the indexer's last id. */
     scanPartial?: boolean;
     /**
@@ -412,6 +424,7 @@ export async function buildPortfolio(
   // or a position found only by the scan or a hint would vanish from the page.
   let v4Read: V4Read | null = null;
   let v3Read: V3OnchainPosition[] | null = null;
+  let v3Unchecked = false;
   if (chain) {
     const candidates = [...indexed.map((r) => BigInt(r.token_id)), ...(options.v4Candidates ?? [])];
     const [v4, v3] = await Promise.allSettled([chain.v4Positions(owner, candidates), chain.v3Positions(owner)]);
@@ -419,8 +432,23 @@ export async function buildPortfolio(
     // its URL, and a paid endpoint's URL carries its key.
     if (v4.status === 'fulfilled') v4Read = v4.value;
     else console.warn(`portfolio: v4 positions unreadable on chain for ${owner}: ${(v4.reason as Error).message.split('\n')[0]}`);
-    if (v3.status === 'fulfilled') v3Read = v3.value;
-    else console.warn(`portfolio: v3 positions unreadable on chain for ${owner}: ${(v3.reason as Error).message.split('\n')[0]}`);
+    if (v3.status === 'fulfilled') {
+      v3Read = v3.value;
+      lastV3Reads.set(owner.toLowerCase(), { at: Date.now(), positions: v3.value });
+      if (lastV3Reads.size > 2_000) lastV3Reads.delete(lastV3Reads.keys().next().value!);
+    } else {
+      console.warn(`portfolio: v3 positions unreadable on chain for ${owner}: ${(v3.reason as Error).message.split('\n')[0]}`);
+      // A free endpoint that does not answer once — a rate limit right after a
+      // collect, say — used to make the wallet's v3 positions vanish from the
+      // page. The last read that answered is listed instead, marked as not
+      // re-checked; Collect and Withdraw still ask the chain before anything
+      // is signed, so a stale row cannot send what the chain would refuse.
+      const kept = lastV3Reads.get(owner.toLowerCase());
+      if (kept && Date.now() - kept.at < V3_KEEP_MS) {
+        v3Read = kept.positions;
+        v3Unchecked = true;
+      }
+    }
   }
   const readPositions = chain ? { v4: v4Read, v3: v3Read } : null;
 
@@ -562,13 +590,15 @@ export async function buildPortfolio(
     const v3Unknown = entries.filter((e) => e.pool.protocol === 'v3' && e.deposited === null);
     if (v3Unknown.length > 0 && chain!.v3History) {
       const histories = await chain!
-        .v3History(v3Unknown.map((e) => ({ tokenId: BigInt(e.tokenId), liquidity: e.liquidity })))
+        .v3History(
+          v3Unknown.map((e) => ({ tokenId: BigInt(e.tokenId), liquidity: e.liquidity, hints: options.v3TxHints?.get(e.tokenId) })),
+        )
         .catch(() => new Map<string, V3History>());
       for (const e of v3Unknown) {
         const h = histories.get(e.tokenId);
         if (!h) continue;
         e.deposited = { d0: h.deposited0, d1: h.deposited1 };
-        e.collected = { c0: h.collectedFees0, c1: h.collectedFees1 };
+        if (h.collectedKnown) e.collected = { c0: h.collectedFees0, c1: h.collectedFees1 };
         e.mintedAt = e.mintedAt ?? h.mintedAt;
       }
     }
@@ -581,6 +611,7 @@ export async function buildPortfolio(
       unreadable,
       ...(options.scanPartial ? { partial: true } : {}),
       ...(readPositions.v3 ? {} : { v3Unavailable: true }),
+      ...(v3Unchecked ? { v3Unchecked: true } : {}),
       ...(pricesStale ? { pricesStale: true } : {}),
     };
   }

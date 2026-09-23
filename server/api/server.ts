@@ -33,6 +33,7 @@ import { ExplorerPositions, type ExplorerFetch } from './explorer-positions';
 import { LiveReserves, type ReservesReader } from './live-reserves';
 import { recentHead } from './recent';
 import { buildSnapshot, nextRevision } from './snapshot';
+import { type HistoryStore, type SerializedHistory } from './v3-history';
 import { agedSnapshot, isServable, loadPersistedSnapshot, persistSnapshot } from './snapshot-store';
 
 const USDG = process.env.USDG_ADDRESS ?? '';
@@ -184,6 +185,27 @@ const LOGO_MAX_BYTES = 2 * 1024 * 1024;
  */
 const WARM_UP_RETRY_MS = 15_000;
 
+/** Kept v3 position histories, in `indexer_state` beside the kept snapshot. */
+const V3_HISTORY_KEY = 'v3_position_histories';
+function v3HistoryStore(): HistoryStore {
+  return {
+    async load() {
+      const row = await prisma.indexerState.findUnique({ where: { key: V3_HISTORY_KEY } });
+      if (!row) return {};
+      const parsed = JSON.parse(row.value) as unknown;
+      return parsed && typeof parsed === 'object' ? (parsed as Record<string, SerializedHistory>) : {};
+    },
+    async save(all) {
+      const value = JSON.stringify(all);
+      await prisma.indexerState.upsert({
+        where: { key: V3_HISTORY_KEY },
+        create: { key: V3_HISTORY_KEY, value, updatedAt: new Date() },
+        update: { value, updatedAt: new Date() },
+      });
+    },
+  };
+}
+
 export async function buildServer(
   options: {
     logoFetch?: LogoFetch;
@@ -221,6 +243,9 @@ export async function buildServer(
         : chainPortfolioReader({
             // A v3 position's history is located through the explorer and read from receipts (v3-history.ts).
             explorerBase: process.env.PORTFOLIO_EXPLORER === 'false' ? null : env.explorerApiUrl,
+            // A history that checked out once is kept across restarts, so a
+            // deploy does not put the dash back while the explorer is asked again.
+            historyStore: v3HistoryStore(),
           });
   const v4Scanner =
     options.v4Scanner !== undefined
@@ -772,7 +797,7 @@ export async function buildServer(
    * snapshot; the query is a handful of rows and it is rate limited like
    * any other. 503 for the same reasons the snapshot is.
    */
-  app.get<{ Params: { wallet: string }; Querystring: { v4?: string | string[] } }>('/api/portfolio/:wallet', async (request, reply) => {
+  app.get<{ Params: { wallet: string }; Querystring: { v4?: string | string[]; v3tx?: string | string[] } }>('/api/portfolio/:wallet', async (request, reply) => {
     const wallet = request.params.wallet.toLowerCase();
     if (!/^0x[0-9a-f]{40}$/.test(wallet)) {
       return reply.code(400).send({ statusCode: 400, error: 'bad-address', message: 'Not an address.' });
@@ -790,6 +815,19 @@ export async function buildServer(
       .filter((id) => /^\d{1,30}$/.test(id))
       .slice(0, 50)
       .map((id) => BigInt(id));
+    // `?v3tx=tokenId:txHash,…`: transactions this browser sent for a v3
+    // position (its mint, collects, withdrawals). Candidates for finding its
+    // history when the explorer does not answer; every log in them is still
+    // filtered to the v3 manager and the token id, and the sum is checked
+    // against the chain's liquidity (v3-history.ts), so a wrong hash adds nothing.
+    const v3TxHints = new Map<string, `0x${string}`[]>();
+    for (const pair of ([] as string[]).concat(request.query.v3tx ?? []).join(',').split(',').slice(0, 40)) {
+      const match = /^(\d{1,30}):(0x[0-9a-fA-F]{64})$/.exec(pair.trim());
+      if (!match) continue;
+      const list = v3TxHints.get(match[1]) ?? [];
+      if (list.length < 10) list.push(match[2].toLowerCase() as `0x${string}`);
+      v3TxHints.set(match[1], list);
+    }
     const scanned = v4Scanner?.owned(wallet) ?? [];
     // Every v4 NFT the explorer says this wallet holds, however old: the scan
     // covers only the newest ids and the indexer is weeks behind (§30).
@@ -800,6 +838,7 @@ export async function buildServer(
       // valued at today's prices rather than the indexer's.
       ethUsd: cached?.snapshot && cached.snapshot.global.ethPriceBasis !== 'chain' ? cached.snapshot.global.ethPriceUsd : null,
       v4Candidates: [...scanned, ...hinted, ...(listed ?? [])],
+      v3TxHints,
       // Complete when the explorer answered for this wallet, or the scan
       // covers every id; otherwise the page says the list may be missing some.
       scanPartial: portfolioChain !== null && listed === null && !(v4Scanner?.complete() ?? false),
