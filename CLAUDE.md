@@ -4713,3 +4713,33 @@ above, all fixed before commit. The second found three more ways a held
 position could fall off the page — a v3 timeout discarding the v4
 answer, a position emptied and refilled since the indexer's last block, an
 unfinished scan reported as complete — and each now has a test.
+
+### The scan that never finished once
+
+The first deploy of §30, from `/api/health` on the box:
+
+```
+"portfolioScan": { "from": null, "lastScanAt": null,
+                   "lastError": "nextTokenId failed on all 4 endpoints:" }
+```
+
+Two faults of mine, one hiding the other. **The error kept only its first
+line**, which is the sentence the RPC failover writes *before* listing each
+endpoint's own reason — so the one thing that would say why (a 429, a
+timeout, a revert) was cut off, and "failed on all 4 endpoints" with no
+reasons sends whoever reads it nowhere. And **a pass was all or nothing**:
+about a hundred multicalls over the same public endpoints the indexer is
+already pressing, thrown away whole on any single refusal, so under a rate
+limit it could fail for ever without keeping anything it had read.
+
+The scan now keeps its progress chunk by chunk (`CHUNKS_PER_PASS` requests
+of `CHUNK` ids a pass, ten of five hundred): new ids first, then the next
+part of a sweep across the window, resumed where the last pass stopped.
+The error keeps every endpoint's reason, with each URL cut to its host so
+a paid endpoint's key never reaches `/api/health`, and the API's log gets
+a `v4 scan:` line whenever the reason changes. `deploy/doctor.sh` reports
+the scan too — off, failing (with the reason), mid-sweep, or complete.
+
+`PORTFOLIO_CHAIN=false` is not the remedy for a failing scan. It turns off
+the chain reads altogether, and the portfolio goes back to the indexer's
+record, which is weeks behind — exactly what §30 was written to stop.

@@ -331,6 +331,29 @@ else
     ok "head reader: ${H_SWAPS:-0} swaps, newest ${H_SECS}s old — the board's volume is current"
   fi
 
+  # The portfolio's scan for Uniswap v4 positions the indexer has not reached
+  # yet (§30). Without it a position minted since the indexer's last block is
+  # not on /portfolio — and a position not on the page cannot be withdrawn
+  # there. Its error carries every endpoint's own reason, hosts only.
+  if printf '%s' "$BODY" | grep -q '"portfolioScan":null'; then
+    warn "portfolio scan: off (PORTFOLIO_CHAIN=false) — /portfolio lists only the indexer's weeks-old record"
+    also "bash $APP_DIR/deploy/set-env.sh PORTFOLIO_CHAIN true && runuser -u $APP_USER -- pm2 restart balast-api --update-env"
+  elif printf '%s' "$BODY" | grep -q '"portfolioScan"'; then
+    SCAN=${BODY#*\"portfolioScan\":}
+    S_ERR=$(printf '%s' "$SCAN" | grep -o '"lastError":"[^"]*"' | head -1 | cut -d'"' -f4)
+    S_SWEPT=$(printf '%s' "$SCAN" | grep -o '"swept":[a-z]*' | head -1 | cut -d: -f2)
+    S_AT=$(printf '%s' "$SCAN" | grep -o '"sweptTo":"[0-9]*"' | head -1 | cut -d'"' -f4)
+    S_TO=$(printf '%s' "$SCAN" | grep -o '"to":"[0-9]*"' | head -1 | cut -d'"' -f4)
+    if [[ -n "${S_ERR:-}" ]]; then
+      warn "portfolio scan: failing — $S_ERR"
+      also "runuser -u $APP_USER -- pm2 logs balast-api --lines 50 --nostream | grep 'v4 scan'"
+    elif [[ "${S_SWEPT:-false}" != "true" ]]; then
+      warn "portfolio scan: first sweep running (id ${S_AT:-?} of ${S_TO:-?}) — v4 positions minted elsewhere may be missing for a few minutes"
+    else
+      ok "portfolio scan: every v4 id up to ${S_TO:-?} read — /portfolio lists every position the chain confirms"
+    fi
+  fi
+
   # The live market feed. A row reading `chain` is showing a day as old as the
   # sync, so how many of the board's tokens an aggregator places is the
   # difference between a current board and a two-month-old one — and when some

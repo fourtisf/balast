@@ -206,7 +206,7 @@ export async function buildServer(
     options.v4Scanner !== undefined
       ? options.v4Scanner
       : portfolioChain && !chainOff
-        ? new V4TokenScanner(chainScannerSource())
+        ? new V4TokenScanner(chainScannerSource(), { log: (line) => app.log.warn(line) })
         : null;
   v4Scanner?.start();
   app.addHook('onClose', async () => v4Scanner?.stop());
