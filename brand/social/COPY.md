@@ -268,21 +268,69 @@ Post `11-shapes.png` first, then one shape a day.
 
 > Three Balast cards comparing liquidity shapes over a ±15% range in 24 bins: Spot with even bars (1.00× at the price), Curve peaked at the current price (2.25×), and Bid-ask tallest at both edges (0.31×).
 
-## 12–13 · Stake a token, premium · `12-premium-stake.png` (paper) `13-premium-stake-ink.png` (night)
+## The premium series · `p01`–`p11` (ink)
 
-The same artboard in two editions, built from `premium-stake.template.html`
-(`npm run brand:premium`). Paper matches the site; ink is for the feed,
-where a dark image stands out. Use one, not both on the same day.
+One system for the feed, built by `npm run brand:premium` from
+`scripts/build-premium-banners.ts` and `premium.css`. Charts come from the
+builder's own weights; no banner carries a yield figure; example tokens say
+so. Suggested order: p10 pinned first (the CA warning), then p01, p03, p02,
+p04, p05–p07 one a day, p08, p09. p11 is the profile header (1500 × 500).
 
-> Stake a token. Keep every fee.
+**p01 · Introduction**
+> Real fees. Nothing printed.
 >
-> One signature on Robinhood Chain: Uniswap mints the position to your wallet, and every swap through the pool pays you your share. 0% Balast fee. No lockup.
+> Balast is the liquidity layer for Robinhood Chain: put tokens into Uniswap pools and collect a share of every swap fee — from real trades, never from emissions.
 >
 > balast.xyz
 
-**Image description**
+**p02 · Stake a token**
+> Stake a token. Keep every fee.
+>
+> One signature: Uniswap mints the position to your wallet, and every swap through the pool pays you your share. 0% Balast fee. No lockup.
+>
+> balast.xyz
 
-> A Balast stake card in perspective for an example VIRTUAL / ETH pool on Uniswap v4: full range from 0 to infinity, a deposit of 0.10 ETH and 330 VIRTUAL, Balast fee none, custody in your wallet, no lockup. Behind it, the Uniswap position NFT the stake creates, as a receipt; beside it, a note that the position was minted to your wallet.
+**p03 · How it works**
+> Three steps, one signature:
+>
+> 1. Pick a pool — every token shows its contract address.
+> 2. Deposit and sign — the node checks the exact transaction first.
+> 3. Get your receipt — a Uniswap position NFT, in your wallet.
+>
+> You don't need an NFT to start. Staking creates it. balast.xyz
+
+**p04 · Three shapes**
+> Three ways to place liquidity, one transaction:
+>
+> Spot — even across your range.
+> Curve — bunched at the price.
+> Bid-ask — thick at the edges.
+>
+> balast.xyz
+
+**p05 · Spot**
+> Spot: the same liquidity in every bin. Steady while the price wanders inside your range. balast.xyz
+
+**p06 · Curve**
+> Curve: 2.25× an even spread right at the price. The most while the market is quiet — and the fastest to drop off when it moves. balast.xyz
+
+**p07 · Bid-ask**
+> Bid-ask: a ladder of orders that buys dips and sells rallies. A trading shape, not a fee shape. balast.xyz
+
+**p08 · Portfolio**
+> Your position. Your keys.
+>
+> Collect fees or withdraw any time — one transaction to Uniswap, from your wallet. Out of range? The row says so, in red. Balast holds nothing.
+>
+> balast.xyz
+
+**p09 · Honest numbers**
+> Numbers you can check. Swap fees only, no emissions, no Balast fee, read from the chain — and the indexer's lag always on screen. balast.xyz
+
+**p10 · Contract address** (pin this)
+> There is no Balast token yet.
+>
+> When there is one, its address appears on balast.xyz first. Anything circulating before that — or sent to you in a DM — is not ours.
 
 ## Order
 
