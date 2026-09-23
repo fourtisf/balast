@@ -446,16 +446,14 @@ export function useMintFlow(args: {
 
   /**
    * The zap, when the wallet holds one side and has more of it than the plan
-   * takes. Not for a v4 pool quoted in the wrapper: its ether would have to be
-   * wrapped, swapped and wrapped again, and those pools are few — the page
-   * says to hold both there. Not twice in a row, either.
+   * takes — in every venue: a v4 pool quoted in the wrapper is swapped into
+   * with ETH wrapped inside the same router call (§35). Not twice in a row.
    */
-  const zapSupported = venue === 'v3' || !(sides && sides.quoteCurrency.toLowerCase() === CONTRACTS.weth.toLowerCase());
   const candidate = useMemo(() => {
-    if (!holdings || fit || zapped || !zapSupported || !owner) return null;
+    if (!holdings || fit || zapped || !owner) return null;
     if (coverBps(holdings) >= 10_000) return null;
     return zapCandidate(holdings);
-  }, [holdings, fit, zapped, zapSupported, owner]);
+  }, [holdings, fit, zapped, owner]);
   const candidateId = candidate ? `${candidate.direction}|${candidate.want}` : null;
 
   // A primitive, so a balance re-read that changes nothing about the
@@ -486,6 +484,9 @@ export function useMintFlow(args: {
     // Not for v3: its manager is payable and wraps what it is sent, in the
     // mint itself, so a separate transaction would only cost a signature.
     if (venue === 'v3') return null;
+    // The swap comes first when one is due: it is paid from the ether, and
+    // the wrap for the mint is sized once the swap has landed.
+    if (candidateId) return null;
     if (!sides || !needs || !plan || !balances) return null;
     if (sides.quoteCurrency.toLowerCase() !== CONTRACTS.weth.toLowerCase()) return null;
     const shortfall = wrapShortfall({
@@ -498,7 +499,7 @@ export function useMintFlow(args: {
     });
     if (shortfall === null) return null;
     return { shortfall };
-  }, [venue, sides, needs, plan, balances]);
+  }, [venue, sides, needs, plan, balances, candidateId]);
 
   /** One "your balance" for an ether market, whichever way the pool holds it. */
   const quoteSpendable = useMemo(() => {
@@ -584,7 +585,13 @@ export function useMintFlow(args: {
       // wallet short of the wrapper pays in ETH — the same rule as the mint.
       const inIsWeth = tokenIn.toLowerCase() === CONTRACTS.weth.toLowerCase();
       const spareEther = balances.native > GAS_RESERVE_WEI ? balances.native - GAS_RESERVE_WEI : 0n;
-      const payWithEther = venue === 'v3' && inIsWeth && v3WrapsEther && balances.quote < amountIn && spareEther >= amountIn;
+      // v4 quoted in the wrapper: the Universal Router wraps the ETH sent and
+      // swaps it in one call (encodeV4Swap's `wrapEtherIn`), no approval —
+      // preferred whenever the ether covers it.
+      const payWithEther =
+        venue === 'v3'
+          ? inIsWeth && v3WrapsEther && balances.quote < amountIn && spareEther >= amountIn
+          : inIsWeth && spareEther >= amountIn;
       return { tokenIn, tokenOut, zeroForOne, payWithEther };
     },
     [sides, key, balances, venue, v3WrapsEther],
@@ -605,7 +612,7 @@ export function useMintFlow(args: {
             deadline,
             payWithEther: route.payWithEther,
           })
-        : encodeV4Swap({ key, zeroForOne: route.zeroForOne, amountIn: q.amountIn, amountOutMinimum: q.minOut, deadline });
+        : encodeV4Swap({ key, zeroForOne: route.zeroForOne, amountIn: q.amountIn, amountOutMinimum: q.minOut, deadline, wrapEtherIn: route.payWithEther });
     },
     [key, venue],
   );
@@ -718,10 +725,10 @@ export function useMintFlow(args: {
               ? 'unavailable'
               : !live
                 ? 'reading'
-                : wrap
-                  ? 'wrap'
-                  : zap
-                    ? 'zap'
+                : zap
+                  ? 'zap'
+                  : wrap
+                    ? 'wrap'
                   : approvals.length > 0
                     ? 'approve'
                     : 'ready';

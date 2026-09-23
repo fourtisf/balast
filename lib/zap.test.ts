@@ -185,3 +185,30 @@ describe('zap arithmetic', () => {
     expect(z.lossBps).toBe(5000);
   });
 });
+
+describe('v4 swap paid in ETH into a pool quoted in the wrapper', () => {
+  const WKEY: PoolKey = { ...KEY, currency0: '0x1111111111111111111111111111111111111111', currency1: CONTRACTS.weth as Address };
+
+  it('wraps in the router, then settles from the router, byte-identical to the SDK planner', () => {
+    const planner = new V4Planner();
+    planner.addAction(
+      SdkActions.SWAP_EXACT_IN_SINGLE,
+      [{ poolKey: WKEY, zeroForOne: false, amountIn: '1000', amountOutMinimum: '900', minHopPriceX36: '0', hookData: '0x' }],
+      URVersion.V2_1_1,
+    );
+    planner.addAction(SdkActions.SETTLE, [WKEY.currency1, '1000', false]);
+    planner.addAction(SdkActions.TAKE_ALL, [WKEY.currency0, '900']);
+    const call = encodeV4Swap({ key: WKEY, zeroForOne: false, amountIn: 1000n, amountOutMinimum: 900n, deadline: 5n, wrapEtherIn: true });
+    const decoded = decodeFunctionData({ abi: UNIVERSAL_ROUTER_ABI, data: call.calldata });
+    expect(decoded.args[0]).toBe('0x0b10');
+    const inputs = decoded.args[1] as readonly `0x${string}`[];
+    expect(inputs[1].toLowerCase()).toBe(planner.finalize().toLowerCase());
+    // WRAP_ETH to the router itself (ADDRESS_THIS = 2), exactly the amount the swap settles.
+    expect(inputs[0]).toBe(`0x${'2'.padStart(64, '0')}${(1000).toString(16).padStart(64, '0')}`);
+    expect(call.value).toBe(1000n);
+  });
+
+  it('refuses to wrap for a pool that already holds native ether', () => {
+    expect(() => encodeV4Swap({ key: KEY, zeroForOne: true, amountIn: 1n, amountOutMinimum: 1n, deadline: 1n, wrapEtherIn: true })).toThrow();
+  });
+});

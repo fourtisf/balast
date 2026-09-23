@@ -5165,3 +5165,37 @@ the aggregators', and current either way. A pool created since the backfill's
 cursor is not listed until the backfill reaches it — the one real cost of free
 RPC for the product, and the next thing worth building if it matters: the head
 reader discovering new pools from today's swaps.
+
+---
+
+## 35. The position, under the builder; and ETH into a pool that holds aeWETH
+
+ALFA, on VIRTUAL / ETH with the Mint button greyed: *saya sudah mint,
+harusnya ada fitur kasih lihat lagi running atau apa dan bisa withdraw kapan
+saja*. Two things in the screenshot.
+
+**The position lived on another page.** A mint ended on a toast and a link to
+the transaction; the position itself, with its status and its Withdraw, was
+on `/portfolio`, which nothing on the builder pointed at. The builder now
+shows **Your {TOKEN} positions** under itself (`MyTokenPositions`): the
+Portfolio's own list (`PositionList` with a `tokenAddress` filter) — in range
+or out of range, value, uncollected fees read from the chain, **Collect fees**
+and **Withdraw** with the same dry runs — for the token being built. The mint's
+result line says it is listed there. A position minted here is on the page as
+soon as its receipt is in (§30).
+
+**The zap skipped exactly this pool.** VIRTUAL / ETH on v4 holds its ether as
+aeWETH, and §33 left such pools out of the zap, so a wallet holding only ETH
+was told to hold VIRTUAL. It is supported now, without an approval: the
+Universal Router is sent the ETH, wraps it into its own aeWETH (`WRAP_ETH` to
+`ADDRESS_THIS`), and the swap settles that from the router's balance
+(`SETTLE` with the router as payer) — the wrap and the settle are the same
+amount, so nothing is left in the router. `encodeV4Swap({ wrapEtherIn })`,
+byte-compared with the SDK's V4Planner; the order on the page is swap, then
+the wrap the mint needs, then the mint. `check:lp` runs it against
+Universal Router bytecode from a wallet holding only ETH: exact ETH spent,
+the quoter's answer received, no aeWETH stranded in the wallet or the
+router, three positions minted. 112 checks, all passing.
+
+Unverified from here, as before: the chain itself. The first one should be
+small and watched.

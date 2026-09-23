@@ -674,6 +674,68 @@ async function main(): Promise<void> {
   await send(deployer, tkn, encodeFunctionData({ abi: ERC20, functionName: 'mint', args: [zapper2, parseEther('3000')] }));
   await zapThenMint('v4, holding TKN and gas: swap TKN→ETH through Permit2 and the router, then mint', zapper2, 'v4', parseEther('1'), 'token-to-quote');
 
+  section('zap: v4 pool quoted in the wrapper, holding only ETH — wrap inside the swap, then wrap and mint');
+  {
+    const zapper3 = '0x0000000000000000000000000000000000000c0c' as Address;
+    await rpc('hardhat_impersonateAccount', [zapper3]);
+    await rpc('hardhat_setBalance', [zapper3, `0x${parseEther('2').toString(16)}`]);
+    const [c0, c1] = weth.toLowerCase() < tkn.toLowerCase() ? [weth, tkn] : [tkn, weth];
+    const wk = { currency0: c0, currency1: c1, fee: 500, tickSpacing: 10, hooks: NATIVE_ETH as Address };
+    const tokIs0 = c0 === tkn;
+    const RESERVE = 5n * 10n ** 16n;
+    const planAt = async (dep: bigint) => {
+      const s = await flow.readSlot0(pub, wk);
+      return { s, p: planMint({ key: wk, sqrtPriceX96: s.sqrtPriceX96, tick: s.tick, tokenIsCurrency0: tokIs0, depositQuote: dep, minPct: -8, maxPct: 8, bins: 3, shape: 'spot', owner: zapper3, slippageBps: 100, deadline: deadline() }) };
+    };
+    const hold = async (p: { amount0: bigint; amount1: bigint }) => {
+      const native = await pub.getBalance({ address: zapper3 });
+      return {
+        needToken: tokIs0 ? p.amount0 : p.amount1,
+        needQuote: tokIs0 ? p.amount1 : p.amount0,
+        haveToken: await balanceOf(tkn, zapper3),
+        haveQuote: (await balanceOf(weth, zapper3)) + (native > RESERVE ? native - RESERVE : 0n),
+      };
+    };
+    const { s: s0, p: p0 } = await planAt(parseEther('0.1'));
+    const cand = zapLib.zapCandidate(await hold(p0));
+    check(cand?.direction === 'quote-to-token', 'a wallet holding only ETH is offered a swap into the wrapped-ether pool');
+    const zeroForOne = weth.toLowerCase() === wk.currency0.toLowerCase();
+    const h0 = await hold(p0);
+    const q = await zapLib.sizeZap({
+      direction: 'quote-to-token', want: cand!.want, surplus: h0.haveQuote - h0.needQuote, sqrtPriceX96: s0.sqrtPriceX96,
+      tokenIsCurrency0: tokIs0, feePips: 500, slippageBps: 100,
+      quote: (amountIn) => zapLib.quoteV4(pub, { key: wk, zeroForOne, amountIn }),
+    });
+    const needed = await zapLib.zapApprovalsNeeded(pub, zapper3, 'v4', weth, q.amountIn, true, Math.floor(Date.now() / 1000));
+    check(needed.length === 0, 'paying in ETH needs no approval at all');
+    const call = zapLib.encodeV4Swap({ key: wk, zeroForOne, amountIn: q.amountIn, amountOutMinimum: q.minOut, deadline: deadline(), version: 'v2.0', wrapEtherIn: true });
+    const e0 = await pub.getBalance({ address: zapper3 });
+    const t0 = await balanceOf(tkn, zapper3);
+    const g = await spent(await flow.sendCall(provider, zapper3, call, await pub.estimateGas({ account: zapper3, to: call.to, data: call.calldata, value: call.value }), call.to));
+    check(e0 - (await pub.getBalance({ address: zapper3 })) - g === q.amountIn, `spent exactly ${q.amountIn} wei of ETH, wrapped inside the router`);
+    check((await balanceOf(tkn, zapper3)) - t0 === q.expectedOut, 'received the quoter’s answer in TKN');
+    check((await balanceOf(weth, zapper3)) === 0n, 'no aeWETH left over in the wallet from the swap');
+    check((await holds(ur, [tkn, weth])) === 0n, 'the Universal Router holds nothing — the wrap and the settle were the same amount');
+    // Step 2: fit to what the wallet holds, wrap the quote side, approve, mint.
+    const { p: p1 } = await planAt(parseEther('0.1'));
+    const fit = zapLib.fitBps(await hold(p1), true);
+    const { p: p2 } = fit ? await planAt((parseEther('0.1') * BigInt(fit)) / 10_000n) : { p: p1 };
+    const wrapNeed = flow.wrapShortfall({
+      planned: tokIs0 ? p2.amount1 : p2.amount0,
+      cap: tokIs0 ? p2.amount1Max : p2.amount0Max,
+      positions: p2.positions.length,
+      wrappedBalance: await balanceOf(weth, zapper3),
+      nativeBalance: await pub.getBalance({ address: zapper3 }),
+      reserve: 10n ** 15n,
+    });
+    if (wrapNeed) await spent(await flow.sendWrap(provider, zapper3, wrapNeed, await flow.simulateWrap(pub, zapper3, wrapNeed)));
+    const n = Math.floor(Date.now() / 1000);
+    for (const st of await flow.approvalsNeeded(pub, zapper3, wk, p2, n)) await spent(await flow.approve(provider, zapper3, st, n));
+    const m = await flow.waitForMint(pub, await flow.sendMint(provider, zapper3, p2, await flow.simulateMint(pub, zapper3, p2)), zapper3);
+    check(m.ok && m.tokenIds.length === p2.positions.length, `${m.tokenIds.length} positions minted into the wrapped-ether pool from a wallet that held only ETH`);
+    check((await holds(posm, [tkn, weth])) === 0n, 'PositionManager holds nothing after it');
+  }
+
   section('zap: a swap whose price moved past the minimum is refused before signing');
   {
     const s = await flow.readSlot0(pub, zkey);

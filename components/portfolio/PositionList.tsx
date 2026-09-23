@@ -41,7 +41,23 @@ function rebalanceHref(position: Pick<UserPosition, 'poolId' | 'range' | 'rangeP
   return `/positions?pool=${encodeURIComponent(position.poolId)}&min=${-half}&max=${half}`;
 }
 
-export function PositionList({ fees, actions }: { fees: LiveFeesState; actions: PositionActions }) {
+export function PositionList({
+  fees,
+  actions,
+  tokenAddress,
+  title = 'Positions',
+}: {
+  fees: LiveFeesState;
+  actions: PositionActions;
+  /**
+   * Only this token's positions — the builder shows the ones in the token it
+   * is minting, so a mint is followed on the same page and can be withdrawn
+   * there. The search box does not apply then; stakes and empty states are
+   * the Portfolio's.
+   */
+  tokenAddress?: string;
+  title?: string;
+}) {
   const { portfolio, pools } = useMarket();
   const { query, wallet } = useUi();
   const router = useRouter();
@@ -51,22 +67,34 @@ export function PositionList({ fees, actions }: { fees: LiveFeesState; actions: 
   // someone's; its token rides on the position when the board has no row.
   const tokenOf = (position: UserPosition): TokenMeta | null =>
     pools.find((p) => p.id === position.poolId)?.token ?? position.live?.token ?? null;
-  const q = query.trim().toLowerCase();
+  const only = tokenAddress?.toLowerCase();
+  const q = only ? '' : query.trim().toLowerCase();
   const matchesToken = (token: TokenMeta | null) =>
-    q === '' || (token !== null && (token.symbol.toLowerCase().includes(q) || token.name.toLowerCase().includes(q)));
+    only
+      ? token !== null && token.address.toLowerCase() === only
+      : q === '' || (token !== null && (token.symbol.toLowerCase().includes(q) || token.name.toLowerCase().includes(q)));
   const positions = portfolio.positions.filter((p) => matchesToken(tokenOf(p)));
-  const stakes = portfolio.stakes.filter((s) => matchesToken(pools.find((p) => p.id === s.poolId)?.token ?? null));
+  const stakes = only ? [] : portfolio.stakes.filter((s) => matchesToken(pools.find((p) => p.id === s.poolId)?.token ?? null));
   // Out of range, and known to be: a pool the indexer has no price for is not
   // "stranded", it is unread (UserPosition.rangeUnknown).
   const stranded = positions.find((p) => !p.inRange && !p.rangeUnknown);
   const strandedToken = stranded ? tokenOf(stranded) : null;
   const strandedOnBoard = stranded ? pools.find((p) => p.id === stranded.poolId && p.stakeable) : undefined;
 
+  // Filtered to one token with nothing in it, the builder shows nothing.
+  if (only && positions.length === 0) return null;
+
   return (
-    <div className="card panel">
+    <div className="card panel" data-testid={only ? 'token-positions' : undefined}>
       <h2 style={{ fontWeight: 600, fontSize: 17, letterSpacing: '-.02em', marginBottom: 6 }}>
-        Positions
+        {title}
       </h2>
+      {only && (
+        <p className="hint" style={{ marginBottom: 8 }}>
+          Each is an NFT in your wallet, earning this pool&rsquo;s fees while the price is in its range. Collect the fees
+          or withdraw the whole position at any time — no lockup, no Balast fee.
+        </p>
+      )}
 
       {positions.map((position) => {
         const token = tokenOf(position);
@@ -274,8 +302,8 @@ export function PositionList({ fees, actions }: { fees: LiveFeesState; actions: 
             </>
           ) : live ? (
             <>
-              <b>No positions yet</b>Mint one from Positions, or stake from a pool. A v3 position appears on the next
-              read; a v4 one once the indexer has read the block it was minted in.
+              <b>No positions yet</b>Mint one from Positions, or stake from a pool. A position minted here appears as
+              soon as its transaction is confirmed.
             </>
           ) : (
             <>

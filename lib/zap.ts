@@ -260,7 +260,12 @@ export const UNIVERSAL_ROUTER_ABI = parseAbi(['function execute(bytes commands, 
 export const V4_SWAP_COMMAND = 0x10;
 
 /** v4-periphery `Actions.sol`, the three a single exact-input swap uses. */
-export const SwapActions = { SWAP_EXACT_IN_SINGLE: 0x06, SETTLE_ALL: 0x0c, TAKE_ALL: 0x0f } as const;
+export const SwapActions = { SWAP_EXACT_IN_SINGLE: 0x06, SETTLE: 0x0b, SETTLE_ALL: 0x0c, TAKE_ALL: 0x0f } as const;
+
+/** Universal Router `WRAP_ETH`: wraps the ether sent into the router's own WETH9. */
+export const WRAP_ETH_COMMAND = 0x0b;
+/** The router's own address, as its commands spell it (`ActionConstants.ADDRESS_THIS`). */
+export const UR_ADDRESS_THIS = '0x0000000000000000000000000000000000000002' as Address;
 
 /**
  * Which layout the router decodes a single swap with. The router on this
@@ -279,6 +284,12 @@ export function encodeV4SwapInput(args: {
   amountIn: bigint;
   amountOutMinimum: bigint;
   version?: UrVersion;
+  /**
+   * The input is already in the router — wrapped from the ether sent, by
+   * `WRAP_ETH` just before — so it is settled from the router's own balance
+   * (`SETTLE`, payer the router) rather than pulled from the caller.
+   */
+  inputInRouter?: boolean;
 }): Hex {
   const version = args.version ?? 'v2.1.1';
   const [currencyIn, currencyOut] = args.zeroForOne
@@ -320,9 +331,13 @@ export function encodeV4SwapInput(args: {
   // SETTLE_ALL pays the input from the caller (Permit2, or the value sent for
   // ether), capped at the exact amount; TAKE_ALL sends the output to the
   // caller and reverts below the minimum.
-  const settle = encodeAbiParameters([{ type: 'address' }, { type: 'uint256' }], [currencyIn, args.amountIn]);
+  const settle = args.inputInRouter
+    ? encodeAbiParameters([{ type: 'address' }, { type: 'uint256' }, { type: 'bool' }], [currencyIn, args.amountIn, false])
+    : encodeAbiParameters([{ type: 'address' }, { type: 'uint256' }], [currencyIn, args.amountIn]);
   const take = encodeAbiParameters([{ type: 'address' }, { type: 'uint256' }], [currencyOut, args.amountOutMinimum]);
-  const actions = toHex(Uint8Array.from([SwapActions.SWAP_EXACT_IN_SINGLE, SwapActions.SETTLE_ALL, SwapActions.TAKE_ALL]));
+  const actions = toHex(
+    Uint8Array.from([SwapActions.SWAP_EXACT_IN_SINGLE, args.inputInRouter ? SwapActions.SETTLE : SwapActions.SETTLE_ALL, SwapActions.TAKE_ALL]),
+  );
   return encodeAbiParameters([{ type: 'bytes' }, { type: 'bytes[]' }], [actions, [swap, settle, take]]);
 }
 
@@ -330,6 +345,13 @@ export function encodeV4SwapInput(args: {
  * One v4 swap through the Universal Router. Ether in is sent as value, and
  * exactly the amount the swap settles — anything more would stay in the
  * router, which anyone can sweep.
+ *
+ * `wrapEtherIn`: the pool's input side is aeWETH and the wallet pays in ETH.
+ * The router wraps exactly the value sent (`WRAP_ETH` to itself), then the
+ * swap settles that from the router's balance — one transaction, no approval,
+ * and nothing left in the router, since the wrap and the settle are the same
+ * amount. This is what lets a v4 pool quoted in the wrapper be entered with
+ * ETH alone (§27, §35).
  */
 export function encodeV4Swap(args: {
   key: PoolKey;
@@ -338,17 +360,23 @@ export function encodeV4Swap(args: {
   amountOutMinimum: bigint;
   deadline: bigint;
   version?: UrVersion;
+  wrapEtherIn?: boolean;
 }): SwapCall {
-  const input = encodeV4SwapInput(args);
   const currencyIn = args.zeroForOne ? args.key.currency0 : args.key.currency1;
+  if (args.wrapEtherIn && currencyIn.toLowerCase() === NATIVE_ETH) throw new Error('wrapEtherIn is for a pool quoted in the wrapper, not native ether.');
+  const input = encodeV4SwapInput({ ...args, inputInRouter: args.wrapEtherIn });
+  const commands = args.wrapEtherIn ? [WRAP_ETH_COMMAND, V4_SWAP_COMMAND] : [V4_SWAP_COMMAND];
+  const inputs = args.wrapEtherIn
+    ? [encodeAbiParameters([{ type: 'address' }, { type: 'uint256' }], [UR_ADDRESS_THIS, args.amountIn]), input]
+    : [input];
   return {
     to: CONTRACTS.universalRouter as Address,
     calldata: encodeFunctionData({
       abi: UNIVERSAL_ROUTER_ABI,
       functionName: 'execute',
-      args: [toHex(Uint8Array.from([V4_SWAP_COMMAND])), [input], args.deadline],
+      args: [toHex(Uint8Array.from(commands)), inputs, args.deadline],
     }),
-    value: currencyIn.toLowerCase() === NATIVE_ETH ? args.amountIn : 0n,
+    value: args.wrapEtherIn || currencyIn.toLowerCase() === NATIVE_ETH ? args.amountIn : 0n,
   };
 }
 

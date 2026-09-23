@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { BinChart } from '@/components/positions/BinChart';
+import { MyTokenPositions } from '@/components/positions/MyTokenPositions';
 import { DEFAULT_SLIPPAGE_BPS, GAS_RESERVE_WEI, useMintFlow } from '@/components/positions/useMintFlow';
 import { CHAIN, EXPLORER_URL, NATIVE_ETH } from '@/lib/chain';
 import { DATA_SOURCE } from '@/lib/data';
@@ -466,6 +467,7 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
     (flow.step === 'ready' && (!flow.plan || Boolean(flow.error))));
 
   return (
+    <>
     <div className="builder">
       <div className="card panel">
         {wantedMissing && (
@@ -808,7 +810,9 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
           </p>
         ) : flow.result ? (
           <p className="hint" style={{ textAlign: 'center', marginTop: 8 }}>
-            {flow.result.minted} position{flow.result.minted === 1 ? '' : 's'} minted to your wallet.{' '}
+            {flow.result.minted} position{flow.result.minted === 1 ? '' : 's'} minted to your wallet — listed below
+            under <i>Your {tokenSymbol} positions</i>, earning while the price is in range, with Collect and Withdraw
+            any time.{' '}
             <a href={`${EXPLORER_URL}/tx/${flow.result.hash}`} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline' }}>
               View the transaction
             </a>
@@ -822,7 +826,7 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
                 ? `This pool holds its ether as aeWETH. One transaction wraps ${fmtAmount(flow.wrap!.shortfall, 18)} of your ETH into the same amount of it — one token per ether, no price and nothing to slip — and the mint follows.`
               : flow.step === 'zap'
                 ? flow.zap?.quote
-                  ? `The wallet holds ${zapIn} and not enough ${zapOut}. Step 1 swaps ${fmtAmount(flow.zap.quote.amountIn, zapInDecimals)} ${zapIn} for about ${fmtAmount(flow.zap.quote.expectedOut, zapOutDecimals)} ${zapOut} in this same pool, through Uniswap's router — ${(flow.zap.quote.lossBps / 100).toFixed(2)}% to the pool's fee and price impact, and it reverts below ${fmtAmount(flow.zap.quote.minOut, zapOutDecimals)}. Step 2 mints, fitted to what the swap delivered. Nothing is held by Balast.`
+                  ? `The wallet holds ${zapIn} and not enough ${zapOut}. Step 1 swaps ${fmtAmount(flow.zap.quote.amountIn, zapInDecimals)} ${zapIn} for about ${fmtAmount(flow.zap.quote.expectedOut, zapOutDecimals)} ${zapOut} in this same pool, through Uniswap's router — ${(flow.zap.quote.lossBps / 100).toFixed(2)}% to the pool's fee and price impact, and it reverts below ${fmtAmount(flow.zap.quote.minOut, zapOutDecimals)}.${flow.zap.payWithEther && pool.protocol !== 'v3' && wrapped ? ' Paid in ETH: the router wraps it in the same transaction, so no approval is needed.' : ''} Step 2 ${wrapped && pool.protocol !== 'v3' ? 'wraps the ETH side and mints' : 'mints'}, fitted to what the swap delivered. Nothing is held by Balast.`
                   : `The wallet holds ${zapIn} and not enough ${zapOut}: pricing a swap for the rest in this same pool.`
               : flow.step === 'approve'
                 ? `${flow.approvals.length} approval${flow.approvals.length === 1 ? '' : 's'} first, then one transaction to mint. Nothing is held by Balast.`
@@ -984,5 +988,7 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
         </p>
       </div>
     </div>
+    <MyTokenPositions token={pool.token} />
+    </>
   );
 }
