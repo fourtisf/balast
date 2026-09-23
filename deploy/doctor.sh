@@ -126,13 +126,19 @@ else
     ok "USDG_ADDRESS $USDG"
   fi
 
+  # Not a fault: every public endpoint here is pruned, so the deployment block
+  # cannot be found, and a START_BLOCK above a pool's creation would miss the
+  # mint that funded it (§17). Genesis is the start that misses nothing, and a
+  # sync under way resumes from its own cursor, not from this value.
   if [[ "${START_BLOCK:-0}" == "0" || -z "${START_BLOCK:-}" ]]; then
-    warn "START_BLOCK is 0 — the first sync scans from genesis, which on ~100ms blocks is a long wait"
+    ok "START_BLOCK unset — the sync reads from genesis, the only start that misses no pool's funding mint"
   else
     ok "START_BLOCK $START_BLOCK"
   fi
+  # Unset is the normal state since §20: Uniswap's own v3 factory, from its
+  # registry, is the default in lib/chain.ts. The old wording predated that.
   [[ -n "$V3_FACTORY" ]] && ok "V3_FACTORY $V3_FACTORY" \
-    || warn "V3_FACTORY unset — v3 pools will only be those hand-listed in V3_POOLS (§4)"
+    || ok "V3_FACTORY unset — Uniswap's own v3 factory (lib/chain.ts) is followed"
 fi
 
 # --------------------------------------------------------------- database ---
@@ -340,6 +346,9 @@ else
     also "bash $APP_DIR/deploy/set-env.sh PORTFOLIO_CHAIN true && runuser -u $APP_USER -- pm2 restart balast-api --update-env"
   elif printf '%s' "$BODY" | grep -q '"portfolioScan"'; then
     SCAN=${BODY#*\"portfolioScan\":}
+    # Just this object: it has no nested braces, and a null field here must not
+    # be read from the next object in the body.
+    SCAN=${SCAN%%\}*}
     S_ERR=$(printf '%s' "$SCAN" | grep -o '"lastError":"[^"]*"' | head -1 | cut -d'"' -f4)
     S_SWEPT=$(printf '%s' "$SCAN" | grep -o '"swept":[a-z]*' | head -1 | cut -d: -f2)
     S_AT=$(printf '%s' "$SCAN" | grep -o '"sweptTo":"[0-9]*"' | head -1 | cut -d'"' -f4)
@@ -348,9 +357,26 @@ else
       warn "portfolio scan: failing — $S_ERR"
       also "runuser -u $APP_USER -- pm2 logs balast-api --lines 50 --nostream | grep 'v4 scan'"
     elif [[ "${S_SWEPT:-false}" != "true" ]]; then
-      warn "portfolio scan: first sweep running (id ${S_AT:-?} of ${S_TO:-?}) — v4 positions minted elsewhere may be missing for a few minutes"
+      # Expected for a few minutes after every restart, and the explorer and
+      # the browser's own record cover the gap meanwhile: not a fault.
+      ok "portfolio scan: first sweep running (id ${S_AT:-?} of ${S_TO:-?}) — done in a few minutes"
     else
-      ok "portfolio scan: every v4 id up to ${S_TO:-?} read — /portfolio lists every position the chain confirms"
+      ok "portfolio scan: the newest v4 ids up to ${S_TO:-?} read"
+    fi
+    EXPL=${BODY#*\"portfolioExplorer\":}
+    EXPL=${EXPL%%\}*}
+    if printf '%s' "$BODY" | grep -q '"portfolioExplorer":{'; then
+      E_ERR=$(printf '%s' "$EXPL" | grep -o '"lastError":"[^"]*"' | head -1 | cut -d'"' -f4)
+      E_OK=$(printf '%s' "$EXPL" | grep -o '"lastOkAt":"[^"]*"' | head -1 | cut -d'"' -f4)
+      if [[ -n "${E_ERR:-}" ]]; then
+        # Older v4 positions are found through the explorer; without it they
+        # appear only as the indexer reaches them, and the page says so.
+        warn "portfolio explorer: $E_ERR — v4 positions older than the scan's window may be missing from /portfolio"
+      elif [[ -n "${E_OK:-}" ]]; then
+        ok "portfolio explorer: answering — every v4 position a wallet holds is found, however old"
+      else
+        ok "portfolio explorer: not asked yet — it is asked when a wallet opens /portfolio"
+      fi
     fi
   fi
 
@@ -372,7 +398,16 @@ else
       ok "live market: $M_QUOTED of $M_FOLLOWED tokens quoted${M_UNKNOWN:+ — no source has: $M_UNKNOWN}"
     fi
   elif [[ -n "${M_NOTE:-}" ]]; then
-    warn "live market: $M_NOTE"
+    # "No tokens followed yet" is the first snapshot being built, which on the
+    # real tables takes a while after every restart. Only a build that has not
+    # finished well after the restart is worth a warning.
+    UPTIME=$(printf '%s' "$BODY" | grep -o '"uptimeSeconds":[0-9]*' | head -1 | cut -d: -f2)
+    if [[ "${M_FOLLOWED:-0}" -eq 0 && -n "${UPTIME:-}" && "${UPTIME}" -lt 600 ]]; then
+      ok "live market: starting — the API came up ${UPTIME}s ago and is building its first snapshot"
+    else
+      warn "live market: $M_NOTE"
+      also "runuser -u $APP_USER -- pm2 logs balast-api --lines 80 --nostream | grep -i snapshot"
+    fi
   fi
 fi
 

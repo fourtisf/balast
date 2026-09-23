@@ -29,6 +29,7 @@ import { MarketFeed } from './market';
 import { chainPortfolioReader, chainScannerSource } from './chain-portfolio';
 import { buildPortfolio, type ChainPortfolioReader } from './portfolio';
 import { V4TokenScanner } from './v4-scanner';
+import { ExplorerPositions, type ExplorerFetch } from './explorer-positions';
 import { recentHead } from './recent';
 import { buildSnapshot, nextRevision } from './snapshot';
 import { agedSnapshot, isServable, loadPersistedSnapshot, persistSnapshot } from './snapshot-store';
@@ -196,6 +197,12 @@ export async function buildServer(
     portfolioChain?: ChainPortfolioReader | null;
     /** Finds v4 positions minted after the indexer's last one. Defaults with `portfolioChain`. */
     v4Scanner?: V4TokenScanner | null;
+    /**
+     * Asks the explorer which v4 position NFTs a wallet holds — candidates the
+     * chain then confirms. Defaults with `portfolioChain` unless
+     * `PORTFOLIO_EXPLORER=false`; a test passes a fake fetch or null.
+     */
+    explorerFetch?: ExplorerFetch | null;
   } = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
@@ -210,6 +217,11 @@ export async function buildServer(
         : null;
   v4Scanner?.start();
   app.addHook('onClose', async () => v4Scanner?.stop());
+  const explorerPositions =
+    portfolioChain && options.explorerFetch !== null && process.env.PORTFOLIO_EXPLORER !== 'false'
+      ? new ExplorerPositions({ base: env.explorerApiUrl, fetch: options.explorerFetch ?? undefined })
+      : null;
+  const startedAt = Date.now();
 
   await app.register(cors, {
     // The browser reaches the API through nginx on the same origin, so CORS
@@ -606,6 +618,14 @@ export async function buildServer(
       // The scan for v4 positions minted since the indexer's last one: a
       // portfolio's completeness depends on it, so it is visible from outside.
       portfolioScan: v4Scanner ? v4Scanner.status() : null,
+      portfolioExplorer: explorerPositions ? explorerPositions.status() : null,
+      // How long this process has been up, and when it last built the board:
+      // right after a deploy "no snapshot yet" is the first build running,
+      // not a fault, and the doctor says which.
+      api: {
+        uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
+        snapshotBuiltAt: cached?.snapshot ? new Date(cached.at).toISOString() : null,
+      },
       weth: CONTRACTS.weth,
       usdg: anchor.address,
       usdgSource: anchor.source,
@@ -743,11 +763,15 @@ export async function buildServer(
       .slice(0, 50)
       .map((id) => BigInt(id));
     const scanned = v4Scanner?.owned(wallet) ?? [];
+    // Every v4 NFT the explorer says this wallet holds, however old: the scan
+    // covers only the newest ids and the indexer is weeks behind (§30).
+    const listed = explorerPositions ? await explorerPositions.owned(wallet) : null;
     const built = await buildPortfolio(wallet, USDG || null, {
       chain: portfolioChain,
-      v4Candidates: [...scanned, ...hinted],
-      // No scan at all is not "complete": say the list may be missing some.
-      scanPartial: portfolioChain !== null && !(v4Scanner?.complete() ?? false),
+      v4Candidates: [...scanned, ...hinted, ...(listed ?? [])],
+      // Complete when the explorer answered for this wallet, or the scan
+      // covers every id; otherwise the page says the list may be missing some.
+      scanPartial: portfolioChain !== null && listed === null && !(v4Scanner?.complete() ?? false),
     });
     if (!built) {
       return reply.code(503).send({ error: 'no-data', message: 'The indexer has not priced a block yet.' });

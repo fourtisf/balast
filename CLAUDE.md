@@ -4764,3 +4764,45 @@ Nothing had caught it. The unit tests use fake clients, and
 `lib/chain.test.ts` now asserts that every address in `CONTRACTS` is valid
 and checksummed. The scan's error also turns `"` into `'`, because viem
 quotes the address and the quote cut the doctor's reading of it short.
+
+### Three million position ids, and a doctor that warned about the normal
+
+With the addresses fixed the scan ran — `first sweep running (id 3,098,729
+of 3,147,729)` — and showed the size of the thing: **v4's PositionManager
+has minted over three million NFTs on this chain**, about forty thousand a
+day. The scan's 50,000-id window is a day or two of that. The indexer, which
+knows the older ones, is weeks behind. So a position minted a week ago on
+another device — or through Uniswap's own site, or sent to this wallet — was
+on neither list, and therefore not withdrawable here.
+
+**The explorer is asked for the rest** (`server/api/explorer-positions.ts`):
+Blockscout's `/api/v2/addresses/{address}/nft?type=ERC-721` lists the NFTs a
+wallet holds, and those under PositionManager are v4 positions. It is a list
+of candidates, not a number: every id it names is confirmed on chain before
+it is shown (§30), so a wrong or stale answer can only fail to add a row.
+Answers are kept per wallet for thirty seconds. The page's *may be missing*
+note now appears only when neither the explorer nor a complete scan vouches
+for the list. `/api/health` carries `portfolioExplorer`, and
+`PORTFOLIO_EXPLORER=false` turns it off. The response shape is Blockscout's
+documented one, unverified from here, as the logo source was; if the
+explorer refuses, the doctor says so.
+
+**Four of the doctor's warnings were not faults**, and a warning that means
+nothing trains its reader to ignore the one that does:
+
+- `START_BLOCK is 0` — genesis is the only start that misses no pool's
+  funding mint on pruned endpoints (§17), and a sync under way resumes from
+  its cursor anyway. `ok`.
+- `V3_FACTORY unset — v3 pools will only be those hand-listed` — false
+  since §20, when Uniswap's factory became the default. `ok`, reworded.
+- `first sweep running` — expected for minutes after every restart. `ok`.
+- `No tokens followed yet` — the first snapshot being built after a
+  restart. `ok` for the API's first ten minutes, which `/api/health` now
+  reports as `api.uptimeSeconds`. A warning after that, with the log line
+  to read.
+
+And `deploy.sh`'s summary asked the API once, the instant PM2 had restarted
+it, and printed *the API did not answer* on every healthy deploy. It now
+waits up to a minute. The doctor also read the scan's `lastError` from the
+next object in the body whenever the scan's own was null. Each object is cut
+at its closing brace now.

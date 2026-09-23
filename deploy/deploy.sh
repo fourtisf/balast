@@ -131,7 +131,14 @@ echo "running $(as_app git rev-parse --short HEAD) on $(as_app git rev-parse --a
 # each of those into "API not answering yet", which was false and hid the one
 # line that said what was going on. Read the body; explain the state.
 echo "indexer:"
-BODY=$(curl -sS --max-time 10 localhost:3001/api/health 2>/dev/null || true)
+# The API was just restarted and takes a few seconds to listen; asking once,
+# at once, reported a healthy restart as "did not answer". Give it a minute.
+BODY=""
+for _ in $(seq 1 30); do
+  BODY=$(curl -sS --max-time 10 localhost:3001/api/health 2>/dev/null || true)
+  [[ -n "$BODY" ]] && break
+  sleep 2
+done
 if [[ -z "$BODY" ]]; then
   echo "  the API did not answer on :3001 — runuser -u $APP_USER -- pm2 logs balast-api --lines 30 --nostream"
 else

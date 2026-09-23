@@ -24,6 +24,7 @@ process.env.LOGO_SOURCES ??= 'none';
 // No portfolio reads against a real node: the suites that exercise them
 // hand buildPortfolio their own reader.
 process.env.PORTFOLIO_CHAIN ??= 'false';
+process.env.PORTFOLIO_EXPLORER ??= 'false';
 // Never allow a test run to migrate or truncate a real database.
 if (!/balast_test/.test(url)) {
   throw new Error(

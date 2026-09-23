@@ -287,9 +287,39 @@ describe('v4 positions, confirmed on chain', () => {
       const twice = await app.inject({ method: 'GET', url: `/api/portfolio/${BOB}?v4=902&v4=903` });
       expect(twice.statusCode).toBe(200);
       expect(chain.candidates[1].map(String)).toEqual(expect.arrayContaining(['902', '903']));
-      // A chain reader with no scan behind it cannot vouch for completeness.
+      // A chain reader with no scan and no explorer behind it cannot vouch for completeness.
       expect(twice.json().chain.partial).toBe(true);
     } finally {
+      await app.close();
+    }
+  });
+
+  /** Positions minted long ago, or sent here, are on neither the scan's window nor the lagging indexer. */
+  it('asks the chain about every v4 NFT the explorer says the wallet holds, and then vouches for the list', async () => {
+    process.env.LOG_LEVEL = 'silent';
+    const { buildServer } = await import('./server');
+    const chain = fakeChain();
+    const saved = process.env.PORTFOLIO_EXPLORER;
+    delete process.env.PORTFOLIO_EXPLORER;
+    const app = await buildServer({
+      portfolioChain: chain,
+      v4Scanner: null,
+      explorerFetch: async () =>
+        new Response(
+          JSON.stringify({ items: [{ id: '1234567', token: { address_hash: '0x58daec3116aae6D93017bAAea7749052E8a04fA7' } }] }),
+        ),
+    });
+    await app.ready();
+    try {
+      const response = await app.inject({ method: 'GET', url: `/api/portfolio/${BOB}` });
+      expect(response.statusCode).toBe(200);
+      expect(chain.candidates[0].map(String)).toEqual(expect.arrayContaining(['41', '1234567']));
+      expect(response.json().chain.partial).toBeUndefined();
+      const health = (await app.inject({ method: 'GET', url: '/api/health' })).json();
+      expect(health.portfolioExplorer.lastError).toBeNull();
+      expect(health.api.uptimeSeconds).toBeGreaterThanOrEqual(0);
+    } finally {
+      process.env.PORTFOLIO_EXPLORER = saved;
       await app.close();
     }
   });
