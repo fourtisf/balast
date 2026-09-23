@@ -378,6 +378,8 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
           : 'enter a deposit';
   const pctText = (pct: number) =>
     pct >= 10 ? `${Math.round(pct).toLocaleString('en-US')}%` : `${pct.toFixed(pct >= 1 ? 1 : 2)}%`;
+  const dayText = (usdPerDay: number) =>
+    usdPerDay >= 100 ? usd(usdPerDay) : `$${usdPerDay.toFixed(usdPerDay >= 1 ? 2 : 3)}`;
   const shareText = (share: number) =>
     share >= 0.01 ? `${(share * 100).toFixed(1)}%` : share > 0 ? `${(share * 100).toPrecision(2)}%` : '0%';
 
@@ -877,16 +879,20 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
                     position earns less than the pool's average LP when the
                     others are concentrated, and the pool's own figure would
                     hide that. */}
-                <div className="k">Est. fee yield</div>
+                {/* A yearly rate, and said so on the figure itself: `365%`
+                    alone was read as 365% a day. The day's dollars sit
+                    beneath it, because a dollar a day is the figure a
+                    person can check against their own deposit. */}
+                <div className="k">Est. fee yield · per year</div>
                 <div
                   className={`v num${chainEstimate ? ' up' : ' muted'}`}
-                  title="Today's fees in this pool, times the share of the liquidity at the current price this position would hold, over what you deposit, annualised. Not a forecast."
+                  title="A yearly rate: today's fees in this pool, times the share of the liquidity at the current price this position would hold, over what you deposit, times 365. Not a forecast."
                   data-testid="est-yield"
                 >
-                  {chainEstimate ? pctText(chainEstimate.pct) : '—'}
+                  {chainEstimate ? `${pctText(chainEstimate.pct)} / yr` : '—'}
                   <span className="est">
                     {chainEstimate
-                      ? `est. · ${shareText(chainEstimate.share)} of fees at the price${
+                      ? `≈ ${dayText(chainEstimate.dailyUsd)} a day (${pctText(chainEstimate.pct / 365)}) · ${shareText(chainEstimate.share)} of fees at the price${
                           shownY.young ? ` · ${ageLabel(pool.ageHours)} old pool` : ''
                         }`
                       : chainEstimateMissing}
@@ -937,7 +943,7 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
         <p className="hint">
           {onChain
             ? chainEstimate && todaysFees !== null
-              ? `Est. fee yield is what this position would have earned from today\u2019s fees. At the current price it would hold ${shareText(chainEstimate.share)} of the liquidity trading there, so ${shareText(chainEstimate.share)} of the ${usd(todaysFees)} of fees this pool took in the last 24 hours: ${usd(chainEstimate.dailyUsd)} a day on ${usd(depositUsd)} deposited, annualised. Only liquidity at the price earns — if the price leaves your ${fullRange ? 'range' : 'bin'} or other LPs add there, it falls. Arithmetic on fees already paid, not a forecast.`
+              ? `Est. fee yield is what this position would have earned from today\u2019s fees. At the current price it would hold ${shareText(chainEstimate.share)} of the liquidity trading there, so ${shareText(chainEstimate.share)} of the ${usd(todaysFees)} of fees this pool took in the last 24 hours: about ${dayText(chainEstimate.dailyUsd)} a day on ${usd(depositUsd)} deposited, which is ${pctText(chainEstimate.pct / 365)} a day or ${pctText(chainEstimate.pct)} over a full year. Only liquidity at the price earns — if the price leaves your ${fullRange ? 'range' : 'bin'} or other LPs add there, it falls. Arithmetic on fees already paid, not a forecast.`
               : `Est. fee yield is this position\u2019s share of the fees this pool took in the last 24 hours, measured against the liquidity at the current price read from the chain. It needs both, and a deposit to size the position.`
             : fullRange
               ? `Fee yield is this pool\u2019s own ${yieldLabel(shownY)} figure: a full-range position concentrates nothing, so there is nothing to scale. It is arithmetic on fees already paid, not a forecast.`

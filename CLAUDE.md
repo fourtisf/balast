@@ -5014,3 +5014,18 @@ stays. It is never shown on a live pool.
   Playwright tests.
 
 Unverified from here: the reads against Robinhood Chain itself.
+
+### `365%` read as 365% a day
+
+The first screenshot of the new estimate read `365%` with the caption
+`est. · 0.10% of fees at the price`. ALFA's reply: *300% dalam sehari tidak
+mungkin*. They were right to doubt a figure like that, but the figure was a
+yearly rate. The hint said as much: $3 a day on $276 deposited, annualised,
+which is about 1% a day. The word *annualised* sat in a paragraph under the
+number, and the number is what gets read.
+
+The unit is now on the figure itself: the label reads
+`Est. fee yield · per year` and the value `365% / yr`. The caption leads
+with the daily figure, `≈ $3.00 a day (1.0%)`, because a dollar a day is
+something a person can check against their own deposit. The hint gives the
+day and the year side by side.
