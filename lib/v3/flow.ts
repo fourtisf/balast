@@ -31,6 +31,15 @@ export async function readV3Slot0(client: PublicClient, pool: Address): Promise<
   return { sqrtPriceX96, tick };
 }
 
+/** The pool's in-range liquidity (`liquidity()`), or null when the node does not answer. */
+export async function readV3ActiveLiquidity(client: PublicClient, pool: Address): Promise<bigint | null> {
+  try {
+    return await client.readContract({ address: pool, abi: V3_POOL_ABI, functionName: 'liquidity' });
+  } catch {
+    return null;
+  }
+}
+
 export interface V3Approval {
   token: Address;
   /** Always the NonfungiblePositionManager: v3's periphery does not use Permit2. */

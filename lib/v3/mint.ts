@@ -48,6 +48,7 @@ export const V3_POSITION_MANAGER_ABI = parseAbi([
 /** The pool's own `slot0`, which is where a v3 price is read from. */
 export const V3_POOL_ABI = parseAbi([
   'function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)',
+  'function liquidity() view returns (uint128)',
 ]);
 
 export interface V3PoolInfo {

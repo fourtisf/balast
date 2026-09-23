@@ -154,7 +154,7 @@ async function main(): Promise<void> {
   console.log(`  weth ${weth}\n  v3 manager ${npm}\n  v4 PositionManager ${posm}\n  PoolManager ${poolManager}`);
 
   const { planV3Mint } = await import('../../lib/v3/mint');
-  const { readV3Slot0, simulateV3Mint, sendV3Mint, waitForV3Mint, v3ApprovalsNeeded, approveV3 } = await import('../../lib/v3/flow');
+  const { readV3Slot0, readV3ActiveLiquidity, simulateV3Mint, sendV3Mint, waitForV3Mint, v3ApprovalsNeeded, approveV3 } = await import('../../lib/v3/flow');
   const { planV3Collect, planV3Withdraw } = await import('../../lib/v3/manage');
   const { readV3Positions, readV3Fees, readV3Weth9 } = await import('../../lib/v3/positions');
   const { burnAmountsWithSlippage } = await import('../../lib/v3/amounts');
@@ -229,6 +229,7 @@ async function main(): Promise<void> {
   for (const step of await v3ApprovalsNeeded(pub, user, { token0, token1, amount0: plan3.amount0, amount1: plan3.amount1 }, weth)) {
     await spent(await approveV3(provider, user, step));
   }
+  const active3Before = await readV3ActiveLiquidity(pub, v3Pool);
   const ethBefore = await pub.getBalance({ address: user });
   const tknBefore = await balanceOf(tkn, user);
   const gas3 = await simulateV3Mint(pub, user, plan3);
@@ -241,6 +242,18 @@ async function main(): Promise<void> {
   check(ethPaid > 0n && ethPaid <= wethSide, `paid ${ethPaid} wei of ETH for a planned ${wethSide} (refundETH returned the rest)`);
   check((await holds(npm, [weth, tkn])) === 0n, 'the v3 manager holds no ETH, WETH or TKN after the mint');
   check(tknBefore - (await balanceOf(tkn, user)) <= (tokenIsCurrency0 ? plan3.amount0 : plan3.amount1), 'the token side took no more than planned');
+  // The fee estimate's denominator: the pool's liquidity at the price rose by
+  // the planned bins that hold the price, and no others. v3's manager
+  // re-derives liquidity from the desired amounts, which round up, so it can
+  // land a few wei above the plan — 1 part in 10^20 of an estimate.
+  const atPrice3 = plan3.positions.filter((p) => p.tickLower <= slot.tick && slot.tick < p.tickUpper).reduce((a, p) => a + p.liquidity, 0n);
+  const active3After = await readV3ActiveLiquidity(pub, v3Pool);
+  const rose3 = active3Before !== null && active3After !== null ? active3After - active3Before : null;
+  check(
+    rose3 !== null && atPrice3 > 0n && rose3 >= atPrice3 && rose3 - atPrice3 <= 10n,
+    `v3 liquidity() at the price rose by ${rose3}, the ${atPrice3} the estimate counts as yours (to rounding)`,
+  );
+
 
   section('v3: fees from real swaps, read the way the portfolio reads them');
   const ROUTER = parseAbi([
@@ -352,6 +365,7 @@ async function main(): Promise<void> {
     await spent(await flow.approve(provider, user, step, nowSeconds));
   }
   check((await flow.approvalsNeeded(pub, user, key, plan4, nowSeconds)).length === 0, 'Permit2 approvals in place (token → Permit2 → PositionManager)');
+  const active4Before = await flow.readActiveLiquidity(pub, key);
   const e4 = await pub.getBalance({ address: user });
   const mint4 = await flow.sendMint(provider, user, plan4, await flow.simulateMint(pub, user, plan4));
   const minted4 = await flow.waitForMint(pub, mint4, user);
@@ -360,6 +374,12 @@ async function main(): Promise<void> {
   const paid4 = e4 - (await pub.getBalance({ address: user })) - g4;
   check(paid4 > 0n && paid4 <= plan4.amount0 + BigInt(plan4.positions.length), `paid ${paid4} wei for a planned ${plan4.amount0} (SWEEP returned the rest)`);
   check((await holds(posm, [tkn, weth])) === 0n, 'PositionManager holds nothing after the mint');
+  const atPrice4 = plan4.positions.filter((p) => p.tickLower <= s4.tick && s4.tick < p.tickUpper).reduce((a, p) => a + p.liquidity, 0n);
+  const active4After = await flow.readActiveLiquidity(pub, key);
+  check(
+    active4Before !== null && active4After !== null && active4After - active4Before === atPrice4 && atPrice4 > 0n,
+    `StateView getLiquidity at the price rose by the ${atPrice4} the estimate counts as yours`,
+  );
 
   section('v4: the portfolio finds and confirms the positions on chain');
   const next = await readNextTokenId(pub);

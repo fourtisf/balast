@@ -20,7 +20,9 @@ import {
   yieldValue,
 } from '@/lib/market-figures';
 import { isMintable, orderMarkets, poolLiquidityUsd, quoteGroups } from '@/lib/markets';
+import { estimateFeeYield } from '@/lib/fee-estimate';
 import { densityAtPrice, MAX_BINS, MIN_BINS, SHAPES, shapeWeights } from '@/lib/shapes';
+import { MIN_DATA_HOURS } from '@/lib/yield';
 import { amount as fmtAmount, num } from '@/lib/v4/format';
 
 
@@ -325,21 +327,59 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
     ? 0.5
     : weights.reduce((acc, w, i) => acc + ((i + 0.5) / bins > priceFraction ? w : 0), 0);
 
-  // Estimated, and labelled as such: this pool's trailing-7d yield scaled by
-  // how tightly the range concentrates it. Never a forecast (§1). Full range
-  // is the pool's own yield: no concentration at all.
+  // The pool's own figure, for the simulator and for the full-range fallback.
   const shownY = shownYield(pool);
   const known = shownY.pct !== null;
   const trailing = shownY.pct ?? 0;
-  // What the shape puts where the price is, as a multiple of an even spread
-  // over the same range. Only the bin holding the price earns, so this is
-  // the whole difference between the shapes — and it is arithmetic on the
-  // weights the person chose, not the constant per shape it replaced
-  // (1.35 for curve, 0.8 for bid-ask), which was invented and flattered the
-  // shape that holds the least where it counts.
+
+  // Simulated data only: there is no chain to read, so the prototype's
+  // estimate stays — the pool's yield scaled by what the shape puts at the
+  // price. On a live pool this is never shown.
   const density = fullRange ? 1 : densityAtPrice(weights, safeMin / 100, safeMax / 100);
   const concentration = fullRange ? 1 : Math.min(6, (0.6 / span) * density);
-  const estYield = trailing * concentration;
+  const simYield = trailing * concentration;
+
+  // A live pool: what THIS position would have earned from today's fees. The
+  // pool's active liquidity at the price and the liquidity the plan mints are
+  // both read or computed in the chain's own units, so the share is exact at
+  // today's price; the only assumption is that today's fees repeat and the
+  // price stays in the bin it is in. It replaced the heuristic above, whose
+  // 0.6 was invented and which could not see how much other LPs already hold
+  // at the price: 285% for spot and 643% for curve on a pool it knew nothing
+  // about (fee-estimate.ts).
+  const todaysFees =
+    pool.now && pool.ageHours >= MIN_DATA_HOURS && Number.isFinite(pool.now.fees24hUsd) ? pool.now.fees24hUsd : null;
+  const depositUsd =
+    flow.needs && flow.sides && quoteUsd > 0
+      ? (Number(flow.needs.quote) / 10 ** flow.sides.quoteDecimals) * quoteUsd +
+        (Number(flow.needs.token) / 10 ** flow.sides.tokenDecimals) * priceNowUsd
+      : 0;
+  const chainEstimate =
+    onChain && flow.live && flow.plan
+      ? estimateFeeYield({
+          fees24hUsd: todaysFees,
+          activeLiquidity: flow.live.activeLiquidity,
+          positions: flow.plan.positions,
+          tick: flow.live.tick,
+          depositUsd,
+        })
+      : null;
+  // Why there is no live figure, in words, for the caption.
+  const chainEstimateMissing = !onChain
+    ? null
+    : todaysFees === null
+      ? pool.ageHours < MIN_DATA_HOURS
+        ? 'not enough data yet'
+        : 'no fees measured today'
+      : !flow.live
+        ? 'reading the pool'
+        : flow.live.activeLiquidity === null
+          ? 'pool liquidity unreadable'
+          : 'enter a deposit';
+  const pctText = (pct: number) =>
+    pct >= 10 ? `${Math.round(pct).toLocaleString('en-US')}%` : `${pct.toFixed(pct >= 1 ? 1 : 2)}%`;
+  const shareText = (share: number) =>
+    share >= 0.01 ? `${(share * 100).toFixed(1)}%` : share > 0 ? `${(share * 100).toPrecision(2)}%` : '0%';
 
   // The range the plan actually covers, in the quote, from its aligned ticks.
   const liveRange = useMemo(() => {
@@ -830,24 +870,46 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
             </div>
           </div>
           <div>
-            {/* Full range concentrates nothing, so the figure is not an
-                estimate of anything — it is this pool's own trailing yield,
-                and it is labelled the way the board and the drawer label it
-                (§7). Calling it `est. · from 1445% trailing` over the same
-                1445% read as a projection stacked on a projection. */}
-            <div className="k">{fullRange ? 'Fee yield' : 'Est. fee yield'}</div>
-            <div className={`v num${known ? ' up' : ' muted'}`} title={yieldTitle(shownY)}>
-              {fullRange ? yieldValue(shownY) : known ? `${estYield.toFixed(0)}%` : '—'}
-              {(() => {
-                const qualifier = yieldCaption(shownY, ageLabel(pool.ageHours), stalenessText(indexerLagSeconds));
-                const text = fullRange
-                  ? (qualifier ?? yieldBasisShort(shownY))
-                  : known
-                    ? `est. · from ${trailing.toFixed(0)}% · ${yieldBasisShort(shownY)}`
-                    : qualifier;
-                return text ? <span className="est">{text}</span> : null;
-              })()}
-            </div>
+            {onChain ? (
+              <>
+                {/* This position's share of today's fees at today's price
+                    (fee-estimate.ts), full range included: a full-range
+                    position earns less than the pool's average LP when the
+                    others are concentrated, and the pool's own figure would
+                    hide that. */}
+                <div className="k">Est. fee yield</div>
+                <div
+                  className={`v num${chainEstimate ? ' up' : ' muted'}`}
+                  title="Today's fees in this pool, times the share of the liquidity at the current price this position would hold, over what you deposit, annualised. Not a forecast."
+                  data-testid="est-yield"
+                >
+                  {chainEstimate ? pctText(chainEstimate.pct) : '—'}
+                  <span className="est">
+                    {chainEstimate
+                      ? `est. · ${shareText(chainEstimate.share)} of fees at the price${
+                          shownY.young ? ` · ${ageLabel(pool.ageHours)} old pool` : ''
+                        }`
+                      : chainEstimateMissing}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="k">{fullRange ? 'Fee yield' : 'Est. fee yield'}</div>
+                <div className={`v num${known ? ' up' : ' muted'}`} title={yieldTitle(shownY)}>
+                  {fullRange ? yieldValue(shownY) : known ? `${simYield.toFixed(0)}%` : '—'}
+                  {(() => {
+                    const qualifier = yieldCaption(shownY, ageLabel(pool.ageHours), stalenessText(indexerLagSeconds));
+                    const text = fullRange
+                      ? (qualifier ?? yieldBasisShort(shownY))
+                      : known
+                        ? `est. · from ${trailing.toFixed(0)}% · ${yieldBasisShort(shownY)}`
+                        : qualifier;
+                    return text ? <span className="est">{text}</span> : null;
+                  })()}
+                </div>
+              </>
+            )}
           </div>
           <div>
             <div className="k">{onChain ? 'You deposit' : 'Split at mint'}</div>
@@ -873,16 +935,13 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
         </div>
 
         <p className="hint">
-          {fullRange
-            ? `Fee yield is this pool\u2019s own ${yieldLabel(shownY)} figure: a full-range position concentrates nothing, so there is nothing to scale. It is arithmetic on fees already paid, not a forecast.`
-            : `Est. fee yield scales this pool\u2019s ${yieldLabel(shownY)} by how tightly your range concentrates them. It is arithmetic on fees already paid, not a forecast, and it earns nothing while price sits outside the range.`}
-          {shownY.current && shownY.feesUsd !== null && shownY.liquidityUsd !== null
-            ? ` Today: ${usd(shownY.feesUsd)} of fees over ${usd(shownY.liquidityUsd)} in the pool now, ${
-                shownY.liquiditySource === 'chain' ? 'read from the pool on chain' : `per ${shownY.liquiditySource}`
-              }.`
-            : !shownY.current && shownY.pct !== null
-              ? ' No current liquidity figure for this pool, so this is the indexer’s figure, fees and liquidity from the same day — its age is beside it.'
-              : ''}
+          {onChain
+            ? chainEstimate && todaysFees !== null
+              ? `Est. fee yield is what this position would have earned from today\u2019s fees. At the current price it would hold ${shareText(chainEstimate.share)} of the liquidity trading there, so ${shareText(chainEstimate.share)} of the ${usd(todaysFees)} of fees this pool took in the last 24 hours: ${usd(chainEstimate.dailyUsd)} a day on ${usd(depositUsd)} deposited, annualised. Only liquidity at the price earns — if the price leaves your ${fullRange ? 'range' : 'bin'} or other LPs add there, it falls. Arithmetic on fees already paid, not a forecast.`
+              : `Est. fee yield is this position\u2019s share of the fees this pool took in the last 24 hours, measured against the liquidity at the current price read from the chain. It needs both, and a deposit to size the position.`
+            : fullRange
+              ? `Fee yield is this pool\u2019s own ${yieldLabel(shownY)} figure: a full-range position concentrates nothing, so there is nothing to scale. It is arithmetic on fees already paid, not a forecast.`
+              : `Est. fee yield scales this pool\u2019s ${yieldLabel(shownY)} by how tightly your range concentrates them. It is arithmetic on fees already paid, not a forecast, and it earns nothing while price sits outside the range.`}
           {onChain && !wallet ? ' Connect a wallet to see the exact amounts for your deposit.' : ''}
         </p>
       </div>

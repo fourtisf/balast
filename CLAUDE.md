@@ -4919,3 +4919,98 @@ now prints one line for it:
 - the endpoint's error, if there is one.
 
 The operator no longer has to grep `/api/health` for it.
+
+---
+
+## 32. The builder's estimate: this position's share of today's fees
+
+ALFA, on VIRTUAL / USDG at ±15%: *curve dan spot masih tidak masuk akal
+yieldnya*. Spot read `285%`, curve `643%`, both `est. · from 143% · 24h`.
+
+### Why those figures meant nothing
+
+The pool's own 143% was sound: $1.6K of fees over $418K, measured today.
+What sat on top of it was not. The builder multiplied it by
+`(0.6 / span) × density` and capped the result at 6×.
+
+- **The 0.6 was invented.** At ±15% the span is 0.3, so every shape was
+  simply doubled.
+- **The density then multiplied curve by another 2.27.**
+- **The method was blind to the one thing that decides a concentrated
+  position's income:** how much liquidity other LPs already hold at the
+  price. A pool whose LPs are all tightly concentrated pays a new position
+  far less than one full of full-range liquidity. The heuristic could not
+  see the difference.
+
+§12 had already called this estimate ALFA's open question. The answer is to
+stop estimating it.
+
+### What it is now
+
+A swap's fee is split across the liquidity active at the price it trades
+through, in proportion to each position's liquidity there. So the new
+figure is:
+
+```
+your share   = your liquidity at the price / (pool's active liquidity + yours)
+per day      = share × fees this pool took in the last 24 hours
+fee yield    = per day × 365 / what you deposit
+```
+
+The inputs:
+
+- **Pool's active liquidity:** read from the chain on the same cadence as
+  the price, via v3 `liquidity()` or v4 StateView `getLiquidity`.
+- **Your liquidity:** the plan's own positions, only the one(s) whose ticks
+  hold the current price, following Uniswap's rule
+  (`tickLower ≤ tick < tickUpper`).
+- **Fees:** from the head reader (§25).
+- **Deposit:** the plan's two amounts at today's prices.
+
+Everything is in the chain's own units, and the figure is
+`lib/fee-estimate.ts`.
+
+**Curve and spot now differ by exactly what they put at the price, and
+nothing else.** Full range uses the same formula. So a full-range position
+in a pool of concentrated LPs now reads below the pool's average, which is
+true, rather than at it.
+
+The page shows the share (`est. · 1.2% of fees at the price`), and the hint
+spells out the arithmetic in dollars:
+
+- today's fees;
+- the share you would take;
+- dollars a day on your deposit.
+
+A reader can therefore check every step. When an input is missing, the
+caption says which one, instead of a figure:
+
+- `no fees measured today`
+- `not enough data yet`
+- `reading the pool`
+- `pool liquidity unreadable`
+- `enter a deposit`
+
+What it still assumes, and says: today's fees repeat, the price stays in the
+bin it is in, and nobody else adds liquidity there. A position whose bins
+miss the price reads 0%.
+
+The simulator has no chain to read, so on simulated data the old estimate
+stays. It is never shown on a live pool.
+
+### Verified
+
+- **Unit tests** (`lib/fee-estimate.test.ts`):
+  - the share arithmetic;
+  - curve over spot being exactly the ratio of their liquidity at the price;
+  - 0% outside the range, including a tick on a bin's upper edge;
+  - null for each missing input.
+- **Real contracts:** `npm run check:lp` now asserts, against Uniswap's
+  real bytecode, that the pool's active liquidity rises by exactly the
+  liquidity the estimate counts as yours. For v4 this holds exactly. For v3
+  it holds to within 2 wei, because the manager re-derives liquidity from
+  rounded-up amounts. 65 checks pass.
+- **Suites and build:** full suite (518 tests), production build, and 41
+  Playwright tests.
+
+Unverified from here: the reads against Robinhood Chain itself.

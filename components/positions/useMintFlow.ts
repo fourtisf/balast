@@ -14,6 +14,7 @@ import {
   approve,
   describeTxError,
   readBalance,
+  readActiveLiquidity,
   readClient,
   readSlot0,
   sendMint,
@@ -31,6 +32,7 @@ import { planMint, type MintPlan } from '@/lib/v4/mint';
 import { priceFromSqrt, toPoolKey, type PoolKey } from '@/lib/v4/pool';
 import {
   approveV3,
+  readV3ActiveLiquidity,
   readV3Slot0,
   sendV3Mint,
   simulateV3Mint,
@@ -75,7 +77,12 @@ export interface MintSides {
 export interface MintFlow {
   key: PoolKey | null;
   sides: MintSides | null;
-  live: (Slot0 & { tokenPriceInQuote: number }) | null;
+  /**
+   * The live price, and the liquidity active at it — what a new position's
+   * share of each swap's fee is measured against. `activeLiquidity` is null
+   * when the node did not answer that read; the price still stands.
+   */
+  live: (Slot0 & { tokenPriceInQuote: number; activeLiquidity: bigint | null }) | null;
   liveError: string | null;
   plan: MintPlan | null;
   planError: string | null;
@@ -143,7 +150,7 @@ export function useMintFlow(args: {
   const fullRange = args.fullRange ?? false;
   const slippageBps = args.slippageBps ?? DEFAULT_SLIPPAGE_BPS;
   const { wallet, openWallet, showToast } = useUi();
-  const [live, setLive] = useState<(Slot0 & { tokenPriceInQuote: number }) | null>(null);
+  const [live, setLive] = useState<(Slot0 & { tokenPriceInQuote: number; activeLiquidity: bigint | null }) | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [balances, setBalances] = useState<{ token: bigint; quote: bigint; native: bigint } | null>(null);
   const [approvals, setApprovals] = useState<ApprovalStep[]>([]);
@@ -218,10 +225,13 @@ export function useMintFlow(args: {
     const client = readClient(readVia);
     const tick = async () => {
       try {
-        const slot0 = venue === 'v3' ? await readV3Slot0(client, v3Pool) : await readSlot0(client, key);
+        const [slot0, activeLiquidity] = await Promise.all([
+          venue === 'v3' ? readV3Slot0(client, v3Pool) : readSlot0(client, key),
+          venue === 'v3' ? readV3ActiveLiquidity(client, v3Pool) : readActiveLiquidity(client, key),
+        ]);
         if (cancelled) return;
         const p = priceFromSqrt(slot0.sqrtPriceX96, info.decimals0, info.decimals1);
-        setLive({ ...slot0, tokenPriceInQuote: sides.tokenIsCurrency0 ? p : 1 / p });
+        setLive({ ...slot0, activeLiquidity, tokenPriceInQuote: sides.tokenIsCurrency0 ? p : 1 / p });
         setLiveError(null);
       } catch (e) {
         if (!cancelled) setLiveError(describeTxError(e));

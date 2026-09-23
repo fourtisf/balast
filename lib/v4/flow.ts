@@ -30,6 +30,7 @@ import { poolId, type PoolKey } from './pool';
 
 export const STATE_VIEW_ABI = parseAbi([
   'function getSlot0(bytes32 poolId) view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee)',
+  'function getLiquidity(bytes32 poolId) view returns (uint128 liquidity)',
 ]);
 
 /** Reads go through the wallet's own connection when there is one (no CORS to negotiate), else the public RPC. */
@@ -51,6 +52,24 @@ export async function readSlot0(client: PublicClient, key: PoolKey): Promise<Slo
   });
   if (sqrtPriceX96 === 0n) throw new Error('This pool has not been initialised on chain.');
   return { sqrtPriceX96, tick };
+}
+
+/**
+ * The liquidity trading at the pool's current price: what every swap's fee is
+ * shared across. Null when the node does not answer — an estimate built on it
+ * then says it cannot be made, rather than guessing.
+ */
+export async function readActiveLiquidity(client: PublicClient, key: PoolKey): Promise<bigint | null> {
+  try {
+    return await client.readContract({
+      address: CONTRACTS.stateView,
+      abi: STATE_VIEW_ABI,
+      functionName: 'getLiquidity',
+      args: [poolId(key)],
+    });
+  } catch {
+    return null;
+  }
 }
 
 export function isNative(currency: string): boolean {
