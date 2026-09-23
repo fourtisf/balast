@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useMarket, usePools } from '@/components/providers/MarketProvider';
+import { usePools } from '@/components/providers/MarketProvider';
 import { Flash } from '@/components/ui/Flash';
 import { count, usd } from '@/lib/format';
 
@@ -11,26 +10,14 @@ const WORDS = [
 ];
 
 /**
- * The dateline. Chain time, not wall-clock time: the date is the one the
- * numbers are as of — now, less the indexer's lag — because §7 does not
- * allow stale numbers to pass as live, and a dateline is a claim about when.
- *
- * Rendered after mount. The server's clock and time zone are not the
- * reader's, so a date computed during render would differ between the two
- * and React would report the mismatch.
+ * The eyebrow over the headline. It carried the date the numbers were as of
+ * until the owner asked for it gone: during the first sync that date is
+ * weeks old and read as a fault rather than as a fact. The lag is still on
+ * screen — the top bar's indexer chip says how far behind the numbers are
+ * (§7) — so removing the date hides nothing.
  */
 export function LedgerDate() {
-  const { indexerLagSeconds } = useMarket();
-  const [date, setDate] = useState<string | null>(null);
-
-  useEffect(() => {
-    const asOf = new Date(Date.now() - indexerLagSeconds * 1000);
-    setDate(
-      asOf.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }),
-    );
-  }, [indexerLagSeconds]);
-
-  return <>The Balast ledger{date ? ` · ${date}` : ''}</>;
+  return <>The Balast ledger</>;
 }
 
 /**

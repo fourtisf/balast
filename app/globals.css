@@ -504,12 +504,12 @@ h1 em{font-style:italic;color:var(--ac)}
    address lives in the masthead facts and the footer; until there is one,
    both say so. */
 .community{display:flex;align-items:center;gap:2px;flex:none}
-.soc{display:inline-flex;align-items:center;justify-content:center;gap:7px;width:34px;height:34px;border-radius:99px;color:var(--fg-2);transition:var(--t-hover)}
+.soc{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;padding:0 13px;border-radius:99px;border:1px solid var(--bd);color:var(--fg);font-size:13px;font-weight:600;white-space:nowrap;transition:var(--t-hover)}
 .soc:hover{background:var(--raise-2);color:var(--fg)}
-.soc svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.soc svg{width:15px;height:15px;fill:currentColor;flex:none}
 .soc.off{color:var(--fg-4);cursor:default}
 .community.foot{gap:16px}
-.community.foot .soc{width:auto;height:auto;padding:0;border-radius:0;color:var(--fg-3)}
+.community.foot .soc{width:auto;height:auto;padding:0;border:0;border-radius:0;font-size:inherit;font-weight:inherit;color:var(--fg-3)}
 .community.foot .soc:hover{background:none;color:var(--fg)}
 .community.foot .soc svg{width:14px;height:14px}
 .facts .soon{color:var(--fg-3);font-weight:500}
@@ -517,7 +517,8 @@ h1 em{font-style:italic;color:var(--ac)}
 .facts .ca{font:inherit;font-family:var(--mono);font-weight:600;color:var(--fg);text-decoration:underline dotted;text-underline-offset:3px;padding:0}
 .foot-ca{color:var(--fg-2)}
 @media (max-width:1400px){.search{width:220px}}
-@media (max-width:640px){.nav .community{display:none}}
+@media (max-width:640px){.nav .soc span{display:none}.nav .soc{width:34px;padding:0}}
+@media (max-width:440px){.nav .community{display:none}}
 
 /* ---------- wallet dialog ----------
    Centred, on the same scrim as the drawer. The list is whatever the

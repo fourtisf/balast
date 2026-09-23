@@ -5363,3 +5363,17 @@ wallet nobody had looked at yet (§7).
   positions…*, never *no positions yet*.
 - **The closed positions' history is asked for at the start** of the
   server's read, beside the others, rather than after every other read.
+
+### The dateline's date, and an X that read as a close button
+
+ALFA, on the live board: remove the date — *THE BALAST LEDGER · FRIDAY 10
+JULY* — and put X at the top. The date was chain time, honest and weeks old
+during the sync, and read as a fault; the eyebrow is *The Balast ledger* now,
+and the top bar's indexer chip still says how old the numbers are (§7).
+
+The navigation already had X — as two crossed strokes, which beside the
+links reads exactly like a close button. It is X's own mark now, filled,
+with the handle beside it (`@Balastdotfi`, from `X_HANDLE`) in a pill.
+Below 640px the handle drops and the mark stays; below 440px the pill
+leaves the top bar so the wallet button keeps its row, and X stays in the
+footer.

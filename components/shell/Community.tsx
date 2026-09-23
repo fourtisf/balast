@@ -1,9 +1,13 @@
 'use client';
 
-import { SOCIAL } from '@/lib/site';
+import { SOCIAL, X_HANDLE } from '@/lib/site';
 
 /**
  * Where the project talks: X.
+ *
+ * The icon is X's own mark, filled. It used to be two crossed strokes,
+ * which in the navigation read as a close button rather than as a link.
+ * In the navigation it carries the handle beside it, so it is plainly X.
  *
  * The URL is a constant in lib/site.ts. Were it ever empty it would render
  * as a quiet, unlinked icon that says "coming soon" on hover rather than as
@@ -11,17 +15,17 @@ import { SOCIAL } from '@/lib/site';
  * wallet is a small thing that reads as a large one.
  */
 export function Community({ className = '' }: { className?: string }) {
-  const labelled = className.includes('foot');
+  const inFooter = className.includes('foot');
   const icon = (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M4 4l16 16M20 4L4 20" />
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
     </svg>
   );
-  const label = <span className={labelled ? undefined : 'sr-only'}>X</span>;
+  const label = <span>{inFooter ? 'X' : X_HANDLE}</span>;
   return (
     <div className={`community ${className}`.trim()}>
       {SOCIAL.x ? (
-        <a className="soc" href={SOCIAL.x} target="_blank" rel="noopener noreferrer" title="Balast on X">
+        <a className="soc" href={SOCIAL.x} target="_blank" rel="noopener noreferrer" title={`Follow ${X_HANDLE} on X`} aria-label={`Balast on X, ${X_HANDLE}`}>
           {icon}
           {label}
         </a>

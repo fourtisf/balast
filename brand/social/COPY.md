@@ -335,6 +335,24 @@ p04, p05–p07 one a day, p08, p09. p11 is the profile header (1500 × 500).
 **p13 · Portfolio**
 > Your fees, day by day. Every position you hold, marked to market, with the fees it has actually earned and its price impact right beside them. Collect or withdraw any time, from your own wallet. balast.xyz
 
+## Thread · how it works (video) + portfolio (p13)
+
+**1/2 · with the screen recording**
+> How to add liquidity on Balast, in 90 seconds.
+>
+> Pick a token. Deposit ETH — Balast swaps the other side for you through Uniswap. Choose full range or a shape, sign, and the position mints straight to your wallet as an NFT.
+>
+> No lockup. No Balast fee.
+>
+> balast.xyz
+
+**2/2 · with p13**
+> Then watch it work.
+>
+> Your portfolio marks every position to market: fees earned, read from the chain, with price impact right beside them — never buried.
+>
+> Collect fees or withdraw any time, from your own wallet.
+
 ## Order
 
 Pin the contract-address post first, before anything else goes out: the
