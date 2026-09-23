@@ -1,0 +1,53 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="social.css">
+<style>
+.banner{background:
+  radial-gradient(900px 640px at 76% 46%, rgba(255,255,255,.95), rgba(255,255,255,0) 70%),
+  radial-gradient(1200px 900px at 50% 50%, var(--bg) 55%, var(--raise) 100%)}
+.mast.shape{grid-template-columns:minmax(0,1fr) 620px;gap:72px;align-items:center;padding-top:32px}
+.mast.shape h1{font-size:112px}
+.pts{list-style:none;display:flex;flex-direction:column;gap:14px;margin-top:4px}
+.pts li{display:flex;gap:16px;align-items:baseline;font-size:25px;color:var(--fg-2)}
+.pts li b{color:var(--fg);font-weight:600}
+.pts li::before{content:"";flex:none;width:10px;height:10px;border-radius:50%;background:var(--ac);transform:translateY(-3px)}
+.stack{position:relative}
+.stack .ghost{position:absolute;inset:22px -16px -22px 16px;background:var(--panel-2);border:1.5px solid var(--bd-n);border-radius:28px}
+.sc{position:relative;background:var(--panel);border:1.5px solid var(--bd-n);border-radius:28px;padding:30px 34px 28px;
+  box-shadow:inset 0 1.5px 0 #fff,0 2px 4px rgba(20,32,27,.05),0 50px 110px -60px rgba(20,32,27,.45)}
+.sc .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}
+.sc .bins{font-family:var(--mono);font-size:18px;color:var(--fg-3)}
+.plot{padding:18px 18px 10px;border-radius:18px;background:var(--panel-2);border:1.5px solid var(--bd-n)}
+.ends{display:flex;justify-content:space-between;margin-top:10px;font-family:var(--mono);font-size:17px;color:var(--fg-3)}
+.legend{display:flex;gap:22px;margin-top:16px;font-size:17px;color:var(--fg-2)}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:4px;margin-right:8px;vertical-align:-1px}
+.dens{display:flex;justify-content:space-between;align-items:baseline;margin-top:18px;padding-top:16px;border-top:1.5px solid var(--bd-n);font-size:21px;color:var(--fg-2)}
+.dens b{font-family:var(--mono);font-size:30px;font-weight:600;color:var(--fg)}
+.trio{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:26px;margin-top:40px}
+.trio .sc{padding:24px 24px 22px}
+.trio .name{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}
+.trio .name b{font-family:var(--serif);font-weight:400;font-size:44px;line-height:1}
+.trio .name span{font-family:var(--mono);font-size:19px;color:var(--fg-2)}
+.trio p{font-size:20px;line-height:1.4;color:var(--fg-2);margin-top:14px}
+.trio p b{color:var(--fg);font-weight:600}
+.mast-t{display:flex;flex-direction:column;gap:18px;padding-top:34px}
+.mast-t h1{font-size:92px}
+</style></head><body>
+<div class="banner" data-w="1600" data-h="900">
+<div class="top"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M 5 6 L 13.5 13 L 13.5 26 L 5 26 Z" fill="#14201B" stroke="#14201B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/><path d="M 27 6 L 18.5 13 L 18.5 26 L 27 26 Z" fill="#14201B" stroke="#14201B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg><span>Balast</span></div><div class="chip"><i></i>Positions · through Uniswap</div></div>
+<div class="mast shape">
+  <div class="mast-l">
+    <span class="eyebrow">Shapes · Curve</span>
+    <h1>Curve. <em>Thick where the price is.</em></h1>
+    <p class="lede">Bunched around the current price and thin at the edges. Only the bin holding the price earns, so this earns the most while the price sits still.</p>
+    <ul class="pts"><li><span><b>Most liquidity at the price</b></span></li><li><span><b>Best for a quiet market</b></span></li><li><span><b>Drops away fastest</b> as the price moves</span></li></ul>
+  </div>
+  <div class="stack"><div class="ghost"></div>
+    <div class="sc">
+      <div class="head"><span class="seg"><span>Spot</span><span class="on">Curve</span><span>Bid-ask</span></span><span class="bins">24 bins · ±15%</span></div>
+      <div class="plot"><svg viewBox="0 0 516 250" width="516" height="250" style="display:block"><rect x="2.7" y="244.0" width="16.1" height="6.0" rx="4" fill="#BFE3CF"/><rect x="24.2" y="239.8" width="16.1" height="10.2" rx="4" fill="#BFE3CF"/><rect x="45.7" y="232.3" width="16.1" height="17.7" rx="4" fill="#BFE3CF"/><rect x="67.2" y="220.8" width="16.1" height="29.2" rx="4" fill="#BFE3CF"/><rect x="88.7" y="204.4" width="16.1" height="45.6" rx="4" fill="#BFE3CF"/><rect x="110.2" y="182.7" width="16.1" height="67.3" rx="4" fill="#BFE3CF"/><rect x="131.7" y="156.1" width="16.1" height="93.9" rx="4" fill="#BFE3CF"/><rect x="153.2" y="126.1" width="16.1" height="123.9" rx="4" fill="#BFE3CF"/><rect x="174.7" y="95.2" width="16.1" height="154.8" rx="4" fill="#BFE3CF"/><rect x="196.2" y="67.2" width="16.1" height="182.8" rx="4" fill="#BFE3CF"/><rect x="217.7" y="45.7" width="16.1" height="204.3" rx="4" fill="#BFE3CF"/><rect x="239.2" y="34.0" width="16.1" height="216.0" rx="4" fill="#BFE3CF"/><rect x="260.7" y="34.0" width="16.1" height="216.0" rx="4" fill="#1B8353"/><rect x="282.2" y="45.7" width="16.1" height="204.3" rx="4" fill="#1B8353"/><rect x="303.7" y="67.2" width="16.1" height="182.8" rx="4" fill="#1B8353"/><rect x="325.2" y="95.2" width="16.1" height="154.8" rx="4" fill="#1B8353"/><rect x="346.7" y="126.1" width="16.1" height="123.9" rx="4" fill="#1B8353"/><rect x="368.2" y="156.1" width="16.1" height="93.9" rx="4" fill="#1B8353"/><rect x="389.7" y="182.7" width="16.1" height="67.3" rx="4" fill="#1B8353"/><rect x="411.2" y="204.4" width="16.1" height="45.6" rx="4" fill="#1B8353"/><rect x="432.7" y="220.8" width="16.1" height="29.2" rx="4" fill="#1B8353"/><rect x="454.2" y="232.3" width="16.1" height="17.7" rx="4" fill="#1B8353"/><rect x="475.7" y="239.8" width="16.1" height="10.2" rx="4" fill="#1B8353"/><rect x="497.2" y="244.0" width="16.1" height="6.0" rx="4" fill="#1B8353"/><line x1="258" y1="6" x2="258" y2="250" stroke="#14201B" stroke-width="2" stroke-dasharray="6 6"/><text x="268" y="22" font-family="IBM Plex Mono" font-size="17" fill="#14201B">now</text></svg><div class="ends"><span>−15%</span><span>+15%</span></div></div>
+      <div class="legend"><span><i style="background:#1B8353"></i>Token side</span><span><i style="background:#BFE3CF"></i>ETH / USDG side</span></div>
+      <div class="dens"><span>Liquidity at the price</span><span><b>2.25×</b> an even spread</span></div>
+    </div>
+  </div>
+</div>
+<div class="foot"><span class="site">balast.xyz</span><span class="r"><span>Liquidity layer for Robinhood Chain</span><span>No custody · No emissions</span></span></div>
+</div></body></html>

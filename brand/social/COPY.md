@@ -230,6 +230,44 @@ Reply to it, as 2/:
 
 > A Balast stake card for an example VIRTUAL / ETH pool on Uniswap v4: full range from 0 to infinity, a deposit of 0.10 ETH and 330 VIRTUAL, Balast fee none, custody in your wallet as an NFT, no lockup, and a "Stake full range" button.
 
+## 8–11 · Shapes · `08-shape-spot.png` `09-shape-curve.png` `10-shape-bid-ask.png` `11-shapes.png`
+
+The bars are the builder's own weights (`npm run brand:shapes` redraws them
+from `lib/shapes.ts`), so the pictures cannot drift from what gets minted.
+Post `11-shapes.png` first, then one shape a day.
+
+**11 · Three shapes**
+
+> Three ways to place liquidity on Robinhood Chain, in one transaction:
+>
+> Spot — even across your range.
+> Curve — bunched at the price.
+> Bid-ask — thick at the edges: buys dips, sells rallies.
+>
+> Minted by Uniswap, straight to your wallet. balast.xyz
+
+**8 · Spot**
+
+> Spot: the same liquidity in every bin across your range. Steady while the price wanders inside it — and nothing while it is outside.
+>
+> balast.xyz
+
+**9 · Curve**
+
+> Curve: 2.25× an even spread right at the price. Only the bin holding the price earns, so this earns the most while the market is quiet — and drops away fastest when it moves.
+>
+> balast.xyz
+
+**10 · Bid-ask**
+
+> Bid-ask: thin in the middle, thick at the edges. A ladder of orders that buys the token as it falls and sells it as it rises. A trading shape, not a fee shape.
+>
+> balast.xyz
+
+**Image description** (for 11)
+
+> Three Balast cards comparing liquidity shapes over a ±15% range in 24 bins: Spot with even bars (1.00× at the price), Curve peaked at the current price (2.25×), and Bid-ask tallest at both edges (0.31×).
+
 ## Order
 
 Pin the contract-address post first, before anything else goes out: the
