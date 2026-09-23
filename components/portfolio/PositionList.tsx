@@ -10,6 +10,7 @@ import { getProvider } from '@/lib/data';
 import type { TokenMeta, UserPosition } from '@/lib/data/types';
 import { countdown, quoteLabel, usdExact } from '@/lib/format';
 import { positionRef } from '@/lib/position-ref';
+import { impactPctText, impactText } from '@/lib/price-impact';
 import { SHAPES } from '@/lib/shapes';
 import { amount as fmtAmount } from '@/lib/v4/format';
 import { feesUsd, type LiveFeesState } from './useLiveFees';
@@ -100,6 +101,10 @@ export function PositionList({
         const token = tokenOf(position);
         if (!token) return null;
         const lp = position.live;
+        const impactPct =
+          position.priceImpactUsd !== undefined && lp?.holdUsd && lp.holdUsd > 0
+            ? impactPctText((position.priceImpactUsd / lp.holdUsd) * 100)
+            : null;
         const quote = lp ? quoteLabel(lp) : quoteLabel(pools.find((p) => p.id === position.poolId)!);
         const shape = position.shape ? SHAPES.find((s) => s.id === position.shape) : undefined;
         const rangeText =
@@ -171,6 +176,18 @@ export function PositionList({
               ) : (
                 <div className="up num" style={{ fontSize: 12 }}>
                   +{(position.feesWeth ?? 0).toFixed(2)} ETH fees
+                </div>
+              )}
+              {lp && (
+                <div
+                  className={`num${position.priceImpactUsd !== undefined && position.priceImpactUsd < 0 ? ' down' : ' muted'}`}
+                  style={{ fontSize: 12 }}
+                  data-testid="position-impact"
+                  title="Price impact on holdings: what this position is worth now against what holding the tokens put into it would be worth, both at today's prices. It is what providing liquidity has cost against simply holding, fees aside."
+                >
+                  {position.priceImpactUsd === undefined
+                    ? 'price impact — principal not known'
+                    : `price impact ${impactText(position.priceImpactUsd)}${impactPct ? ` (${impactPct})` : ''}`}
                 </div>
               )}
               {lp && (

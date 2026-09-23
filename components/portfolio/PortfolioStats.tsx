@@ -14,6 +14,7 @@ import type { UserPosition } from '@/lib/data/types';
 import { dailyEarnedUsd, recordEarned, type EarnedReading } from '@/lib/fee-samples';
 import { signedPct, usdExact, usdFine, ether } from '@/lib/format';
 import { positionRef } from '@/lib/position-ref';
+import { impactPctText, impactText, priceImpactOf } from '@/lib/price-impact';
 
 /**
  * What a live position has earned so far: the fees it has already paid out
@@ -64,22 +65,26 @@ export function PortfolioBody() {
 
   // Impermanent loss, under the name that tells the truth (§7): what the
   // position is worth against what holding its principal would be worth.
-  // It cannot be positive in theory and can be by a cent in practice, so a
-  // figure under half a dollar either way is a plain zero in no colour.
+  // Positions whose principal is known are summed; one without is left out
+  // and the caption says so — a dash, not a $0 that reads as "no loss".
+  // Live, the figure is shown to the cent with its share of the held value:
+  // on a small position minted recently it is cents, and rounding that to
+  // "$0" read as unmeasured (lib/price-impact.ts).
   const impact = portfolio.priceImpactUsd;
-  // Positions whose principal is known. A v3 position is read live and its
-  // funding is not indexed, so with none measured the figure is unknown — a
-  // dash, not a $0 that reads as "no loss" (§7).
-  const measured = positions.filter((p) => p.priceImpactUsd !== undefined).length;
-  const impactClass = empty || (live && measured === 0) ? '' : impact <= -0.5 ? ' down' : impact >= 0.5 ? ' up' : '';
-  const impactText =
-    empty || (live && measured === 0)
+  const summary = priceImpactOf(positions);
+  const measured = summary.measured;
+  const unknownImpact = empty || (live && measured === 0);
+  const impactClass = unknownImpact ? '' : live ? (summary.usd < 0 ? ' down' : '') : impact <= -0.5 ? ' down' : impact >= 0.5 ? ' up' : '';
+  const impactTextShown = unknownImpact
     ? '—'
-    : impact <= -0.5
-      ? `−${usdExact(Math.abs(impact))}`
-      : impact >= 0.5
-        ? `+${usdExact(impact)}`
-        : '$0';
+    : live
+      ? impactText(summary.usd)
+      : impact <= -0.5
+        ? `−${usdExact(Math.abs(impact))}`
+        : impact >= 0.5
+          ? `+${usdExact(impact)}`
+          : '$0';
+  const impactPct = live && !unknownImpact ? impactPctText(summary.pct) : null;
 
   const hasHeatmap = portfolio.dailyFeesWeth.length > 0 && !empty;
 
@@ -147,7 +152,7 @@ export function PortfolioBody() {
         )}
         <div className="card stat">
           <div className="k">Price impact on holdings</div>
-          <div className={`v num${impactClass}`}>{impactText}</div>
+          <div className={`v num${impactClass}`}>{impactTextShown}</div>
           <div className="d">
             {!live
               ? 'vs holding tokens'
@@ -156,7 +161,9 @@ export function PortfolioBody() {
                   // a pool with no indexed price has no value. No figure for
                   // those — said, not summed as zero.
                   `${measured} of ${positions.length} positions measured`
-                : 'vs holding the principal, at the same prices'}
+                : impactPct
+                  ? `${impactPct} vs holding the principal, at the same prices`
+                  : 'vs holding the principal, at the same prices'}
           </div>
         </div>
         {live ? (

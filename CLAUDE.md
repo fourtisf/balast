@@ -5250,3 +5250,21 @@ Verified: 545 unit tests (the history's sums and its refusal of an
 incomplete list, the explorer query, today's pricing, the daily arithmetic),
 the build and 41 Playwright tests. Unverified from here: the explorer's logs
 API on this chain — if it refuses, the dash stays, and nothing wrong is shown.
+
+### "$0" was a measurement rounded away
+
+The first portfolio with a history on it read *Price impact on holdings: $0*
+under a caption saying the figure was measured — ALFA: *price impact holding
+juga harusnya ada*. It was measured. The page rounded any figure under half a
+dollar to `$0`, a rule written for the simulator's thousand-dollar positions.
+On a $27 full-range position minted the same day, at nearly the same price,
+the honest figure is cents.
+
+Live, it is shown to the cent now (`lib/price-impact.ts`): `−$0.03`, or
+`−<$0.01`, in red when negative. The caption gives its share of what holding
+the principal would be worth (`−0.11% vs holding the principal, at the same
+prices`), because a percentage reads the same on a $27 position and a $27,000
+one. Each position's row carries its own figure under its fees, or says its
+principal is not known. A positive figure carries a plus and no colour: it is
+a cent of the pool's own rounding, not a gain from holding liquidity. The
+simulator keeps its whole-dollar display.
