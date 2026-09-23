@@ -97,6 +97,8 @@ input,select{font:inherit;color:inherit}
 .nav-links a{display:inline-flex;align-items:center;height:36px;padding:0 14px;border-radius:99px;font-size:14px;font-weight:500;color:var(--fg-2);white-space:nowrap;transition:var(--t-hover)}
 .nav-links a:hover{color:var(--fg);background:var(--raise-2)}
 .nav-links a.on{color:var(--fg);background:var(--raise-2);font-weight:600}
+.nav-tag{margin-left:6px;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3);border:1px solid var(--bd-n);border-radius:99px;padding:1px 6px;line-height:1.4}
+.nav-tag.down{color:var(--red);border-color:currentColor}
 .search{margin-left:auto;width:250px;min-width:0;display:flex;align-items:center;gap:10px;height:40px;padding:0 14px;border:1px solid var(--bd-n);border-radius:99px;background:var(--bg);transition:.2s}
 .search:focus-within{border-color:var(--bd-2);box-shadow:0 0 0 3px var(--ac-dim);background:var(--panel)}
 .search svg{width:16px;height:16px;stroke:var(--fg-3);fill:none;stroke-width:1.8;stroke-linecap:round;flex:none}

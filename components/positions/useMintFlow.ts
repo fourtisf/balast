@@ -17,6 +17,7 @@ import {
   readActiveLiquidity,
   readClient,
   readSlot0,
+  sendCall,
   sendMint,
   sendWrap,
   ShownError,
@@ -41,6 +42,21 @@ import {
 } from '@/lib/v3/flow';
 import { planV3Mint } from '@/lib/v3/mint';
 import { readV3Weth9 } from '@/lib/v3/positions';
+import {
+  FIT_AFTER_ZAP_BPS,
+  MAX_ZAP_LOSS_BPS,
+  coverBps,
+  encodeV3Swap,
+  encodeV4Swap,
+  fitBps as fitToHoldings,
+  quoteV3,
+  quoteV4,
+  sizeZap,
+  zapApprovalsNeeded,
+  zapCandidate,
+  type SwapCall,
+  type ZapQuote,
+} from '@/lib/zap';
 import { describeWalletError, ensureChain } from '@/lib/wallet';
 
 /** Reads refresh on this cadence: the price for the plan, the balances for the check. */
@@ -51,6 +67,8 @@ const DEADLINE_SECONDS = 20 * 60;
 const PLACEHOLDER_OWNER = '0x0000000000000000000000000000000000000001';
 /** Ether held back from a wrap so the mint that follows can still pay its gas. */
 const WRAP_GAS_RESERVE_WEI = 1_000_000_000_000_000n; // 0.001 ETH
+/** Ether a native-quoted plan leaves in the wallet for gas: the swap's, the approvals' and the mint's. */
+export const GAS_RESERVE_WEI = 500_000_000_000_000n; // 0.0005 ETH
 
 export type MintStep =
   | 'simulated' // no pool on chain to mint into
@@ -61,6 +79,11 @@ export type MintStep =
   | 'unavailable'
   /** The market is quoted in aeWETH and the wallet is short of it, but holds the ether to wrap. */
   | 'wrap'
+  /**
+   * The wallet holds one side and not the other: step 1 of 2 swaps part of
+   * what it holds, in this same pool, and the mint follows (§33).
+   */
+  | 'zap'
   | 'approve'
   | 'ready'
   | 'busy';
@@ -106,6 +129,27 @@ export interface MintFlow {
    * pay for. Null until the balances have been read.
    */
   quoteSpendable: bigint | null;
+  /**
+   * The swap that comes before the mint, when the wallet holds only one side.
+   * `quote` is null while it is being priced; `problem` says why it cannot be
+   * offered (too thin a pool, not enough to swap from) — the page shows it
+   * instead of a button that would fail.
+   */
+  zap: {
+    direction: ZapQuote['direction'];
+    quote: ZapQuote | null;
+    approvals: ApprovalStep[];
+    gas: bigint | null;
+    problem: string | null;
+    /** The swap's input is sent as ether rather than pulled as a token. */
+    payWithEther: boolean;
+  } | null;
+  /**
+   * The plan was scaled to what the wallet holds: `bps` of the deposit typed.
+   * Only a small shortfall is fitted — 2%, or 15% right after a swap, whose
+   * fee and impact are exactly that — and the page says so.
+   */
+  fitted: { bps: number } | null;
   step: MintStep;
   busyLabel: string | null;
   approvals: ApprovalStep[];
@@ -158,6 +202,10 @@ export function useMintFlow(args: {
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ hash: `0x${string}`; minted: number } | null>(null);
+  // The pool this browser just swapped into, so the mint that follows may be
+  // fitted to what the swap delivered — and so a second swap is not offered
+  // for the few wei the first one's fee left short.
+  const [zappedKey, setZappedKey] = useState<string | null>(null);
   // Bumped after a transaction so the reads run again without waiting for the cadence.
   const [refreshTick, setRefreshTick] = useState(0);
 
@@ -326,13 +374,13 @@ export function useMintFlow(args: {
    * amount the manager will pull — not the deposit figure, which it can
    * exceed by the rounding of each bin.
    */
-  const planned = useMemo(() => {
-    if (!key || !sides || !live || !valid || depositRaw <= 0n) return null;
+  const makePlanned = useCallback((depositQuote: bigint) => {
+    if (!key || !sides || !live || !valid || depositQuote <= 0n) return null;
     const common = {
       sqrtPriceX96: live.sqrtPriceX96,
       tick: live.tick,
       tokenIsCurrency0: sides.tokenIsCurrency0,
-      depositQuote: depositRaw,
+      depositQuote,
       minPct,
       maxPct,
       bins,
@@ -360,7 +408,55 @@ export function useMintFlow(args: {
     } catch (e) {
       return { base: null, withEther: null, quoteNeed: 0n, error: (e as Error).message };
     }
-  }, [key, sides, live, valid, depositRaw, minPct, maxPct, bins, shape, fullRange, owner, slippageBps, venue, v3PoolInfo, v3WrapsEther]);
+  }, [key, sides, live, valid, minPct, maxPct, bins, shape, fullRange, owner, slippageBps, venue, v3PoolInfo, v3WrapsEther]);
+
+  const planned0 = useMemo(() => makePlanned(depositRaw), [makePlanned, depositRaw]);
+
+  /** What the wallet can put against each side, with gas kept back from native ether. */
+  const quoteIsNative = sides ? sides.quoteCurrency.toLowerCase() === NATIVE_ETH : false;
+  const quoteAvailable = useMemo(() => {
+    if (!sides || !balances) return null;
+    const wrappable = balances.native > WRAP_GAS_RESERVE_WEI ? balances.native - WRAP_GAS_RESERVE_WEI : 0n;
+    let spendable = balances.quote;
+    if (sides.quoteCurrency.toLowerCase() === CONTRACTS.weth.toLowerCase()) {
+      spendable = venue === 'v3' ? (!v3WrapsEther || balances.quote > wrappable ? balances.quote : wrappable) : balances.quote + wrappable;
+    }
+    if (quoteIsNative) return spendable > GAS_RESERVE_WEI ? spendable - GAS_RESERVE_WEI : 0n;
+    return spendable;
+  }, [sides, balances, venue, v3WrapsEther, quoteIsNative]);
+
+  const zapped = zappedKey !== null && zappedKey === keyId;
+  const holdings = useMemo(() => {
+    const base = planned0?.base;
+    if (!base || !sides || !balances || quoteAvailable === null) return null;
+    return {
+      needToken: sides.tokenIsCurrency0 ? base.amount0 : base.amount1,
+      needQuote: sides.tokenIsCurrency0 ? base.amount1 : base.amount0,
+      haveToken: balances.token,
+      haveQuote: quoteAvailable,
+    };
+  }, [planned0, sides, balances, quoteAvailable]);
+
+  // A small shortfall is fitted rather than refused (see `fitted`).
+  const fit = holdings ? fitToHoldings(holdings, zapped) : null;
+  const planned = useMemo(
+    () => (fit ? makePlanned((depositRaw * BigInt(fit)) / 10_000n) : planned0),
+    [fit, makePlanned, depositRaw, planned0],
+  );
+
+  /**
+   * The zap, when the wallet holds one side and has more of it than the plan
+   * takes. Not for a v4 pool quoted in the wrapper: its ether would have to be
+   * wrapped, swapped and wrapped again, and those pools are few — the page
+   * says to hold both there. Not twice in a row, either.
+   */
+  const zapSupported = venue === 'v3' || !(sides && sides.quoteCurrency.toLowerCase() === CONTRACTS.weth.toLowerCase());
+  const candidate = useMemo(() => {
+    if (!holdings || fit || zapped || !zapSupported || !owner) return null;
+    if (coverBps(holdings) >= 10_000) return null;
+    return zapCandidate(holdings);
+  }, [holdings, fit, zapped, zapSupported, owner]);
+  const candidateId = candidate ? `${candidate.direction}|${candidate.want}` : null;
 
   // A primitive, so a balance re-read that changes nothing about the
   // decision does not produce a new plan (and a new dry run) every cadence.
@@ -422,7 +518,9 @@ export function useMintFlow(args: {
   useEffect(() => {
     setApprovals([]);
     setGas(null);
-    if (!plan || !owner || !key || !onChain) return;
+    // While a swap is still to come the mint cannot be dry-run: the wallet
+    // does not hold what it takes yet, and the node would say so.
+    if (!plan || !owner || !key || !onChain || candidateId) return;
     let cancelled = false;
     const client = readClient(readVia);
     void (async () => {
@@ -462,7 +560,149 @@ export function useMintFlow(args: {
     return () => {
       cancelled = true;
     };
-  }, [plan, owner, key, readVia, onChain, wrap, venue, v3PaysEther]);
+  }, [plan, owner, key, readVia, onChain, wrap, venue, v3PaysEther, candidateId]);
+
+  // ------------------------------------------------------------ the zap --
+  const quoteSymbol = quoteLabel(pool);
+  const [zapState, setZapState] = useState<{
+    id: string;
+    quote: ZapQuote | null;
+    approvals: ApprovalStep[];
+    gas: bigint | null;
+    problem: string | null;
+    payWithEther: boolean;
+  } | null>(null);
+
+  /** The swap's two currencies and whether its input goes as ether. */
+  const zapRoute = useCallback(
+    (direction: ZapQuote['direction'], amountIn: bigint) => {
+      if (!sides || !key || !balances) return null;
+      const tokenIn = direction === 'quote-to-token' ? sides.quoteCurrency : sides.tokenCurrency;
+      const tokenOut = direction === 'quote-to-token' ? sides.tokenCurrency : sides.quoteCurrency;
+      const zeroForOne = tokenIn.toLowerCase() === key.currency0.toLowerCase();
+      // v3 holds wrapped ether; SwapRouter02 wraps ether it is sent, so a
+      // wallet short of the wrapper pays in ETH — the same rule as the mint.
+      const inIsWeth = tokenIn.toLowerCase() === CONTRACTS.weth.toLowerCase();
+      const spareEther = balances.native > GAS_RESERVE_WEI ? balances.native - GAS_RESERVE_WEI : 0n;
+      const payWithEther = venue === 'v3' && inIsWeth && v3WrapsEther && balances.quote < amountIn && spareEther >= amountIn;
+      return { tokenIn, tokenOut, zeroForOne, payWithEther };
+    },
+    [sides, key, balances, venue, v3WrapsEther],
+  );
+
+  const buildSwap = useCallback(
+    (q: ZapQuote, route: NonNullable<ReturnType<typeof zapRoute>>, recipient: Address): SwapCall | null => {
+      if (!key) return null;
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + DEADLINE_SECONDS);
+      return venue === 'v3'
+        ? encodeV3Swap({
+            tokenIn: route.tokenIn,
+            tokenOut: route.tokenOut,
+            fee: key.fee,
+            recipient,
+            amountIn: q.amountIn,
+            amountOutMinimum: q.minOut,
+            deadline,
+            payWithEther: route.payWithEther,
+          })
+        : encodeV4Swap({ key, zeroForOne: route.zeroForOne, amountIn: q.amountIn, amountOutMinimum: q.minOut, deadline });
+    },
+    [key, venue],
+  );
+
+  // Price the swap, check what it costs and that the mint after it can be
+  // made, read its approvals and dry-run it — on the same cadence as the price.
+  useEffect(() => {
+    if (!candidate || !candidateId || !holdings || !sides || !key || !live || !owner) {
+      setZapState(null);
+      return;
+    }
+    let cancelled = false;
+    const client = readClient(readVia);
+    setZapState((z) => (z && z.id === candidateId ? z : { id: candidateId, quote: null, approvals: [], gas: null, problem: null, payWithEther: false }));
+    void (async () => {
+      const fail = (problem: string) => {
+        if (!cancelled) setZapState({ id: candidateId, quote: null, approvals: [], gas: null, problem, payWithEther: false });
+      };
+      try {
+        const surplus =
+          candidate.direction === 'quote-to-token' ? holdings.haveQuote - holdings.needQuote : holdings.haveToken - holdings.needToken;
+        const firstRoute = zapRoute(candidate.direction, 0n);
+        if (!firstRoute) return;
+        const quote = sizeZap({
+          direction: candidate.direction,
+          want: candidate.want,
+          surplus,
+          sqrtPriceX96: live.sqrtPriceX96,
+          tokenIsCurrency0: sides.tokenIsCurrency0,
+          feePips: key.fee,
+          slippageBps,
+          quote: (amountIn) =>
+            venue === 'v3'
+              ? quoteV3(client, { tokenIn: firstRoute.tokenIn, tokenOut: firstRoute.tokenOut, fee: key.fee, amountIn })
+              : quoteV4(client, { key, zeroForOne: firstRoute.zeroForOne, amountIn }),
+        });
+        const q = await quote;
+        if (cancelled) return;
+        if (q.lossBps > MAX_ZAP_LOSS_BPS) {
+          fail(
+            `Swapping for the other side here would lose ${(q.lossBps / 100).toFixed(1)}% to the pool's fee and price impact — too thin to swap in. Hold both sides, or deposit less.`,
+          );
+          return;
+        }
+        // After the swap: does the wallet cover enough of the plan for the
+        // mint to be fitted to it? If not, the deposit is simply too large.
+        const after =
+          candidate.direction === 'quote-to-token'
+            ? { ...holdings, haveToken: holdings.haveToken + q.expectedOut, haveQuote: holdings.haveQuote - q.amountIn }
+            : { ...holdings, haveToken: holdings.haveToken - q.amountIn, haveQuote: holdings.haveQuote + q.expectedOut };
+        const cover = coverBps(after);
+        if (cover < 10_000 - FIT_AFTER_ZAP_BPS) {
+          const most = (depositRaw * BigInt(cover)) / 10_000n;
+          fail(
+            `Even after swapping, the wallet covers only ${(cover / 100).toFixed(0)}% of this deposit. Try about ${fmtAmount(most, sides.quoteDecimals)} ${quoteSymbol}.`,
+          );
+          return;
+        }
+        const route = zapRoute(candidate.direction, q.amountIn)!;
+        const approvalsNow = onChain
+          ? await zapApprovalsNeeded(client, owner, venue, route.tokenIn, q.amountIn, route.payWithEther || route.tokenIn.toLowerCase() === NATIVE_ETH, Math.floor(Date.now() / 1000))
+          : [];
+        let gasNow: bigint | null = null;
+        let problem: string | null = null;
+        if (onChain && approvalsNow.length === 0) {
+          const call = buildSwap(q, route, owner)!;
+          try {
+            gasNow = await client.estimateGas({ account: owner, to: call.to, data: call.calldata, value: call.value });
+          } catch (e) {
+            problem = `The swap could not be prepared: ${describeTxError(e)}`;
+          }
+        }
+        if (!cancelled) {
+          setZapState({ id: candidateId, quote: q, approvals: approvalsNow, gas: gasNow, problem, payWithEther: route.payWithEther });
+        }
+      } catch (e) {
+        fail(`This pool could not quote the swap: ${describeTxError(e)} Hold both sides for now.`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // `live` is on the price cadence, so the quote is refreshed with it.
+  }, [candidate, candidateId, holdings, sides, key, live, owner, readVia, onChain, venue, slippageBps, zapRoute, buildSwap, depositRaw, quoteSymbol]);
+
+  const zap = useMemo(() => {
+    if (!candidate) return null;
+    const current = zapState?.id === candidateId ? zapState : null;
+    return {
+      direction: candidate.direction,
+      quote: current?.quote ?? null,
+      approvals: current?.approvals ?? [],
+      gas: current?.gas ?? null,
+      problem: current?.problem ?? null,
+      payWithEther: current?.payWithEther ?? false,
+    };
+  }, [candidate, candidateId, zapState]);
 
   const step: MintStep = !key
     ? 'simulated'
@@ -480,6 +720,8 @@ export function useMintFlow(args: {
                 ? 'reading'
                 : wrap
                   ? 'wrap'
+                  : zap
+                    ? 'zap'
                   : approvals.length > 0
                     ? 'approve'
                     : 'ready';
@@ -514,6 +756,64 @@ export function useMintFlow(args: {
     const client = readClient(provider);
     const pair = `${pool.token.symbol} / ${quoteLabel(pool)}`;
     try {
+      // Step 1 of 2: the swap, in this same pool, through Uniswap's router.
+      if (step === 'zap') {
+        if (!zap?.quote || zap.problem) return;
+        const inSymbol = zap.direction === 'quote-to-token' ? quoteLabel(pool) : pool.token.symbol;
+        if (zap.approvals.length > 0) {
+          const next = zap.approvals[0];
+          setBusyLabel('Approve in the wallet…');
+          const hash =
+            venue === 'v3'
+              ? await approveV3(provider, owner, { token: next.token, spender: CONTRACTS.swapRouter02 as Address })
+              : await approve(provider, owner, next, Math.floor(Date.now() / 1000));
+          recordTx({
+            hash,
+            kind: 'approve',
+            wallet: owner,
+            at: Date.now(),
+            status: 'pending',
+            label:
+              venue === 'v3'
+                ? `Approve ${inSymbol} for Uniswap's swap router`
+                : next.kind === 'erc20'
+                  ? `Approve ${inSymbol} for Permit2`
+                  : `Allow Uniswap's Universal Router to use ${inSymbol}`,
+            poolId: pool.id,
+          });
+          setBusyLabel('Waiting for the approval…');
+          const receipt = await client.waitForTransactionReceipt({ hash });
+          updateTx(hash, receipt.status === 'success' ? 'success' : 'reverted');
+          if (receipt.status !== 'success') throw new ShownError('The approval reverted on chain.');
+          setRefreshTick((n) => n + 1);
+          return;
+        }
+        const route = zapRoute(zap.direction, zap.quote.amountIn);
+        const call = route ? buildSwap(zap.quote, route, owner) : null;
+        if (!call) return;
+        setBusyLabel('Checking the swap with the chain…');
+        const estimate = await client.estimateGas({ account: owner, to: call.to, data: call.calldata, value: call.value });
+        setBusyLabel('Confirm the swap in the wallet…');
+        const hash = await sendCall(provider, owner, { calldata: call.calldata, value: call.value }, estimate, call.to);
+        const outSymbol = zap.direction === 'quote-to-token' ? pool.token.symbol : quoteLabel(pool);
+        recordTx({
+          hash,
+          kind: 'swap',
+          wallet: owner,
+          at: Date.now(),
+          status: 'pending',
+          label: `Swap ${fmtAmount(zap.quote.amountIn, zap.direction === 'quote-to-token' ? sides.quoteDecimals : sides.tokenDecimals)} ${inSymbol} for ${outSymbol} · ${pair}`,
+          poolId: pool.id,
+        });
+        setBusyLabel('Swapping…');
+        const receipt = await client.waitForTransactionReceipt({ hash });
+        updateTx(hash, receipt.status === 'success' ? 'success' : 'reverted');
+        if (receipt.status !== 'success') throw new ShownError('The swap reverted on chain. Nothing was taken but gas.');
+        setZappedKey(keyId);
+        showToast(`Swapped. Step 2 of 2: mint the position.`);
+        setRefreshTick((n) => n + 1);
+        return;
+      }
       // Ether into aeWETH, so a market quoted in the wrapper is entered with
       // the ether the wallet holds. Estimated first, like everything else
       // here: a wrapper that will not take a direct deposit says so before a
@@ -575,7 +875,7 @@ export function useMintFlow(args: {
         sqrtPriceX96: live!.sqrtPriceX96,
         tick: live!.tick,
         tokenIsCurrency0: sides.tokenIsCurrency0,
-        depositQuote: depositRaw,
+        depositQuote: fit ? (depositRaw * BigInt(fit)) / 10_000n : depositRaw,
         minPct,
         maxPct,
         bins,
@@ -641,7 +941,8 @@ export function useMintFlow(args: {
     } finally {
       setBusyLabel(null);
     }
-  }, [step, plan, owner, provider, key, info, sides, onChain, approvals, wrap, live, depositRaw, minPct, maxPct, bins, shape, fullRange, slippageBps, pool, venue, v3Pool, v3PaysEther, refreshChainId, showToast, openWallet]);
+  }, [step, plan, owner, provider, key, info, sides, onChain, approvals, wrap, zap, zapRoute, buildSwap, keyId, fit, live, depositRaw, minPct, maxPct, bins, shape, fullRange, slippageBps, pool, venue, v3Pool, v3PaysEther, refreshChainId, showToast, openWallet]);
 
-  return { key, sides, live, liveError, plan, planError, needs, balances, wrap, quoteSpendable, step, busyLabel, approvals, gas, error, result, run };
+  const fitted = fit ? { bps: fit } : null;
+  return { key, sides, live, liveError, plan, planError, needs, balances, wrap, quoteSpendable, zap, fitted, step, busyLabel, approvals, gas, error, result, run };
 }

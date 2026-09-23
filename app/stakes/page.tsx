@@ -15,7 +15,7 @@ export default function StakesPage() {
             Stake once. Earn the pool&rsquo;s fee on <em>every trade</em>.
           </>
         }
-        lede="A stake is one full-range position in the pool, minted through Uniswap's PositionManager straight to your wallet as an NFT. It earns the pool's fee on every trade, in the pool's own tokens, and is never out of range. No lockup, no Balast fee, nothing held by Balast. Pick a pool on the board and use Stake."
+        lede="A stake is one full-range position in the pool, minted through Uniswap's PositionManager straight to your wallet as an NFT. It earns the pool's fee on every trade, in the pool's own tokens, and is never out of range. No lockup, no Balast fee, nothing held by Balast. Pick a pool below — holding only ETH or USDG is enough."
       />
       <VaultGrid />
       <MyStakes />

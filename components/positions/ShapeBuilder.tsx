@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { BinChart } from '@/components/positions/BinChart';
-import { DEFAULT_SLIPPAGE_BPS, useMintFlow } from '@/components/positions/useMintFlow';
+import { DEFAULT_SLIPPAGE_BPS, GAS_RESERVE_WEI, useMintFlow } from '@/components/positions/useMintFlow';
 import { CHAIN, EXPLORER_URL, NATIVE_ETH } from '@/lib/chain';
 import { DATA_SOURCE } from '@/lib/data';
 import type { Pool, ShapeId } from '@/lib/data/types';
@@ -40,8 +40,6 @@ const MAX_DEPOSIT_ETH = 4.18;
 function simulatedMax(pool: Pool, ethPriceUsd: number): number {
   return pool.quote === 'USDG' ? MAX_DEPOSIT_ETH * ethPriceUsd : MAX_DEPOSIT_ETH;
 }
-/** Ether to leave behind for gas when the deposit is in ether. */
-const GAS_RESERVE_WEI = 500_000_000_000_000n; // 0.0005 ETH
 /**
  * A first deposit a wallet is likely to hold: a tenth of an ether, or a
  * hundred dollars for a pool quoted in USDG. The old flat default of 2.5
@@ -282,7 +280,11 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
   // What the chain says: the plan's two sides against the wallet's balances.
   if (onChain && inputsValid) {
     if (flow.planError) problems.push(flow.planError);
-    if (flow.needs && flow.balances && flow.sides) {
+    if (flow.zap) {
+      // One side held, the other swapped for (§33): the only thing that can
+      // stop it is the swap itself — too thin a pool, or too little to swap.
+      if (flow.zap.problem) problems.push(flow.zap.problem);
+    } else if (flow.needs && flow.balances && flow.sides) {
       const reserve = flow.sides.quoteCurrency.toLowerCase() === NATIVE_ETH ? GAS_RESERVE_WEI : 0n;
       // One balance for an ether market, whichever way the pool holds it:
       // a wrapped one counts the ether that would be wrapped for it, since
@@ -297,7 +299,7 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
       if (flow.balances.token < flow.needs.token) {
         problems.push(
           `This shape also needs ${fmtAmount(flow.needs.token, flow.sides.tokenDecimals)} ${tokenSymbol}; the wallet holds ` +
-            `${fmtAmount(flow.balances.token, flow.sides.tokenDecimals)}. Hold both sides for now — the single-token zap is next.`,
+            `${fmtAmount(flow.balances.token, flow.sides.tokenDecimals)}, and not enough ${quoteSymbol} beside it to swap for the rest.`,
         );
       }
     }
@@ -406,6 +408,22 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
       ? tokenSymbol
       : quoteSymbol
     : '';
+  // Step 1 of 2 when the wallet holds one side: what it spends and receives.
+  const zapIn = flow.zap?.direction === 'quote-to-token' ? quoteSymbol : tokenSymbol;
+  const zapOut = flow.zap?.direction === 'quote-to-token' ? tokenSymbol : quoteSymbol;
+  const zapInDecimals = flow.sides ? (flow.zap?.direction === 'quote-to-token' ? flow.sides.quoteDecimals : flow.sides.tokenDecimals) : 18;
+  const zapOutDecimals = flow.sides ? (flow.zap?.direction === 'quote-to-token' ? flow.sides.tokenDecimals : flow.sides.quoteDecimals) : 18;
+  const zapButtonLabel = !flow.zap
+    ? ''
+    : flow.zap.problem
+      ? 'Swap not offered'
+      : !flow.zap.quote
+        ? 'Pricing the swap…'
+        : flow.zap.approvals.length > 0
+          ? flow.zap.approvals[0].kind === 'erc20'
+            ? `Step 1 of 2 · Approve ${zapIn} for the swap`
+            : `Step 1 of 2 · Allow the router to use ${zapIn}`
+          : `Step 1 of 2 · Swap ${fmtAmount(flow.zap.quote.amountIn, zapInDecimals)} ${zapIn} → ${zapOut}`;
   const buttonLabel =
     flow.step === 'simulated'
       ? 'Mint position'
@@ -421,6 +439,8 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
               ? flow.busyLabel
               : flow.step === 'wrap'
                 ? `Wrap ${fmtAmount(flow.wrap!.shortfall, 18)} ETH for this pool`
+              : flow.step === 'zap'
+                ? zapButtonLabel
               : flow.step === 'approve'
                 ? nextApproval.kind === 'erc20'
                   ? `Approve ${approvalSymbol}`
@@ -435,6 +455,7 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
     flow.step === 'reading' ||
     flow.step === 'unavailable' ||
     flow.step === 'busy' ||
+    (flow.step === 'zap' && (!flow.zap?.quote || Boolean(flow.zap.problem))) ||
     (flow.step === 'ready' && (!flow.plan || Boolean(flow.error))));
 
   return (
@@ -623,7 +644,7 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
           </div>
           <p className="hint">
             {onChain
-              ? `Bins above the current price hold ${tokenSymbol}; bins below hold ${quoteSymbol}. You deposit both sides at today's ratio — the single-token zap comes next.`
+              ? `Bins above the current price hold ${tokenSymbol}; bins below hold ${quoteSymbol}. Holding only one of them is fine: Balast swaps part of it for the other in this same pool first, then mints.`
               : `Balast swaps part of this into ${tokenSymbol} to fill the shape you choose.`}
           </p>
         </div>
@@ -792,9 +813,13 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
                 ? `The wallet is on another network. Nothing is sent until it is on ${CHAIN.name}; the price shown is read from the chain's public RPC.`
                 : flow.step === 'wrap'
                 ? `This pool holds its ether as aeWETH. One transaction wraps ${fmtAmount(flow.wrap!.shortfall, 18)} of your ETH into the same amount of it — one token per ether, no price and nothing to slip — and the mint follows.`
+              : flow.step === 'zap'
+                ? flow.zap?.quote
+                  ? `The wallet holds ${zapIn} and not enough ${zapOut}. Step 1 swaps ${fmtAmount(flow.zap.quote.amountIn, zapInDecimals)} ${zapIn} for about ${fmtAmount(flow.zap.quote.expectedOut, zapOutDecimals)} ${zapOut} in this same pool, through Uniswap's router — ${(flow.zap.quote.lossBps / 100).toFixed(2)}% to the pool's fee and price impact, and it reverts below ${fmtAmount(flow.zap.quote.minOut, zapOutDecimals)}. Step 2 mints, fitted to what the swap delivered. Nothing is held by Balast.`
+                  : `The wallet holds ${zapIn} and not enough ${zapOut}: pricing a swap for the rest in this same pool.`
               : flow.step === 'approve'
                 ? `${flow.approvals.length} approval${flow.approvals.length === 1 ? '' : 's'} first, then one transaction to mint. Nothing is held by Balast.`
-                : `One transaction through Uniswap's PositionManager${flow.plan ? `: ${flow.plan.positions.length} position${flow.plan.positions.length === 1 ? '' : 's'}, each an NFT in your wallet` : ''}. Nothing is held by Balast.`
+                : `${flow.fitted ? `Fitted to your balance: ${(flow.fitted.bps / 100).toFixed(1)}% of the deposit typed, so the mint takes only what the wallet holds. ` : ''}One transaction through Uniswap's ${pool.protocol === 'v3' ? 'v3 position manager' : 'PositionManager'}${flow.plan ? `: ${flow.plan.positions.length} position${flow.plan.positions.length === 1 ? '' : 's'}, each an NFT in your wallet` : ''}. Nothing is held by Balast.`
               : 'One transaction. You keep the NFT.'}
           </p>
         )}

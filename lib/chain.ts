@@ -62,6 +62,13 @@ export const CONTRACTS = {
    * Balast had built, never a fact about the chain.
    */
   v3PositionManager: '0x73991a25C818Bf1f1128dEAaB1492D45638DE0D3',
+  /**
+   * The two contracts the single-token zap swaps through (§33), from the same
+   * registry: v3's SwapRouter02 and QuoterV2. v4 swaps go through the
+   * Universal Router above and are quoted by the V4Quoter.
+   */
+  swapRouter02: '0xCaf681a66D020601342297493863E78C959E5cb2',
+  v3QuoterV2: '0x33e885eD0Ec9bF04EcfB19341582aADCb4c8A9E7',
 } as const;
 
 export type ContractName = keyof typeof CONTRACTS;

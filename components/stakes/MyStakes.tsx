@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { TokenBadge } from '@/components/ui/TokenBadge';
@@ -19,17 +20,18 @@ export function MyStakes() {
     );
   });
 
-  // Nothing staked is not a failed search. A stake lives in the wallet as a
-  // position NFT (§20) and the indexer does not read those back yet, so the
-  // card says exactly that rather than promising a stream.
+  // Nothing staked is not a failed search. A live stake is a position NFT in
+  // the wallet (§20), read back from the chain on the Portfolio page, which is
+  // where its fees are collected and it is withdrawn.
   if (portfolio.stakes.length === 0 && q === '') {
+    const full = portfolio.positions.filter((p) => p.range === 'full');
     return (
       <div className="card mine" style={{ marginTop: 22 }}>
         <h2 className="sect-h">Your stakes</h2>
         <div className="empty">
-          <b>Nothing to show here yet</b>A stake is a position NFT in your wallet, and this site
-          does not read positions back from the chain yet. Your wallet and the explorer hold the
-          record until it does.
+          <b>{full.length > 0 ? `${full.length} full-range position${full.length === 1 ? '' : 's'} in this wallet` : 'Nothing staked from this wallet yet'}</b>
+          A stake is a position NFT in your wallet, read back from the chain. Its uncollected fees, Collect and Withdraw
+          are on the <Link href="/portfolio">Portfolio</Link> page.
         </div>
       </div>
     );

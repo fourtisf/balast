@@ -155,6 +155,11 @@ export async function readBalance(client: PublicClient, owner: Address, currency
 export interface ApprovalStep {
   kind: 'erc20' | 'permit2';
   token: Address;
+  /**
+   * Who Permit2 lets spend the token: PositionManager unless named. The
+   * zap's swap names the Universal Router (§33).
+   */
+  spender?: Address;
 }
 
 /**
@@ -209,7 +214,7 @@ export async function approve(provider: Eip1193Provider, owner: Address, step: A
     address: CONTRACTS.permit2,
     abi: PERMIT2_ABI,
     functionName: 'approve',
-    args: [step.token, CONTRACTS.positionManager, MAX_UINT160, nowSeconds + PERMIT2_EXPIRATION_SECONDS],
+    args: [step.token, step.spender ?? CONTRACTS.positionManager, MAX_UINT160, nowSeconds + PERMIT2_EXPIRATION_SECONDS],
   });
 }
 
@@ -294,6 +299,9 @@ const REVERT_SELECTORS: Record<string, string> = {
   [toFunctionSelector('MaximumAmountExceeded(uint128,uint128)')]: PRICE_MOVED,
   [toFunctionSelector('NotApproved(address)')]: NOT_HELD,
   [toFunctionSelector('DeadlinePassed(uint256)')]: EXPIRED,
+  // The zap's swap (§33): v4-periphery IV4Router, and the Universal Router's own deadline.
+  [toFunctionSelector('V4TooLittleReceived(uint256,uint256)')]: PRICE_MOVED,
+  [toFunctionSelector('TransactionDeadlinePassed()')]: EXPIRED,
 };
 
 /** Every string on the error and its causes: messages, details and raw revert data. */
@@ -333,7 +341,7 @@ export function describeTxError(error: unknown): string {
   if (/insufficient funds/i.test(text)) return 'Not enough ETH in the wallet for the deposit plus gas.';
   if (/deadline|Transaction too old/i.test(text)) return EXPIRED;
   // Named, not guessed: "transfer amount exceeds balance" is a balance, not a price.
-  if (/MaximumAmountExceeded|MinimumAmountInsufficient|Price slippage check/i.test(text)) return PRICE_MOVED;
+  if (/MaximumAmountExceeded|MinimumAmountInsufficient|Price slippage check|Too little received|V4TooLittleReceived/i.test(text)) return PRICE_MOVED;
   if (/exceeds balance|insufficient balance|TRANSFER_FROM_FAILED|\bSTF\b/i.test(text))
     return 'The wallet does not hold enough of one of the tokens for this. Nothing was sent.';
   // v4's NotApproved, v3's "Not approved", an ERC-721's missing token: the

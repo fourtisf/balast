@@ -18,8 +18,9 @@ const NAV = [
   { href: '/pools', label: 'Pools' },
   { href: '/stakes', label: 'Stakes' },
   { href: '/positions', label: 'Positions' },
-  { href: '/router', label: 'Router' },
+  { href: '/router', label: 'Router', later: true },
   { href: '/portfolio', label: 'Portfolio' },
+  { href: '/learn', label: 'Learn' },
 ];
 
 /**
@@ -29,7 +30,10 @@ const NAV = [
  * to label them.
  */
 export function TopNav() {
-  const { indexerLagSeconds } = useMarket();
+  const { indexerLagSeconds, portfolio } = useMarket();
+  // Positions earning nothing because the price left their range (§7). Only
+  // the ones whose status is known: a pool without a price yet is not "out".
+  const outOfRange = portfolio.positions.filter((p) => !p.inRange && !p.rangeUnknown).length;
   const { query, setQuery, wallet, openWallet } = useUi();
   const pathname = usePathname();
   const router = useRouter();
@@ -61,6 +65,20 @@ export function TopNav() {
                 aria-current={active ? 'page' : undefined}
               >
                 {item.label}
+                {'later' in item && item.later && (
+                  <span className="nav-tag" title="The router contract is phase 4 and not deployed. The page shows the design.">
+                    later
+                  </span>
+                )}
+                {item.href === '/portfolio' && outOfRange > 0 && (
+                  <span
+                    className="nav-tag down"
+                    data-testid="nav-out-of-range"
+                    title={`${outOfRange} position${outOfRange === 1 ? ' is' : 's are'} out of range and earning nothing`}
+                  >
+                    {outOfRange} out of range
+                  </span>
+                )}
               </Link>
             );
           })}

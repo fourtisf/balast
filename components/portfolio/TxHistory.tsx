@@ -12,6 +12,7 @@ const RECEIPT_POLL_MS = 8_000;
 const KIND_LABEL: Record<TxRecord['kind'], string> = {
   approve: 'Approval',
   wrap: 'Wrap',
+  swap: 'Swap',
   mint: 'Mint',
   collect: 'Collect',
   withdraw: 'Withdraw',

@@ -524,6 +524,174 @@ async function main(): Promise<void> {
     check(!meta.has('0x000000000000000000000000000000000000dead'), 'and leaves out an address that will not state its decimals');
   }
 
+  // ================================================================== zap ==
+  // A wallet holding one side only: swap through Uniswap's own router in the
+  // same pool, then mint fitted to what the swap delivered (§33).
+  section('zap: deploying SwapRouter02, QuoterV2, V4Quoter and the Universal Router');
+  const sr02 = await deploy(artifact(join(nm, 'swap-router-contracts/artifacts/contracts/SwapRouter02.sol/SwapRouter02.json')), [
+    NATIVE_ETH,
+    factory,
+    npm,
+    weth,
+  ]);
+  const quoterV2 = await deploy(artifact(join(nm, 'v3-periphery/artifacts/contracts/lens/QuoterV2.sol/QuoterV2.json')), [factory, weth]);
+  const v4Quoter = await deploy(artifact(join(ART, 'v4p/foundry-out/V4Quoter.sol/V4Quoter.json')), [poolManager]);
+  // npm carries the Universal Router at 2.1.0, whose single-swap struct is the
+  // v2.0 layout; the chain's is 2.1.1. Both layouts are byte-tested against
+  // the SDK in lib/zap.test.ts; this run proves the mechanics.
+  const ur = await deploy(artifact(join(ART, 'ur/package/artifacts/contracts/UniversalRouter.sol/UniversalRouter.json')), [
+    {
+      permit2: CONTRACTS.permit2,
+      weth9: weth,
+      v2Factory: NATIVE_ETH,
+      v3Factory: factory,
+      pairInitCodeHash: `0x${'00'.repeat(32)}`,
+      poolInitCodeHash: '0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54',
+      v4PoolManager: poolManager,
+      v3NFTPositionManager: npm,
+      v4PositionManager: posm,
+      spokePool: NATIVE_ETH,
+    },
+  ]);
+  Object.assign(CONTRACTS as Record<string, string>, { swapRouter02: sr02, v3QuoterV2: quoterV2, v4Quoter, universalRouter: ur });
+  const zapLib = await import('../../lib/zap');
+  // Two fresh wallets, impersonated: the node's own accounts all hold both sides by now.
+  const zapper = '0x00000000000000000000000000000000000a11ce' as Address;
+  const zapper2 = '0x0000000000000000000000000000000000000b0b' as Address;
+  for (const w of [zapper, zapper2]) await rpc('hardhat_impersonateAccount', [w]);
+
+  const zkey = { currency0: NATIVE_ETH as Address, currency1: tkn, fee: 10_000, tickSpacing: 200, hooks: NATIVE_ETH as Address };
+  // Depth for the swaps to trade against: the trader adds full-range liquidity to both pools.
+  {
+    const s = await readV3Slot0(pub, v3Pool);
+    const deep = planV3Mint({ pool: poolInfo, sqrtPriceX96: s.sqrtPriceX96, tick: s.tick, tokenIsCurrency0, depositQuote: parseEther('40'), minPct: 0, maxPct: 0, bins: 1, shape: 'spot', fullRange: true, owner: trader, slippageBps: 100, deadline: deadline() });
+    for (const a of await v3ApprovalsNeeded(pub, trader, { token0, token1, amount0: deep.amount0, amount1: deep.amount1 }, null)) await spent(await approveV3(provider, trader, a));
+    await spent(await sendV3Mint(provider, trader, deep, await simulateV3Mint(pub, trader, deep)));
+    // A fresh native-ether pool: the one above was pushed to the edge of its range by the guard test.
+    await send(deployer, poolManager, encodeFunctionData({ abi: POOL_MANAGER, functionName: 'initialize', args: [zkey, getSqrtRatioAtTick(69_000)] }));
+    const s4n = await flow.readSlot0(pub, zkey);
+    const deep4 = planMint({ key: zkey, sqrtPriceX96: s4n.sqrtPriceX96, tick: s4n.tick, tokenIsCurrency0: false, depositQuote: parseEther('40'), minPct: 0, maxPct: 0, bins: 1, shape: 'spot', fullRange: true, owner: trader, slippageBps: 100, deadline: deadline() });
+    const now0 = Math.floor(Date.now() / 1000);
+    for (const st of await flow.approvalsNeeded(pub, trader, zkey, deep4, now0)) await spent(await flow.approve(provider, trader, st, now0));
+    await spent(await flow.sendMint(provider, trader, deep4, await flow.simulateMint(pub, trader, deep4)));
+  }
+
+  /** Swap, then mint fitted to the balances, exactly as the builder does. */
+  async function zapThenMint(label: string, who: Address, venue: 'v3' | 'v4', depositQuote: bigint, direction: 'quote-to-token' | 'token-to-quote'): Promise<void> {
+    section(`zap: ${label}`);
+    const readPrice = () => (venue === 'v3' ? readV3Slot0(pub, v3Pool) : flow.readSlot0(pub, zkey));
+    const tokIs0 = venue === 'v3' ? tokenIsCurrency0 : false;
+    const quoteCur = (venue === 'v3' ? weth : NATIVE_ETH) as Address;
+    const plan = (s: { sqrtPriceX96: bigint; tick: number }, dep: bigint) =>
+      venue === 'v3'
+        ? planV3Mint({ pool: poolInfo, sqrtPriceX96: s.sqrtPriceX96, tick: s.tick, tokenIsCurrency0: tokIs0, depositQuote: dep, minPct: -30, maxPct: 30, bins: 5, shape: 'spot', owner: who, slippageBps: 100, deadline: deadline(), payWithEtherFor: weth })
+        : planMint({ key: zkey, sqrtPriceX96: s.sqrtPriceX96, tick: s.tick, tokenIsCurrency0: tokIs0, depositQuote: dep, minPct: -30, maxPct: 30, bins: 5, shape: 'spot', owner: who, slippageBps: 100, deadline: deadline() });
+    const RESERVE = 5n * 10n ** 16n;
+    const holdingsAt = async (p: { amount0: bigint; amount1: bigint }) => {
+      const native = await pub.getBalance({ address: who });
+      return {
+        needToken: tokIs0 ? p.amount0 : p.amount1,
+        needQuote: tokIs0 ? p.amount1 : p.amount0,
+        haveToken: await balanceOf(tkn, who),
+        haveQuote: native > RESERVE ? native - RESERVE : 0n,
+      };
+    };
+    const s0 = await readPrice();
+    const p0 = plan(s0, depositQuote);
+    const h0 = await holdingsAt(p0);
+    const cand = zapLib.zapCandidate(h0);
+    check(cand?.direction === direction, `the wallet holds one side: the builder offers a ${direction} swap`);
+    const [tokenIn, tokenOut] = direction === 'quote-to-token' ? [quoteCur, tkn] : [tkn, quoteCur];
+    const zeroForOne = venue === 'v4' ? tokenIn.toLowerCase() === zkey.currency0.toLowerCase() : tokenIn.toLowerCase() === token0.toLowerCase();
+    const surplus = direction === 'quote-to-token' ? h0.haveQuote - h0.needQuote : h0.haveToken - h0.needToken;
+    const q = await zapLib.sizeZap({
+      direction,
+      want: cand!.want,
+      surplus,
+      sqrtPriceX96: s0.sqrtPriceX96,
+      tokenIsCurrency0: tokIs0,
+      feePips: venue === 'v3' ? 3000 : 10_000,
+      slippageBps: 100,
+      quote: (amountIn) =>
+        venue === 'v3'
+          ? zapLib.quoteV3(pub, { tokenIn, tokenOut, fee: 3000, amountIn })
+          : zapLib.quoteV4(pub, { key: zkey, zeroForOne, amountIn }),
+    });
+    check(q.expectedOut >= cand!.want, `quoted ${q.expectedOut} out for ${q.amountIn} in — at least the ${cand!.want} wanted`);
+    check(q.lossBps > 0 && q.lossBps < zapLib.MAX_ZAP_LOSS_BPS, `the swap costs ${(q.lossBps / 100).toFixed(2)}% to fee and impact, under the ${zapLib.MAX_ZAP_LOSS_BPS / 100}% bar`);
+    const payWithEther = venue === 'v3' && tokenIn === weth;
+    const nowS = Math.floor(Date.now() / 1000);
+    const needed = await zapLib.zapApprovalsNeeded(pub, who, venue, tokenIn, q.amountIn, payWithEther || tokenIn === NATIVE_ETH, nowS);
+    for (const st of needed) {
+      await spent(venue === 'v3' ? await approveV3(provider, who, { token: st.token, spender: sr02 }) : await flow.approve(provider, who, st, nowS));
+    }
+    check((await zapLib.zapApprovalsNeeded(pub, who, venue, tokenIn, q.amountIn, payWithEther || tokenIn === NATIVE_ETH, nowS)).length === 0, `swap approvals in place (${needed.length} sent)`);
+    const call =
+      venue === 'v3'
+        ? zapLib.encodeV3Swap({ tokenIn, tokenOut, fee: 3000, recipient: who, amountIn: q.amountIn, amountOutMinimum: q.minOut, deadline: deadline(), payWithEther })
+        : zapLib.encodeV4Swap({ key: zkey, zeroForOne, amountIn: q.amountIn, amountOutMinimum: q.minOut, deadline: deadline(), version: 'v2.0' });
+    const outBefore = tokenOut === tkn ? await balanceOf(tkn, who) : await pub.getBalance({ address: who });
+    const inBefore = tokenIn === tkn ? await balanceOf(tkn, who) : await pub.getBalance({ address: who });
+    const swapHash = await flow.sendCall(provider, who, call, await pub.estimateGas({ account: who, to: call.to, data: call.calldata, value: call.value }), call.to);
+    const swapGas = await spent(swapHash);
+    const outGot = (tokenOut === tkn ? await balanceOf(tkn, who) : await pub.getBalance({ address: who })) - outBefore + (tokenOut === tkn ? 0n : swapGas);
+    const inPaid = inBefore - (tokenIn === tkn ? await balanceOf(tkn, who) : await pub.getBalance({ address: who })) - (tokenIn === tkn ? 0n : swapGas);
+    check(inPaid === q.amountIn, `spent exactly the ${q.amountIn} quoted in`);
+    check(outGot >= q.minOut && outGot === q.expectedOut, `received ${outGot}, the quoter’s answer and above the minimum`);
+    const router = venue === 'v3' ? sr02 : ur;
+    check((await holds(router, [tkn, weth])) === 0n, `the ${venue === 'v3' ? 'swap router' : 'Universal Router'} holds nothing after the swap`);
+    check((await balanceOf(weth, who)) === 0n, 'no WETH arrived: the ether side stayed ether');
+
+    // Step 2: plan again at the price the swap left, fitted to the wallet.
+    const s1 = await readPrice();
+    const p1 = plan(s1, depositQuote);
+    const h1 = await holdingsAt(p1);
+    const fit = zapLib.fitBps(h1, true);
+    check(zapLib.coverBps(h1) >= 10_000 - zapLib.FIT_AFTER_ZAP_BPS, `after the swap the wallet covers ${(zapLib.coverBps(h1) / 100).toFixed(2)}% of the plan`);
+    const p2 = fit ? plan(s1, (depositQuote * BigInt(fit)) / 10_000n) : p1;
+    const h2 = await holdingsAt(p2);
+    check(zapLib.coverBps(h2) >= 10_000, `fitted to ${fit ? (fit / 100).toFixed(1) : '100'}% of the deposit, the plan fits the wallet`);
+    let minted: { ok: boolean; tokenIds: bigint[] };
+    if (venue === 'v3') {
+      // The wallet holds no WETH, so the ether side is paid in ETH, as the builder decides.
+      for (const a of await v3ApprovalsNeeded(pub, who, { token0, token1, amount0: p2.amount0, amount1: p2.amount1 }, weth)) await spent(await approveV3(provider, who, a));
+      minted = await waitForV3Mint(pub, await sendV3Mint(provider, who, p2, await simulateV3Mint(pub, who, p2)), who);
+    } else {
+      const n = Math.floor(Date.now() / 1000);
+      for (const st of await flow.approvalsNeeded(pub, who, zkey, p2 as never, n)) await spent(await flow.approve(provider, who, st, n));
+      minted = await flow.waitForMint(pub, await flow.sendMint(provider, who, p2, await flow.simulateMint(pub, who, p2)), who);
+    }
+    check(minted.ok && minted.tokenIds.length === 5, `${minted.tokenIds.length} positions minted to the wallet after the swap`);
+    check((await holds(venue === 'v3' ? npm : posm, [tkn, weth])) === 0n, 'the position manager holds nothing after the mint');
+  }
+
+  // Zappers hold ether only (and, for the reverse case, TKN plus gas).
+  await rpc('hardhat_setBalance', [zapper, `0x${parseEther('3').toString(16)}`]);
+  await zapThenMint('v3, holding only ETH: swap ETH→TKN through SwapRouter02, then mint', zapper, 'v3', parseEther('1'), 'quote-to-token');
+  await rpc('hardhat_setBalance', [zapper, `0x${parseEther('3').toString(16)}`]);
+  await zapThenMint('v4, holding only ETH: swap through the Universal Router, then mint', zapper, 'v4', parseEther('1'), 'quote-to-token');
+  await rpc('hardhat_setBalance', [zapper2, `0x${parseEther('0.2').toString(16)}`]);
+  await send(deployer, tkn, encodeFunctionData({ abi: ERC20, functionName: 'mint', args: [zapper2, parseEther('3000')] }));
+  await zapThenMint('v4, holding TKN and gas: swap TKN→ETH through Permit2 and the router, then mint', zapper2, 'v4', parseEther('1'), 'token-to-quote');
+
+  section('zap: a swap whose price moved past the minimum is refused before signing');
+  {
+    const s = await flow.readSlot0(pub, zkey);
+    const amountIn = parseEther('0.5');
+    const expected = await zapLib.quoteV4(pub, { key: zkey, zeroForOne: true, amountIn });
+    const stale = zapLib.encodeV4Swap({ key: zkey, zeroForOne: true, amountIn, amountOutMinimum: (expected * 99n) / 100n, deadline: deadline(), version: 'v2.0' });
+    await send(trader, swapTest, encodeFunctionData({
+      abi: SWAP_TEST,
+      functionName: 'swap',
+      args: [zkey, { zeroForOne: true, amountSpecified: -parseEther('5'), sqrtPriceLimitX96: MIN_LIMIT }, { takeClaims: false, settleUsingBurn: false }, '0x'],
+    }), parseEther('5'));
+    check((await flow.readSlot0(pub, zkey)).tick < s.tick, 'a large trade moved the price first');
+    const refused = await pub.estimateGas({ account: zapper, to: stale.to, data: stale.calldata, value: stale.value }).then(() => null, (e: unknown) => e);
+    check(refused !== null, 'the stale swap is refused by the node');
+    const said = refused ? flow.describeTxError(refused) : '';
+    check(/price moved/.test(said), `and the page says why: “${said}”`);
+  }
+
   console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
   process.exit(failures === 0 ? 0 : 1);
 }

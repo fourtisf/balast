@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useMarket } from '@/components/providers/MarketProvider';
-import { useUi } from '@/components/providers/UiProvider';
 import { usd, usdExact } from '@/lib/format';
 
 type Trigger = 'cadence' | 'milestone';
@@ -16,7 +15,6 @@ let nextId = 3;
 
 export function RouterPanel() {
   const { router } = useMarket();
-  const { showToast } = useUi();
   const [trigger, setTrigger] = useState<Trigger>('cadence');
   const [destination, setDestination] = useState<'full' | 'narrow'>('full');
   const [milestones, setMilestones] = useState<Milestone[]>([
@@ -36,7 +34,6 @@ export function RouterPanel() {
   // Milestones fire once each, in ascending order — out of order is rejected at
   // config time, not at route time (§3.5).
   const ascending = numeric.every((v, i) => i === 0 || v > numeric[i - 1]);
-  const blocked = trigger === 'milestone' && !ascending;
 
   return (
     <div className="router">
@@ -188,13 +185,17 @@ export function RouterPanel() {
         <button
           className="btn btn-brand"
           style={{ width: '100%', justifyContent: 'center', height: 46 }}
-          disabled={blocked}
-          // The contract is P4 and not deployed. A toast claiming "enabled" was
-          // the same lie the stake toast once told (§20); say what is true.
-          onClick={() => showToast('The router contract is not deployed yet. Nothing was enabled.')}
+          // The contract is P4, needs its own audit, and is not deployed
+          // (§20, §33). The button says so rather than pretending to act.
+          disabled
+          title="BalastRouter is phase 4 and not deployed. Nothing on this page sends a transaction."
         >
-          Enable router
+          Router opens later
         </button>
+        <p className="hint" style={{ textAlign: 'center', marginTop: 8 }}>
+          The router is the one piece Uniswap cannot do for us: it needs a contract of its own, and that contract ships
+          only after an external audit. This page shows how it will work; nothing here sends a transaction.
+        </p>
       </div>
 
       <div className="card panel">

@@ -2,6 +2,7 @@
 
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
+import { StakeList } from '@/components/stakes/StakeList';
 import { TokenBadge } from '@/components/ui/TokenBadge';
 import { ageLabel, count, inHours, quoteLabel, usd } from '@/lib/format';
 import { shownYield, stalenessText, yieldCaption, yieldLabel, yieldTitle, yieldValue } from '@/lib/market-figures';
@@ -21,21 +22,9 @@ export function VaultGrid() {
   });
 
   // No vaults at all is a different fact from no vault matching a search.
-  // Under §20 a stake is a full-range position minted to the wallet from the
-  // board's drawer, and no vault contract streams anything — so this card
-  // says where staking is, rather than promising a vault that is not coming.
-  if (vaults.length === 0) {
-    return (
-      <div className="card">
-        <div className="empty">
-          <b>Stake from the board</b>Open any pool on the Pools page and use Stake: one full-range
-          position, minted through Uniswap&rsquo;s PositionManager to your wallet, earning the
-          pool&rsquo;s fee on every trade. No vault pools deposits and nothing here streams, so
-          nothing is promised.
-        </div>
-      </div>
-    );
-  }
+  // Under §20 a stake is a full-range position minted to the wallet and no
+  // vault contract exists, so the page lists what can be staked into instead.
+  if (vaults.length === 0) return <StakeList />;
   if (matching.length === 0) {
     return (
       <div className="card">
