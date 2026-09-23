@@ -28,6 +28,19 @@ function since(hours: number): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
+/**
+ * The builder, on the same pool and the same width, centred on today's price:
+ * what a rebalance mints after the old position is withdrawn. A position whose
+ * range is not known (the simulator's) keeps its half-width.
+ */
+function rebalanceHref(position: Pick<UserPosition, 'poolId' | 'range' | 'rangePct'>): string {
+  const half =
+    position.range && position.range !== 'full'
+      ? Math.max(1, Math.round((position.range.maxPct - position.range.minPct) / 2))
+      : Math.max(1, Math.round(position.rangePct));
+  return `/positions?pool=${encodeURIComponent(position.poolId)}&min=${-half}&max=${half}`;
+}
+
 export function PositionList({ fees, actions }: { fees: LiveFeesState; actions: PositionActions }) {
   const { portfolio, pools } = useMarket();
   const { query, wallet } = useUi();
@@ -150,6 +163,21 @@ export function PositionList({ fees, actions }: { fees: LiveFeesState; actions: 
                   >
                     Withdraw
                   </button>
+                  {!position.inRange && !position.rangeUnknown && position.range !== 'full' && (
+                    <button
+                      className="btn btn-brand btn-sm"
+                      disabled={!canAct}
+                      data-testid="rebalance"
+                      title="Withdraw this position, then open the builder on the same pool and width, centred on today's price. The new mint is a second transaction you sign there."
+                      onClick={() =>
+                        void actions.withdraw(position).then((ok) => {
+                          if (ok) router.push(rebalanceHref(position));
+                        })
+                      }
+                    >
+                      Rebalance
+                    </button>
+                  )}
                 </div>
               )}
               {busy && (
@@ -265,7 +293,7 @@ export function PositionList({ fees, actions }: { fees: LiveFeesState; actions: 
           nothing since.{' '}
           {strandedOnBoard ? (
             <>
-              <button className="link" onClick={() => router.push(`/positions?pool=${encodeURIComponent(strandedOnBoard.id)}`)}>
+              <button className="link" onClick={() => router.push(rebalanceHref({ ...stranded, poolId: strandedOnBoard.id }))}>
                 Rebalance
               </button>{' '}
               to start earning again{stranded.live ? ': withdraw it here, then mint a range around today’s price' : ''}.

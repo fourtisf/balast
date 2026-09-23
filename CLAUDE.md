@@ -5029,3 +5029,98 @@ The unit is now on the figure itself: the label reads
 with the daily figure, `≈ $3.00 a day (1.0%)`, because a dollar a day is
 something a person can check against their own deposit. The hint gives the
 day and the year side by side.
+
+---
+
+## 33. One token in, and what "mainnet" means here
+
+ALFA read §22's list of what the site lacked and answered: *perbaiki semuanya
+dan saya ingin mainnet beneran* — fix all of it, and make it real mainnet. The
+next screenshot asked the question the list had put first: VIRTUAL / ETH,
+`Approve VIRTUAL` greyed out, *needs 91.2179 VIRTUAL; the wallet holds 0* —
+*jadi kalau mau naro LP harus hold tokennya?* Until this section, yes.
+
+### The zap: swap, then mint, both through Uniswap
+
+A position holds two tokens; a wallet usually holds one. `lib/zap.ts` closes
+the gap in two transactions, each dry-run before the wallet opens:
+
+1. **Swap** part of what the wallet holds for the side it lacks, **in the same
+   pool** the position goes into — v3 through SwapRouter02
+   (`multicall(deadline, …)`, paid in ETH with `refundETH` when the side is
+   the wrapper), v4 through the Universal Router (`V4_SWAP`:
+   `SWAP_EXACT_IN_SINGLE`, `SETTLE_ALL`, `TAKE_ALL`). The size comes from the
+   venue's quoter (QuoterV2, V4Quoter) — a first quote at the fee-grossed
+   value of what is wanted, then up to three corrections, since impact is
+   convex. The minimum out is the last quote less the builder's slippage. A
+   swap that would lose more than 5% to fee and impact is not offered, and
+   says so.
+2. **Mint**, planned again at the price the swap left and **fitted** to what
+   the wallet now holds (`fitBps`). The swap's cost is paid in the swapped
+   side, so the plan shrinks by exactly that instead of asking for tokens the
+   wallet does not have. Fitting is bounded: 2% on its own (a deposit typed a
+   hair above the balance), 15% right after a zap, and the page says
+   *Fitted to your balance: N% of the deposit typed* whenever it happens.
+
+Why two transactions and not one: one would need a contract of ours to hold
+the swapped tokens between the swap and the mint, and §20 is that there is
+none. The cost is a signature; the gain is that nothing sits in a contract
+Balast wrote, even for one call.
+
+Two addresses joined `CONTRACTS`, both from the same registry entry §20 used
+(`ROBINHOOD_ADDRESSES` in sdk-core): SwapRouter02 `0xCaf6…5cb2` and QuoterV2
+`0x33e8…A9E7`. The Universal Router on this chain is v2.1.1, whose single
+swap carries `minHopPriceX36`; it is encoded at zero (the minimum out is the
+guard). A v4 pool quoted in aeWETH gets no zap — its ether would be wrapped,
+swapped and wrapped again, those pools are few, and the builder still says to
+hold both there.
+
+**Proven, as far as this sandbox can.** `lib/zap.test.ts` compares the v4
+swap with the SDK's V4Planner at both router layouts and the v3 swap and
+quote with the routers' published ABIs. `npm run check:lp` now deploys
+SwapRouter02, QuoterV2, V4Quoter and the Universal Router from their
+published bytecode and runs three zaps through the site's own functions —
+ETH→token on v3, ETH→token on v4, token→ETH on v4 through Permit2 — checking
+the amount in equals the quote, the amount out equals the quoter's answer,
+the routers hold nothing afterwards, and the fitted mint lands; plus a swap
+whose price moved past the minimum refused by the node with the reason in
+words. 104 checks, all passing. The local router is npm's 2.1.0 (the v2.0
+layout); the 2.1.1 layout is covered by the byte test, not by a local run.
+
+### Also in this section
+
+- **`/stakes` lists what can be staked into.** No vault exists (§20), so the
+  grid that listed vaults now lists every token's best mintable market,
+  ranked by the fee yield it shows, each with *Stake full range*. *Your
+  stakes* points at the Portfolio, which reads them from the chain (§30),
+  instead of saying the site cannot.
+- **The router says it is later.** Its nav link carries a `later` tag and
+  the button reads *Router opens later*, disabled, with the reason: it is the
+  one piece Uniswap cannot do for us, and it ships only after an audit.
+- **Out of range is counted in the navigation**, in red, beside Portfolio —
+  §7's rule that a position earning nothing says so, applied one level up.
+- **Rebalance** on an out-of-range position withdraws it and opens the
+  builder on the same pool and width, centred on today's price
+  (`?min=&max=`). The new mint is a second transaction signed there.
+- **`/learn`**: twelve answers before anyone signs — custody, the NFT as a
+  receipt, one-token deposits, full range against shapes, what the yield is
+  and is not, the three ways to lose money, out of range, hooks, where the
+  numbers come from, and "start small".
+- **`deploy/MAINNET.md`**: the operator's checklist. The inputs only a person
+  can supply (a paid RPC endpoint above all — the backfill has been ~74 days
+  behind on public ones; the WalletConnect id; `STAKEABLE_HOOKS`), then the
+  first real transactions at 0.005 ETH, each with what to check on the
+  explorer.
+
+### Unverified from here
+
+The sandbox reaches no RPC, so no zap has been sent on Robinhood Chain.
+The first one should be the small one in `deploy/MAINNET.md`, watched on the
+explorer: the router must hold nothing afterwards, and the NFT must be in the
+wallet.
+
+### Still ALFA's
+
+Unchanged: `STAKEABLE_HOOKS` and `LAUNCHPAD_HOOKS`, the listing bar's
+thresholds, the §12 questions, and — if a vault is ever wanted again — the
+protocol fee and its immutable cap. Balast takes no fee today.

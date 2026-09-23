@@ -213,15 +213,14 @@ test.describe('router form', () => {
     await page.goto('/router', { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'Market-cap milestones' }).click();
 
-    const enable = page.getByRole('button', { name: 'Enable router' });
-    await expect(enable).toBeEnabled();
+    // The contract is P4 and not deployed: the button says so and never acts.
+    await expect(page.getByRole('button', { name: 'Router opens later' })).toBeDisabled();
 
     await page.locator('#ms-mc-2').fill('1,000,000');
-    await expect(enable).toBeDisabled();
     await expect(page.locator('.hint.down')).toContainText('must ascend');
 
     await page.locator('#ms-mc-2').fill('20,000,000');
-    await expect(enable).toBeEnabled();
+    await expect(page.locator('.hint.down')).toHaveCount(0);
   });
 });
 

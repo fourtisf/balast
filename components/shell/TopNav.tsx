@@ -65,6 +65,8 @@ export function TopNav() {
                 aria-current={active ? 'page' : undefined}
               >
                 {item.label}
+                {/* A space, so a screen reader hears "Portfolio, 1 out of range", not one word. */}
+                {(('later' in item && item.later) || (item.href === '/portfolio' && outOfRange > 0)) && ' '}
                 {'later' in item && item.later && (
                   <span className="nav-tag" title="The router contract is phase 4 and not deployed. The page shows the design.">
                     later

@@ -542,3 +542,15 @@ h1 em{font-style:italic;color:var(--ac)}
 .wallet-opt.off{color:inherit}
 .wallet-opt.off .act{color:var(--fg-3)}
 .wallet-list{max-height:min(52vh,420px);overflow-y:auto;padding-right:2px}
+
+/* /learn: questions and answers, one column, readable measure. */
+.learn{padding:26px 28px}
+.learn-toc{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:22px}
+.learn-toc a{font-size:13px;color:var(--fg-2);border:1px solid var(--bd-n);border-radius:99px;padding:5px 12px;transition:var(--t-hover)}
+.learn-toc a:hover{color:var(--fg);border-color:var(--bd-2)}
+.learn-q{padding:18px 0;border-top:1px solid var(--bd-n);max-width:72ch;scroll-margin-top:90px}
+.learn-q h2{font-family:var(--serif);font-weight:400;font-size:28px;line-height:1.15;margin-bottom:8px}
+.learn-q p{font-size:15.5px;line-height:1.6;color:var(--fg-2)}
+.learn-q p b{color:var(--fg);font-weight:600}
+.learn-q a,.learn a{text-decoration:underline;text-underline-offset:2px}
+@media (max-width:640px){.learn{padding:18px 16px}.learn-q h2{font-size:23px}}

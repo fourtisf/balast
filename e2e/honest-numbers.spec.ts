@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 /** §1 and §7. These are product rules, so they are asserted, not eyeballed. */
 test.describe('honest numbers', () => {
   test('never says APY or APR anywhere in the app', async ({ page }) => {
-    for (const route of ['/pools', '/stakes', '/positions', '/router', '/portfolio']) {
+    for (const route of ['/pools', '/stakes', '/positions', '/router', '/portfolio', '/learn']) {
       await page.goto(route, { waitUntil: 'networkidle' });
       const text = await page.locator('body').innerText();
       expect(text, `${route} contains APY`).not.toMatch(/APY/i);

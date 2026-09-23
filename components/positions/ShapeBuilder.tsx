@@ -120,6 +120,13 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
   const params = useSearchParams();
   const wantedPool = params.get('pool');
   const wantedFull = params.get('range') === 'full';
+  // A rebalance hands over the old position's width, centred on today's price.
+  const wantedMin = Number(params.get('min'));
+  const wantedMax = Number(params.get('max'));
+  const wantedRange =
+    params.get('min') !== null && Number.isFinite(wantedMin) && Number.isFinite(wantedMax) && wantedMin <= 0 && wantedMax >= 0 && wantedMax > wantedMin
+      ? { min: Math.max(-99, wantedMin), max: Math.min(1000, wantedMax) }
+      : null;
 
   const [poolId, setPoolId] = useState(
     () => stakeablePools.find((p) => p.id === wantedPool)?.id ?? stakeablePools[0].id,
@@ -129,8 +136,8 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
   );
   const [slippageBps, setSlippageBps] = useState(DEFAULT_SLIPPAGE_BPS);
   const [shape, setShape] = useState<ShapeId>('spot');
-  const [minPct, setMinPct] = useState(-15);
-  const [maxPct, setMaxPct] = useState(15);
+  const [minPct, setMinPct] = useState(wantedRange?.min ?? -15);
+  const [maxPct, setMaxPct] = useState(wantedRange?.max ?? 15);
   const [bins, setBins] = useState(24);
   const [fullRange, setFullRange] = useState(wantedFull);
   // The pools can arrive after the first render; honour the link once they do.

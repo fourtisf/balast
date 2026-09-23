@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const ROUTES = ['/pools', '/stakes', '/positions', '/router', '/portfolio'];
+const ROUTES = ['/pools', '/stakes', '/positions', '/router', '/portfolio', '/learn'];
 const WIDTHS = [1600, 1180, 760, 360];
 
 test.describe('shell', () => {
@@ -58,6 +58,6 @@ test.describe('shell', () => {
     await page.setViewportSize({ width: 360, height: 800 });
     await page.locator('.nav-links a', { hasText: 'Portfolio' }).click();
     await expect(page).toHaveURL(/\/portfolio$/);
-    await expect(page.locator('.nav-links a[aria-current="page"]')).toHaveText('Portfolio');
+    await expect(page.locator('.nav-links a[aria-current="page"]')).toHaveText(/^Portfolio( \d+ out of range)?$/);
   });
 });

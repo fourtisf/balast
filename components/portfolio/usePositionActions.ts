@@ -41,8 +41,9 @@ export interface PositionActions {
   version: number;
   /** Whether the connected wallet is on this chain. Null while unanswered, or with no wallet. */
   onChain: boolean | null;
-  collect: (position: UserPosition) => Promise<void>;
-  withdraw: (position: UserPosition) => Promise<void>;
+  /** Each resolves true once its transaction has landed, false otherwise. */
+  collect: (position: UserPosition) => Promise<boolean>;
+  withdraw: (position: UserPosition) => Promise<boolean>;
 }
 
 /**
@@ -75,14 +76,14 @@ export function usePositionActions(): PositionActions {
   const inFlight = useRef(false);
 
   const run = useCallback(
-    async (kind: ActionKind, position: UserPosition) => {
+    async (kind: ActionKind, position: UserPosition): Promise<boolean> => {
       const live = position.live;
-      if (!live) return;
+      if (!live) return false;
       if (!wallet || !provider || !owner) {
         openWallet();
-        return;
+        return false;
       }
-      if (busy || inFlight.current) return;
+      if (busy || inFlight.current) return false;
       inFlight.current = true;
       const tokenId = position.tokenId;
       const ref = positionRef(position);
@@ -97,12 +98,12 @@ export function usePositionActions(): PositionActions {
             await ensureChain(provider);
           } catch (e) {
             fail(describeWalletError(e));
-            return;
+            return false;
           }
           const id = await refresh();
           if (id !== CHAIN.id) {
             fail(`Switch the wallet to ${CHAIN.name} first. Nothing was sent.`);
-            return;
+            return false;
           }
         }
         setBusy({ ref, label: 'Checking with the chain…' });
@@ -227,11 +228,13 @@ export function usePositionActions(): PositionActions {
         // The indexer sees the burn or the fee settlement a block later; the
         // portfolio re-reads now and again on its own cadence.
         await getProvider().refreshPortfolio?.();
+        return true;
       } catch (e) {
         fail(describeTxError(e));
         // Whatever failed, the list re-reads what the chain says now, so a
         // row for a position already withdrawn or moved does not linger.
         void getProvider().refreshPortfolio?.();
+        return false;
       } finally {
         inFlight.current = false;
         setBusy(null);
