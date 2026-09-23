@@ -26,37 +26,16 @@ import { resolveUsdg } from '../indexer/anchor';
 import { readWork } from '../indexer/working';
 import { busKind, subscribeTicks } from './bus';
 import { MarketFeed } from './market';
-import { rpc } from '../chain/client';
-import { readV3Positions } from '../../lib/v3/positions';
-import { buildPortfolio, type V3PositionReader } from './portfolio';
+import { chainPortfolioReader, chainScannerSource } from './chain-portfolio';
+import { buildPortfolio, type ChainPortfolioReader } from './portfolio';
+import { V4TokenScanner } from './v4-scanner';
 import { recentHead } from './recent';
 import { buildSnapshot, nextRevision } from './snapshot';
 import { agedSnapshot, isServable, loadPersistedSnapshot, persistSnapshot } from './snapshot-store';
 
 const USDG = process.env.USDG_ADDRESS ?? '';
 
-/** How long a portfolio request waits on the node for its v3 half before answering with v4 alone. */
-const V3_READ_TIMEOUT_MS = 8_000;
 
-/**
- * The v3 half of a wallet's portfolio, from the chain through the same
- * failover every other RPC read uses, bounded so a slow node costs the v3
- * rows and never the request.
- */
-export const chainV3Reader: V3PositionReader = (owner) =>
-  new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`the node did not answer within ${V3_READ_TIMEOUT_MS / 1000}s`)), V3_READ_TIMEOUT_MS);
-    rpc((client) => readV3Positions(client, owner), 'v3 positions').then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error: unknown) => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
-  });
 
 /**
  * Blocks behind head past which the indexer is BACKFILLING rather than
@@ -209,20 +188,28 @@ export async function buildServer(
     /** A fake for the market sources, so a test never reaches a real aggregator. */
     marketFetch?: MarketFetch;
     /**
-     * Reads a wallet's v3 positions from the chain. Defaults to the node
-     * unless `PORTFOLIO_V3=false`; null turns the v3 half off, which is what
-     * a test that must not reach a node passes.
+     * What the portfolio reads from the chain: which positions a wallet
+     * holds, and where their pools' prices are now. Defaults to the node
+     * unless `PORTFOLIO_CHAIN=false`; null turns it off, which is what a test
+     * that must not reach a node passes.
      */
-    readV3Positions?: V3PositionReader | null;
+    portfolioChain?: ChainPortfolioReader | null;
+    /** Finds v4 positions minted after the indexer's last one. Defaults with `portfolioChain`. */
+    v4Scanner?: V4TokenScanner | null;
   } = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
-  const readV3 =
-    options.readV3Positions !== undefined
-      ? options.readV3Positions
-      : process.env.PORTFOLIO_V3 === 'false'
-        ? null
-        : chainV3Reader;
+  const chainOff = process.env.PORTFOLIO_CHAIN === 'false' || process.env.PORTFOLIO_V3 === 'false';
+  const portfolioChain =
+    options.portfolioChain !== undefined ? options.portfolioChain : chainOff ? null : chainPortfolioReader();
+  const v4Scanner =
+    options.v4Scanner !== undefined
+      ? options.v4Scanner
+      : portfolioChain && !chainOff
+        ? new V4TokenScanner(chainScannerSource())
+        : null;
+  v4Scanner?.start();
+  app.addHook('onClose', async () => v4Scanner?.stop());
 
   await app.register(cors, {
     // The browser reaches the API through nginx on the same origin, so CORS
@@ -616,6 +603,9 @@ export async function buildServer(
       bus: busKind(),
       /** The DexScreener feed: how many of the board's tokens it quotes, and what it last said. */
       market: market.status(),
+      // The scan for v4 positions minted since the indexer's last one: a
+      // portfolio's completeness depends on it, so it is visible from outside.
+      portfolioScan: v4Scanner ? v4Scanner.status() : null,
       weth: CONTRACTS.weth,
       usdg: anchor.address,
       usdgSource: anchor.source,
@@ -734,14 +724,31 @@ export async function buildServer(
    * snapshot; the query is a handful of rows and it is rate limited like
    * any other. 503 for the same reasons the snapshot is.
    */
-  app.get<{ Params: { wallet: string } }>('/api/portfolio/:wallet', async (request, reply) => {
+  app.get<{ Params: { wallet: string }; Querystring: { v4?: string | string[] } }>('/api/portfolio/:wallet', async (request, reply) => {
     const wallet = request.params.wallet.toLowerCase();
     if (!/^0x[0-9a-f]{40}$/.test(wallet)) {
       return reply.code(400).send({ statusCode: 400, error: 'bad-address', message: 'Not an address.' });
     }
     const problem = configurationProblem();
     if (problem) return reply.code(503).send({ error: 'misconfigured', message: problem });
-    const built = await buildPortfolio(wallet, USDG || null, { readV3 });
+    // Token ids the browser saw minted to this wallet (lib/tx-history.ts), so
+    // a position is on the page the moment its receipt is in. Candidates
+    // only: nothing is shown that the chain does not confirm this wallet holds.
+    // `?v4=1&v4=2` arrives as an array; either shape is read the same way.
+    const hinted = ([] as string[])
+      .concat(request.query.v4 ?? [])
+      .join(',')
+      .split(',')
+      .filter((id) => /^\d{1,30}$/.test(id))
+      .slice(0, 50)
+      .map((id) => BigInt(id));
+    const scanned = v4Scanner?.owned(wallet) ?? [];
+    const built = await buildPortfolio(wallet, USDG || null, {
+      chain: portfolioChain,
+      v4Candidates: [...scanned, ...hinted],
+      // No scan at all is not "complete": say the list may be missing some.
+      scanPartial: portfolioChain !== null && !(v4Scanner?.complete() ?? false),
+    });
     if (!built) {
       return reply.code(503).send({ error: 'no-data', message: 'The indexer has not priced a block yet.' });
     }

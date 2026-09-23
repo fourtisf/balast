@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TX_HISTORY_MAX, listTx, recordTx, updateTx, type TxRecord, type TxStorage } from './tx-history';
+import { TX_HISTORY_MAX, listTx, mintedV4Ids, recordMinted, recordTx, updateTx, type TxRecord, type TxStorage } from './tx-history';
 
 function memory(): TxStorage & { data: Map<string, string> } {
   const data = new Map<string, string>();
@@ -47,5 +47,24 @@ describe('tx history', () => {
     expect(listTx(A, store)).toEqual([]);
     store.setItem('balast:tx', JSON.stringify([{ nope: true }, tx(4)]));
     expect(listTx(A, store)).toHaveLength(1);
+  });
+});
+
+describe('minted token ids', () => {
+  it('remembers the v4 ids a mint created, for the portfolio to confirm', () => {
+    const store = new Map<string, string>();
+    const mem = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
+    const wallet = '0x00000000000000000000000000000000000000Aa';
+    recordTx({ hash: '0x01', kind: 'mint', wallet, at: 1, status: 'pending', label: 'Mint' }, mem);
+    recordMinted('0x01', 'v4', [812n, 813n], mem);
+    // Not mined yet: not a hint.
+    expect(mintedV4Ids(wallet, mem)).toEqual([]);
+    updateTx('0x01', 'success', mem);
+    expect(mintedV4Ids(wallet, mem)).toEqual(['812', '813']);
+    // v3 ids are enumerable on chain and need no hint.
+    recordTx({ hash: '0x02', kind: 'mint', wallet, at: 2, status: 'success', label: 'Mint' }, mem);
+    recordMinted('0x02', 'v3', [5n], mem);
+    expect(mintedV4Ids(wallet, mem)).toEqual(['812', '813']);
+    expect(mintedV4Ids('0x00000000000000000000000000000000000000bb', mem)).toEqual([]);
   });
 });

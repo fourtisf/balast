@@ -18,6 +18,7 @@ import {
   type Hex,
   type Log,
   type PublicClient,
+  toFunctionSelector,
 } from 'viem';
 import { CONTRACTS, NATIVE_ETH, PUBLIC_RPC_URL } from '../chain';
 import type { Eip1193Provider } from '../wallet';
@@ -259,15 +260,67 @@ export async function positionCount(client: PublicClient, owner: Address): Promi
   return client.readContract({ address: CONTRACTS.positionManager, abi: POSITION_MANAGER_ABI, functionName: 'balanceOf', args: [owner] });
 }
 
+const PRICE_MOVED = 'The price moved more than the tolerance while you were signing. Nothing was sent or taken. Try again.';
+const NOT_HELD = 'This wallet no longer holds this position — it may already have been withdrawn. Nothing was sent.';
+const EXPIRED = 'The transaction expired before it was mined. Try again.';
+
+/**
+ * Uniswap's custom errors, by selector. The site's ABIs do not declare them,
+ * so a node's answer carries the four bytes and not the name — matching the
+ * name alone never matched a real revert. From v4-periphery's
+ * `SlippageCheck.sol` and `IPositionManager.sol`.
+ */
+const REVERT_SELECTORS: Record<string, string> = {
+  [toFunctionSelector('MinimumAmountInsufficient(uint128,uint128)')]: PRICE_MOVED,
+  [toFunctionSelector('MaximumAmountExceeded(uint128,uint128)')]: PRICE_MOVED,
+  [toFunctionSelector('NotApproved(address)')]: NOT_HELD,
+  [toFunctionSelector('DeadlinePassed(uint256)')]: EXPIRED,
+};
+
+/** Every string on the error and its causes: messages, details and raw revert data. */
+function errorText(error: unknown): string {
+  const parts: string[] = [];
+  let e = error as Record<string, unknown> | undefined;
+  for (let depth = 0; e && typeof e === 'object' && depth < 8; depth++) {
+    for (const field of ['shortMessage', 'details', 'message', 'data', 'reason']) {
+      const v = e[field];
+      if (typeof v === 'string') parts.push(v);
+      else if (v && typeof v === 'object' && typeof (v as { data?: unknown }).data === 'string') parts.push((v as { data: string }).data);
+    }
+    e = e.cause as Record<string, unknown> | undefined;
+  }
+  return parts.join(' ');
+}
+
+/**
+ * An error whose message is already written for the person reading the page:
+ * `describeTxError` shows it as it is. A plain `Error` is treated as an
+ * internal fault and summarised, which swallowed every message the flows
+ * wrote themselves ("the chain says this position is already empty").
+ */
+export class ShownError extends Error {}
+
 /** A wallet's refusal, an empty balance or a revert, in a sentence. */
 export function describeTxError(error: unknown): string {
+  if (error instanceof ShownError) return error.message;
   const e = error as { code?: number; shortMessage?: string; message?: string; details?: string; cause?: { code?: number; shortMessage?: string } };
   const code = e?.code ?? e?.cause?.code;
-  const text = `${e?.shortMessage ?? ''} ${e?.details ?? ''} ${e?.message ?? ''}`;
+  const text = errorText(error);
+  for (const selector of text.toLowerCase().match(/0x[0-9a-f]{8}/g) ?? []) {
+    const known = REVERT_SELECTORS[selector];
+    if (known && !(code === 4001)) return known;
+  }
   if (code === 4001 || /user rejected|user denied/i.test(text)) return 'You declined in the wallet. Nothing was sent.';
   if (/insufficient funds/i.test(text)) return 'Not enough ETH in the wallet for the deposit plus gas.';
-  if (/deadline/i.test(text)) return 'The transaction expired before it was mined. Try again.';
-  if (/MaximumAmountExceeded|amount.*exceed/i.test(text)) return 'The price moved more than the tolerance while you were signing. Try again.';
+  if (/deadline|Transaction too old/i.test(text)) return EXPIRED;
+  // Named, not guessed: "transfer amount exceeds balance" is a balance, not a price.
+  if (/MaximumAmountExceeded|MinimumAmountInsufficient|Price slippage check/i.test(text)) return PRICE_MOVED;
+  if (/exceeds balance|insufficient balance|TRANSFER_FROM_FAILED|\bSTF\b/i.test(text))
+    return 'The wallet does not hold enough of one of the tokens for this. Nothing was sent.';
+  // v4's NotApproved, v3's "Not approved", an ERC-721's missing token: the
+  // wallet does not hold this position any more — most often it was already
+  // withdrawn, in another tab or on Uniswap's own site.
+  if (/NotApproved|Not approved|NOT_MINTED|nonexistent token|invalid token ID/i.test(text)) return NOT_HELD;
   if (/HookNotImplemented|Hook/i.test(text)) return 'This pool\'s hook refused the position. It may not accept outside liquidity yet.';
   const short = e?.shortMessage ?? e?.cause?.shortMessage;
   return short ? short.replace(/\s+/g, ' ').slice(0, 200) : 'The transaction could not be prepared.';

@@ -201,17 +201,35 @@ export function PositionList({ fees, actions }: { fees: LiveFeesState; actions: 
         );
       })}
 
-      {live && portfolio.v3?.status === 'unavailable' && (
+      {live && portfolio.chain?.status === 'unavailable' && (
+        <p className="hint" role="status" style={{ margin: '10px 0' }}>
+          The chain did not answer just now, so the Uniswap v4 positions here are the indexer&rsquo;s record, not
+          checked against the chain, and any minted since its last block are missing. Withdraw still asks the chain
+          first. The page asks again on its next refresh.
+        </p>
+      )}
+      {live && portfolio.chain?.v3Unavailable && (
         <p className="hint" role="status" style={{ margin: '10px 0' }}>
           Uniswap v3 positions could not be read from the chain just now, so any this wallet holds are not listed.
           The page asks again on its next refresh.
         </p>
       )}
-      {live && (portfolio.v3?.unindexed ?? 0) > 0 && (
+      {live && portfolio.chain?.pricesStale && (
         <p className="hint" style={{ margin: '10px 0' }}>
-          {portfolio.v3!.unindexed} Uniswap v3 position{portfolio.v3!.unindexed === 1 ? ' is' : 's are'} in a pool
-          Balast has not indexed, so {portfolio.v3!.unindexed === 1 ? 'it cannot be valued here' : 'they cannot be valued here'}.
-          Manage {portfolio.v3!.unindexed === 1 ? 'it' : 'them'} on Uniswap.
+          Pool prices could not be read live, so in-range status and amounts are as of the indexer&rsquo;s last block.
+        </p>
+      )}
+      {live && (portfolio.chain?.unreadable ?? 0) > 0 && (
+        <p className="hint" style={{ margin: '10px 0' }}>
+          {portfolio.chain!.unreadable} position{portfolio.chain!.unreadable === 1 ? '' : 's'} this wallet holds could
+          not be described from the chain, so {portfolio.chain!.unreadable === 1 ? 'it is' : 'they are'} not listed.
+          Manage {portfolio.chain!.unreadable === 1 ? 'it' : 'them'} on Uniswap&rsquo;s own site.
+        </p>
+      )}
+      {live && portfolio.chain?.partial && (
+        <p className="hint" style={{ margin: '10px 0' }}>
+          The scan for Uniswap v4 positions the indexer has not reached yet is still running, so one minted or
+          received since its last block may be missing for a few minutes. A position minted here shows at once.
         </p>
       )}
 

@@ -27,6 +27,13 @@ export interface TxRecord {
   label: string;
   poolId?: string;
   tokenId?: string;
+  /**
+   * A mint's receipt: the position NFTs it created and which manager created
+   * them. The portfolio asks the chain about these ids, so a position is on
+   * the page — and can be withdrawn — the moment its receipt is in, whatever
+   * the indexer has read.
+   */
+  minted?: { protocol: 'v3' | 'v4'; tokenIds: string[] };
 }
 
 /** The subset of Storage this needs, so a test can hand in a Map. */
@@ -107,4 +114,28 @@ export function updateTx(hash: Hex, status: TxStatus, store?: TxStorage): void {
   if (!target || target.status === status) return;
   target.status = status;
   writeAll(s, all);
+}
+
+/** Record the NFTs a mint created, from its receipt. */
+export function recordMinted(hash: Hex, protocol: 'v3' | 'v4', tokenIds: bigint[], store?: TxStorage): void {
+  const s = storage(store);
+  if (!s || tokenIds.length === 0) return;
+  const all = readAll(s);
+  const target = all.find((r) => r.hash.toLowerCase() === hash.toLowerCase());
+  if (!target) return;
+  target.minted = { protocol, tokenIds: tokenIds.map((id) => id.toString()) };
+  writeAll(s, all);
+}
+
+/**
+ * The v4 token ids this browser saw minted to this wallet, newest first.
+ * Hints for the portfolio, which confirms each on chain; a stale one (sent
+ * away, burned) is simply not shown.
+ */
+export function mintedV4Ids(wallet: string, store?: TxStorage): string[] {
+  const ids = listTx(wallet, store)
+    .filter((r) => r.kind === 'mint' && r.status === 'success' && r.minted?.protocol === 'v4')
+    .flatMap((r) => r.minted!.tokenIds)
+    .filter((id) => /^\d{1,30}$/.test(id));
+  return [...new Set(ids)].slice(0, 50);
 }

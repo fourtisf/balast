@@ -281,6 +281,10 @@ export interface LivePosition {
   priceUsd0: number;
   priceUsd1: number;
   mintedAt: string | null;
+  /** Confirmed on chain on this read: owner, pool, range and liquidity. False when the node did not answer and this is the indexer's record. */
+  verified?: boolean;
+  /** The indexer has not met this pool; it is described from the chain and its value may be unknown. */
+  unindexedPool?: boolean;
 }
 
 export interface UserPosition {
@@ -330,12 +334,22 @@ export interface Portfolio {
   /** Live: the wallet these positions belong to. */
   wallet?: string | null;
   /**
-   * Live: whether the v3 half was read. v3 positions come from the chain
-   * rather than the indexer (server/api/portfolio.ts), so a node that did not
-   * answer leaves them out — and the page says so rather than implying the
-   * wallet holds none.
+   * Live: whether the positions were confirmed on the chain just now
+   * (server/api/portfolio.ts). `unavailable` means the node did not answer:
+   * v4 positions are the indexer's, unchecked, and v3 ones could not be
+   * listed — and the page says so rather than implying there are none.
    */
-  v3?: { status: 'read' | 'unavailable' | 'off'; message?: string; unindexed: number };
+  chain?: {
+    status: 'read' | 'unavailable' | 'off';
+    message?: string;
+    unreadable: number;
+    /** The scan for v4 positions the indexer has not reached is not complete. */
+    partial?: boolean;
+    /** v3 positions could not be read just now. */
+    v3Unavailable?: boolean;
+    /** Pool prices could not be read live; in-range status is the indexer's. */
+    pricesStale?: boolean;
+  };
 }
 
 export interface GlobalStats {

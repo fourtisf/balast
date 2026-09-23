@@ -8,7 +8,7 @@ import { CHAIN, CONTRACTS, NATIVE_ETH } from '@/lib/chain';
 import { getProvider } from '@/lib/data';
 import type { Pool, PoolKeyInfo, ShapeId } from '@/lib/data/types';
 import { quoteLabel } from '@/lib/format';
-import { recordTx, updateTx } from '@/lib/tx-history';
+import { recordMinted, recordTx, updateTx } from '@/lib/tx-history';
 import {
   approvalsNeeded,
   approve,
@@ -18,6 +18,7 @@ import {
   readSlot0,
   sendMint,
   sendWrap,
+  ShownError,
   simulateMint,
   simulateWrap,
   waitForMint,
@@ -524,7 +525,7 @@ export function useMintFlow(args: {
         setBusyLabel('Wrapping…');
         const receipt = await client.waitForTransactionReceipt({ hash });
         updateTx(hash, receipt.status === 'success' ? 'success' : 'reverted');
-        if (receipt.status !== 'success') throw new Error('The wrap reverted on chain.');
+        if (receipt.status !== 'success') throw new ShownError('The wrap reverted on chain.');
         setRefreshTick((n) => n + 1);
         return;
       }
@@ -553,7 +554,7 @@ export function useMintFlow(args: {
         setBusyLabel('Waiting for the approval…');
         const receipt = await client.waitForTransactionReceipt({ hash });
         updateTx(hash, receipt.status === 'success' ? 'success' : 'reverted');
-        if (receipt.status !== 'success') throw new Error('The approval reverted on chain.');
+        if (receipt.status !== 'success') throw new ShownError('The approval reverted on chain.');
         setApprovals((s) => s.slice(1));
         setRefreshTick((n) => n + 1);
         return;
@@ -610,8 +611,11 @@ export function useMintFlow(args: {
       });
       setBusyLabel('Minting…');
       const done = venue === 'v3' ? await waitForV3Mint(client, hash, owner) : await waitForMint(client, hash, owner);
+      // The NFTs it created, so the portfolio can ask the chain about them at
+      // once rather than wait for the indexer to reach this block.
+      recordMinted(hash, venue, done.tokenIds);
       updateTx(hash, done.ok ? 'success' : 'reverted');
-      if (!done.ok) throw new Error('The transaction reverted on chain.');
+      if (!done.ok) throw new ShownError('The transaction reverted on chain.');
       // The outcome stays on screen: the re-read below refreshes the price
       // and the balances, and must not take the receipt with it. It did —
       // the effect that re-read them also cleared this, so the "minted,

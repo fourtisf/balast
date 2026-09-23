@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { encodeAbiParameters, type PublicClient } from 'viem';
 import { CONTRACTS } from '../chain';
-import { approvalsNeeded, describeTxError, simulateWrap, waitForMint, wrapShortfall, WRAP_CALLDATA } from './flow';
+import { approvalsNeeded, describeTxError, ShownError, simulateWrap, waitForMint, wrapShortfall, WRAP_CALLDATA } from './flow';
 import type { PoolKey } from './pool';
 
 const ZERO = '0x0000000000000000000000000000000000000000' as const;
@@ -87,6 +87,28 @@ describe('describeTxError', () => {
     expect(describeTxError({ shortMessage: 'insufficient funds for gas * price + value' })).toMatch(/Not enough ETH/);
     expect(describeTxError({ shortMessage: 'execution reverted: MaximumAmountExceeded(1,2)' })).toMatch(/price moved/);
     expect(describeTxError(new Error('something odd'))).toBe('The transaction could not be prepared.');
+  });
+
+  it('says why a withdrawal would not go through, in words', () => {
+    // v4 BURN_POSITION's guard, and v3 decreaseLiquidity's.
+    expect(describeTxError({ shortMessage: 'execution reverted: MinimumAmountInsufficient(10,5)' })).toMatch(/price moved/);
+    expect(describeTxError({ shortMessage: 'execution reverted: Price slippage check' })).toMatch(/price moved/);
+    // Already withdrawn, or moved: v4, v3 and the ERC-721 spellings.
+    expect(describeTxError({ shortMessage: 'execution reverted: NotApproved(0xabc)' })).toMatch(/no longer holds/);
+    expect(describeTxError({ shortMessage: 'execution reverted: Not approved' })).toMatch(/no longer holds/);
+    expect(describeTxError({ shortMessage: 'execution reverted: NOT_MINTED' })).toMatch(/no longer holds/);
+    // As a node really answers: the four bytes of a custom error the ABI does not declare.
+    const minOut = { shortMessage: 'Execution reverted with reason: custom error 0x…', cause: { data: '0x12816f22' + '0'.repeat(128) } };
+    expect(describeTxError(minOut)).toMatch(/price moved/);
+    // A balance is not a price.
+    expect(describeTxError({ shortMessage: 'execution reverted: ERC20: transfer amount exceeds balance' })).toMatch(/does not hold enough/);
+    // v3's own spelling of an expired deadline.
+    expect(describeTxError({ shortMessage: 'execution reverted: Transaction too old' })).toMatch(/expired/);
+    // A message a flow wrote for the page is shown as written.
+    expect(describeTxError(new ShownError('The chain says this position is already empty.'))).toBe('The chain says this position is already empty.');
+    expect(describeTxError({ message: 'reverted with an unrecognized custom error (return data: 0x0ca968d8000000000000000000000000000000000000000000000000000000000000dead)' })).toMatch(
+      /no longer holds/,
+    );
   });
 });
 

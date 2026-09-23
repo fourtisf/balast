@@ -4482,7 +4482,8 @@ position. Three honest limits, each on the page:
   the page says v3 could not be read. The endpoint's own error goes to the
   log, not the page — a paid endpoint's URL carries its key.
 
-`PORTFOLIO_V3=false` turns the v3 half off.
+`PORTFOLIO_V3=false` turns the v3 half off. (Superseded by §30: the whole
+portfolio is read from the chain now, and the variable is `PORTFOLIO_CHAIN`.)
 
 **Uncollected fees** are read the way Uniswap's own interface reads them:
 an `eth_call` of `collect(max, max)` from the owner, which returns what a
@@ -4555,3 +4556,160 @@ Unchanged: `STAKEABLE_HOOKS` and `LAUNCHPAD_HOOKS` (§14, §20), the listing
 bar's thresholds, the §12 questions, and the single-token zap (§23). The
 single-token zap is still the one Uniswap-routed action that is not built:
 every mint is two-sided until it is.
+
+---
+
+## 30. Withdrawal, and every position being withdrawable
+
+ALFA, after §29: *pastikan withdraw atau udh close posisi juga working semua
+dana pastikan safe* — make sure withdrawing and closing a position works, and
+that every fund is safe. This section is the answer, and it starts with a
+fault §29 did not see.
+
+### A position not on the page cannot be withdrawn here
+
+The portfolio took its v4 positions from the indexer, and the indexer is as
+far behind as its backfill — seventy-odd days on the box (§25). So **every
+v4 position minted in that gap was missing from the page**, including every
+one minted through this site: the mint succeeded, the NFT was in the wallet,
+and Balast offered no way to take the money back out. And the other way
+round: a position withdrawn in that gap (here, in another tab, or on
+Uniswap's own site) stayed on the page with Withdraw still offered, because
+the indexer had not yet read the burn. §29 fixed v3 by reading it from the
+chain; v4 had the same fault in a worse form.
+
+**The portfolio now lists what the chain confirms the wallet holds**
+(`server/api/portfolio.ts`). The indexer is a source of candidates and of
+dollar prices, and no longer the source of truth about ownership:
+
+- **v3** is enumerated on its position manager (§29).
+- **v4**'s PositionManager is not enumerable, so its candidates come from
+  three places — the indexer's `positions` table (every token it last saw
+  the wallet holding, emptied or not); a background scan
+  (`server/api/v4-scanner.ts`) of `ownerOf` over the last 50,000 ids up to
+  `nextTokenId`, new ids every 30s and the whole window again every ten
+  minutes — deliberately not starting at the indexer's highest id, since an
+  old position sent to this wallet since the indexer's last block would be
+  in neither place; and the ids this browser
+  saw minted, remembered from each mint's receipt (`lib/tx-history.ts`) and
+  sent as `?v4=` so a position is on the page the moment its receipt is in.
+  **Every candidate is then confirmed on chain** (`lib/v4/positions.ts`):
+  `ownerOf`, `getPoolAndPositionInfo` and `getPositionLiquidity`. A burned
+  or sent-away token, or an empty one, is not shown. A hint can only ever
+  add a question, never an answer.
+- **The pool's price is read live** (`slot0`, through StateView for v4), so
+  in-range and the two amounts are today's rather than the backfill's. Dollar
+  prices remain the indexer's, through the one path §4.3 allows. The "out of
+  range since" figure is given only when the status is the indexer's, since a
+  date from its swaps against a live tick would be weeks wrong.
+- **A pool the indexer has never met** is described from the chain — its
+  key, and its tokens' symbol and decimals from the indexer's table or the
+  token's own contract, a v3 pool's address from the factory — and is
+  listed and withdrawable. Its value is priced through another pool of the
+  same token if there is one, and is a dash if not.
+- **The principal** (price impact on holdings) is kept only while the
+  indexer's record of the position matches the chain's liquidity.
+- **When the node does not answer**, each half fails on its own: a v3
+  read that times out costs the v3 rows and never the v4 ones, and the
+  other way round. Without v4 the indexer's record is listed, marked
+  unchecked; without v3 nothing can be listed for it; without live prices
+  the in-range status is the indexer's. The page says which of these
+  happened. Withdraw still dry-runs on the chain first, so an unchecked row
+  cannot send anything the chain would not accept.
+- **A scan that has not finished** — no pass yet, a failed pass, a quiet
+  one, or more ids than its window — is reported as a possibly incomplete
+  list, rather than a complete one.
+
+The packed `PositionInfo` is decoded by hand, since no Uniswap SDK
+function exists to compare it against. So the decode is checked twice on
+every read: its pool-id bits must match the key returned beside it, and
+StateView must report the same liquidity at the decoded range. A position
+that fails either check is counted in `unreadable` and not shown, and the
+page says how many. The layout is v4-periphery's own
+`PositionInfoLibrary.sol` (tickLower at bit 8, tickUpper at bit 32, pool id
+in the top 200 bits), and the decode was confirmed against the real
+contract below.
+
+`/api/health` carries `portfolioScan` — the scan's window, whether it is
+partial, and its last error. `PORTFOLIO_CHAIN=false` turns all of it off.
+
+### The withdrawal itself
+
+- **v4 minimums are Uniswap's price-tolerance guard**, the same
+  `burnAmountsWithSlippage` the v3 withdrawal uses, rather than a flat 1% off
+  today's amounts. Near the edge of a range one side shrinks far faster than
+  the price moves, so the flat cut refused ordinary withdrawals. v4's
+  `BURN_POSITION` checks the minimums against the principal only, fees
+  excluded, so a hook that tried to skim the principal on the way out would
+  make the burn revert rather than pay less.
+- **A position the chain says is empty** is refused before any signature.
+- **A double-click cannot open two wallet prompts** for one position.
+- **After any failure the list is re-read**, so a row for a position already
+  withdrawn goes away rather than lingering.
+- **Messages the flows write are shown as written** (`ShownError`). Every
+  one of them — *already empty*, *reverted on chain* — was being replaced
+  by "could not be prepared".
+- **Reverts are said in words.** Uniswap's contracts revert with custom
+  errors that the site's ABIs do not declare. A node's answer therefore
+  carries the four-byte selector and not the name, so matching on the name
+  never matched a real revert. The messages are matched on selectors now:
+  *the price moved more than the tolerance*, *this wallet no longer holds
+  this position*, *expired*. A loose `amount.*exceed` pattern, which read
+  "transfer amount exceeds balance" as a price move, is gone; a balance
+  says it is a balance.
+- **A pool of two tokens with neither dollar nor ether** no longer prices
+  its second token at the first one's price; that side is unknown and the
+  value is a dash.
+
+### Proven against Uniswap's own contracts
+
+`npm run check:lp` (`server/scripts/lp-local.ts`) deploys Uniswap's published
+bytecode on a local chain with chain id 4663: v3-core and v3-periphery from
+this repository's `node_modules`, v4-core and v4-periphery from their npm
+packages, and Permit2 at its canonical address. It then drives them only
+through the functions the pages call: plan, dry run, send, receipt. Nothing
+is mocked below the RPC. After every step it checks where each wei went.
+63 checks, all passing:
+
+- **v3**: a 5-bin mint paid in ETH, with the unspent ether refunded; fees
+  from real swaps, read by a simulated collect; a collect paying out
+  exactly those fees, the ether side as ETH and no WETH arriving; every
+  position withdrawn, in range and out of range, each at or above its
+  minimums and its NFT burned; and the manager holding **zero** ETH, WETH
+  and token after every step.
+- **v4**: a 5-bin native-ETH mint through Permit2, with the rest swept
+  back. The id scan finds all five positions, and every decoded range and
+  liquidity matches what was minted. A collect pays exactly the fees
+  StateView reported. A withdrawal planned before a large trade moved the
+  price is **refused by the dry run, and the page says why in words**, with
+  the position untouched. Every position is then withdrawn and burned, and
+  PositionManager holds **zero** after every step.
+- **Wrapped-ether v4 pool**: wrap to the planned amount plus rounding, then
+  mint — the §29 one-wei fix, on real contracts.
+- **The API's own chain reader** against the same node: v3 enumeration, v4
+  confirmation, both pools' prices, the factory lookup (including a pool
+  that does not exist), and token metadata (including an address that will
+  not state its decimals).
+
+### What this does not prove
+
+The run is Uniswap's bytecode on a local chain, not Robinhood Chain. It
+proves the calldata and the flows. It cannot prove the addresses in
+`lib/chain.ts` — those were matched against Uniswap's registry (§20, §28)
+— or how the public endpoints behave. **The first withdrawal on the live
+site should still be a small one, watched on the explorer.**
+
+A v4 position whose id is more than 50,000 below the newest, and which
+reached this wallet after the indexer's last block, is found only once the
+indexer reaches the transfer. The page says when the scan does not cover
+every id. A v4 NFT sent *to* this wallet inside the window is seen at the
+next full rescan, within ten minutes. The scan costs about a hundred
+multicalls every ten minutes on the public endpoints. The portfolio
+endpoint is rate limited like every other endpoint, but a wallet holding
+thousands of NFTs costs its requests proportionally more.
+
+Two independent review passes over this change found the faults listed
+above, all fixed before commit. The second found three more ways a held
+position could fall off the page — a v3 timeout discarding the v4
+answer, a position emptied and refilled since the indexer's last block, an
+unfinished scan reported as complete — and each now has a test.

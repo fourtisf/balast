@@ -1,4 +1,5 @@
 import { restoreSnapshot, storeSnapshot } from './snapshot-cache';
+import { mintedV4Ids } from '../tx-history';
 import type { DataProvider, MarketListener, MarketSnapshot, Portfolio, Unsubscribe, UserPosition } from './types';
 
 /**
@@ -145,14 +146,18 @@ export class LiveProvider implements DataProvider {
     const wallet = this.wallet;
     if (!wallet) return;
     try {
-      const response = await fetch(`${API_BASE}/api/portfolio/${wallet}`, { cache: 'no-store' });
+      // The v4 positions this browser saw minted, so each is on the page the
+      // moment its receipt is in; the API shows only what the chain confirms.
+      const hints = mintedV4Ids(wallet);
+      const query = hints.length > 0 ? `?v4=${hints.join(',')}` : '';
+      const response = await fetch(`${API_BASE}/api/portfolio/${wallet}${query}`, { cache: 'no-store' });
       if (!response.ok) return;
       const body = (await response.json()) as {
         wallet: string;
         positions: UserPosition[];
         netValueUsd: number;
         priceImpactUsd: number;
-        v3?: Portfolio['v3'];
+        chain?: Portfolio['chain'];
       };
       // The wallet may have changed while this was in flight.
       if (this.wallet !== wallet) return;
@@ -171,7 +176,7 @@ export class LiveProvider implements DataProvider {
         positions: body.positions,
         claimableWeth: 0,
         wallet,
-        v3: body.v3,
+        chain: body.chain,
       };
       this.reissue();
     } catch {

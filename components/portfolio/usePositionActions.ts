@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { Address, Hex } from 'viem';
 import { useUi } from '@/components/providers/UiProvider';
 import { useWalletChainId } from '@/components/providers/useWalletChainId';
@@ -9,15 +9,15 @@ import { getProvider } from '@/lib/data';
 import type { UserPosition } from '@/lib/data/types';
 import { quoteLabel } from '@/lib/format';
 import { positionRef } from '@/lib/position-ref';
+import { burnAmountsWithSlippage } from '@/lib/v3/amounts';
 import { readV3Slot0 } from '@/lib/v3/flow';
 import { planV3Collect, planV3Withdraw } from '@/lib/v3/manage';
 import { readV3Fees, readV3Weth9 } from '@/lib/v3/positions';
 import { recordTx, updateTx, type TxKind } from '@/lib/tx-history';
 import { readPositionFees } from '@/lib/v4/fees';
-import { describeTxError, readClient, readSlot0, sendCall, simulateCall, type PositionCall } from '@/lib/v4/flow';
+import { describeTxError, readClient, readSlot0, sendCall, ShownError, simulateCall, type PositionCall } from '@/lib/v4/flow';
 import { planCollect, planWithdraw } from '@/lib/v4/manage';
 import { toPoolKey } from '@/lib/v4/pool';
-import { amountsForLiquidity } from '@/lib/v4/tick-math';
 import { describeWalletError, ensureChain } from '@/lib/wallet';
 
 const DEADLINE_SECONDS = 20 * 60;
@@ -70,6 +70,9 @@ export function usePositionActions(): PositionActions {
   const [error, setError] = useState<PositionActions['error']>(null);
   const [done, setDone] = useState<PositionActions['done']>(null);
   const [version, setVersion] = useState(0);
+  // Set synchronously on the click, so a double-click cannot open two wallet
+  // prompts for one position before React has re-rendered with `busy`.
+  const inFlight = useRef(false);
 
   const run = useCallback(
     async (kind: ActionKind, position: UserPosition) => {
@@ -79,7 +82,8 @@ export function usePositionActions(): PositionActions {
         openWallet();
         return;
       }
-      if (busy) return;
+      if (busy || inFlight.current) return;
+      inFlight.current = true;
       const tokenId = position.tokenId;
       const ref = positionRef(position);
       const fail = (message: string) => setError({ ref, message });
@@ -120,7 +124,7 @@ export function usePositionActions(): PositionActions {
           ]);
           const onChain = read.get(tokenId);
           if (!onChain) {
-            throw new Error(
+            throw new ShownError(
               'The chain would not say what this position holds — a collect on it did not simulate. Nothing was sent; manage it on Uniswap if this persists.',
             );
           }
@@ -172,11 +176,20 @@ export function usePositionActions(): PositionActions {
             readPositionFees(client, [{ tokenId: id, key, tickLower: live.tickLower, tickUpper: live.tickUpper }]),
           ]);
           const liquidity = info.get(tokenId)?.liquidity ?? 0n;
-          const amounts = amountsForLiquidity({
+          if (liquidity === 0n) {
+            throw new ShownError('The chain says this position is already empty. Nothing was sent; the page will refresh.');
+          }
+          // Uniswap's own guard, as the v3 withdrawal uses it: each side priced
+          // at the end of the tolerance where it is worth least. A flat cut off
+          // today's amounts reverted a position near the edge of its range on
+          // an ordinary tick of movement, because there one side shrinks far
+          // faster than the price moves.
+          const amounts = burnAmountsWithSlippage({
             sqrtPriceX96: slot0.sqrtPriceX96,
             tickLower: live.tickLower,
             tickUpper: live.tickUpper,
-            liquidityDelta: liquidity,
+            liquidity,
+            slippageBps: BigInt(WITHDRAW_SLIPPAGE_BPS),
           });
           plan = planWithdraw({
             key,
@@ -184,7 +197,8 @@ export function usePositionActions(): PositionActions {
             owner,
             amount0: amounts.amount0,
             amount1: amounts.amount1,
-            slippageBps: WITHDRAW_SLIPPAGE_BPS,
+            // Already applied, by price rather than by amount.
+            slippageBps: 0,
             deadline,
           });
         }
@@ -206,7 +220,7 @@ export function usePositionActions(): PositionActions {
         const receipt = await client.waitForTransactionReceipt({ hash });
         const ok = receipt.status === 'success';
         updateTx(hash, ok ? 'success' : 'reverted');
-        if (!ok) throw new Error('The transaction reverted on chain.');
+        if (!ok) throw new ShownError('The transaction reverted on chain.');
         setDone({ ref, kind, hash });
         showToast(kind === 'collect' ? 'Fees collected to your wallet' : 'Position withdrawn to your wallet');
         setVersion((v) => v + 1);
@@ -215,7 +229,11 @@ export function usePositionActions(): PositionActions {
         await getProvider().refreshPortfolio?.();
       } catch (e) {
         fail(describeTxError(e));
+        // Whatever failed, the list re-reads what the chain says now, so a
+        // row for a position already withdrawn or moved does not linger.
+        void getProvider().refreshPortfolio?.();
       } finally {
+        inFlight.current = false;
         setBusy(null);
       }
     },
