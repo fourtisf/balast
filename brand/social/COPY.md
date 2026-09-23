@@ -218,6 +218,18 @@ Reply to it, as 2/:
 
 > Balast's leaderboard at balast.xyz: Robinhood Chain markets ranked by market cap, each row showing liquidity, 24-hour volume, buy and sell counts, the 24-hour price change and a volume sparkline.
 
+## 7 · Stake a token · `07-stake-a-token.png`
+
+> Stake a token on Robinhood Chain in one signature.
+>
+> Uniswap mints the position straight to your wallet. Balast takes 0% — every fee your share earns is yours. No lockup; withdraw any time.
+>
+> balast.xyz
+
+**Image description** (X's "Add description")
+
+> A Balast stake card for an example VIRTUAL / ETH pool on Uniswap v4: full range from 0 to infinity, a deposit of 0.10 ETH and 330 VIRTUAL, Balast fee none, custody in your wallet as an NFT, no lockup, and a "Stake full range" button.
+
 ## Order
 
 Pin the contract-address post first, before anything else goes out: the

@@ -4,6 +4,15 @@
    a positive number or an active control, and nothing else is coloured. */
 @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
+/* Local copies first (fetched by scripts/render-social.mjs); the import above
+   is the fallback when a banner is opened in a browser without them. */
+@font-face{font-family:"Instrument Serif";src:url(".fonts/InstrumentSerif-Regular.ttf");font-weight:400;font-style:normal}
+@font-face{font-family:"Instrument Serif";src:url(".fonts/InstrumentSerif-Italic.ttf");font-weight:400;font-style:italic}
+@font-face{font-family:"DM Sans";src:url(".fonts/DMSans.ttf");font-weight:100 1000;font-style:normal}
+@font-face{font-family:"IBM Plex Mono";src:url(".fonts/IBMPlexMono-Regular.ttf");font-weight:400}
+@font-face{font-family:"IBM Plex Mono";src:url(".fonts/IBMPlexMono-Medium.ttf");font-weight:500}
+@font-face{font-family:"IBM Plex Mono";src:url(".fonts/IBMPlexMono-SemiBold.ttf");font-weight:600}
+
 :root{
   --bg:#F5F3EE; --panel:#FFFFFF; --panel-2:#F9F8F4; --raise:#EEEBE4;
   --bd-n:rgba(20,32,27,.10); --bd:rgba(20,32,27,.14);

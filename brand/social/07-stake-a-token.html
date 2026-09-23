@@ -1,0 +1,110 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="social.css">
+<style>
+/* A stake, drawn as the site's stake drawer draws one: a full-range Uniswap
+   position in an example pool, the terms beside it, and no figure a reader
+   could take as a yield (§19, Banners for X). The token is an example and
+   says so; its badge is the site's derived monogram, not the project's logo. */
+.banner{background:
+  radial-gradient(900px 620px at 78% 42%, rgba(255,255,255,.95), rgba(255,255,255,0) 70%),
+  radial-gradient(1200px 900px at 50% 50%, var(--bg) 55%, var(--raise) 100%)}
+.mast.stake{grid-template-columns:minmax(0,1fr) 600px;gap:76px;align-items:center;padding-top:40px}
+.mast.stake h1{font-size:112px}
+.pts{list-style:none;display:flex;flex-direction:column;gap:14px;margin-top:6px}
+.pts li{display:flex;gap:16px;align-items:baseline;font-size:25px;color:var(--fg-2)}
+.pts li b{color:var(--fg);font-weight:600}
+.pts li::before{content:"";flex:none;width:10px;height:10px;border-radius:50%;background:var(--ac);transform:translateY(-3px)}
+
+.stack{position:relative}
+.stack .ghost{position:absolute;inset:22px -16px -22px 16px;background:var(--panel-2);border:1.5px solid var(--bd-n);border-radius:28px;box-shadow:0 30px 60px -48px rgba(20,32,27,.35)}
+.stake-card{position:relative;background:var(--panel);border:1.5px solid var(--bd-n);border-radius:28px;padding:44px 36px 28px;
+  box-shadow:inset 0 1.5px 0 rgba(255,255,255,1),0 2px 4px rgba(20,32,27,.05),0 50px 110px -60px rgba(20,32,27,.45)}
+
+.pair{display:flex;align-items:center;gap:18px}
+.coins{position:relative;width:92px;height:60px;flex:none}
+.coin{position:absolute;top:0;width:60px;height:60px;border-radius:50%;display:grid;place-items:center;
+  box-shadow:inset 0 -3px 6px rgba(20,32,27,.12),inset 0 2px 3px rgba(255,255,255,.7),0 0 0 3px var(--panel)}
+.coin.tk{left:0;background:hsl(187 60% 86%);color:hsl(187 45% 28%);font-weight:700;font-size:21px;letter-spacing:.02em;z-index:2}
+.coin.eth{left:34px;background:#ECF0F1;overflow:hidden}
+.coin.eth img{width:60px;height:60px;display:block}
+.pair .t{font-size:31px;font-weight:700;letter-spacing:-.01em;line-height:1.1}
+.pair .t span{color:var(--fg-3);font-weight:500}
+.pair .s{font-size:19px;color:var(--fg-3);margin-top:6px}
+.tag{margin-left:auto;align-self:flex-start;font-size:15px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3);border:1.5px solid var(--bd);border-radius:99px;padding:8px 14px}
+
+.k{font-size:15px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3)}
+.range{margin-top:22px;padding:16px 22px 14px;border-radius:18px;background:var(--panel-2);border:1.5px solid var(--bd-n)}
+.range .row{display:flex;justify-content:space-between;align-items:baseline}
+.range .v{font-family:var(--mono);font-size:24px;font-weight:600}
+.band{position:relative;height:56px;margin-top:10px}
+.band .fill{position:absolute;left:0;right:0;bottom:0;height:34px;border-radius:9px;
+  background:linear-gradient(90deg,var(--ac-soft) 0 50%,var(--ac) 50% 100%)}
+.band .fill::after{content:"";position:absolute;inset:0;border-radius:10px;background:linear-gradient(180deg,rgba(255,255,255,.35),rgba(255,255,255,0) 60%)}
+.band .now{position:absolute;left:50%;top:0;bottom:0;border-left:2px dashed var(--fg)}
+.band .now span{position:absolute;top:-2px;left:10px;font-family:var(--mono);font-size:15px;color:var(--fg);background:var(--panel-2);padding:0 4px}
+.range .ends{display:flex;justify-content:space-between;margin-top:8px;font-family:var(--mono);font-size:17px;color:var(--fg-3)}
+
+.dep{margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.dep > div{border:1.5px solid var(--bd-n);border-radius:16px;padding:12px 18px}
+.dep .v{font-family:var(--mono);font-size:26px;font-weight:600;margin-top:4px}
+.dep .v span{font-family:var(--sans);font-size:19px;font-weight:600;color:var(--fg-3);margin-left:8px}
+
+.terms2{margin-top:16px;display:grid;grid-template-columns:1fr 1.35fr 1fr;gap:0;border-top:1.5px solid var(--bd-n);border-bottom:1.5px solid var(--bd-n)}
+.terms2 > div{display:flex;flex-direction:column;gap:4px;padding:12px 18px;border-left:1.5px solid var(--bd-n)}
+.terms2 > div:first-child{border-left:0;padding-left:2px}
+.terms2 span{font-size:14px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3)}
+.terms2 b{color:var(--fg);font-weight:600;font-size:21px}
+.terms2 b.ac{color:var(--ac-3)}
+
+.cta{margin-top:20px;height:62px;border-radius:99px;display:flex;align-items:center;justify-content:center;gap:14px;
+  background:linear-gradient(180deg,#22302A,var(--fg));color:#F5F3EE;font-size:23px;font-weight:600;letter-spacing:.01em;
+  box-shadow:inset 0 1.5px 0 rgba(255,255,255,.14),0 18px 40px -22px rgba(20,32,27,.7)}
+.cta svg{width:22px;height:22px}
+
+.minted{position:absolute;left:-46px;top:-38px;z-index:3;display:flex;align-items:center;gap:14px;background:var(--panel);border:1.5px solid var(--bd-n);border-radius:18px;padding:14px 20px 14px 14px;
+  box-shadow:0 2px 4px rgba(20,32,27,.05),0 30px 60px -36px rgba(20,32,27,.45);font-size:19px;color:var(--fg-2)}
+.minted i{width:40px;height:40px;border-radius:12px;background:var(--ac-dim);display:grid;place-items:center}
+.minted i svg{width:20px;height:20px}
+.minted b{display:block;color:var(--fg);font-weight:600;font-size:20px}
+</style></head><body>
+<div class="banner" data-w="1600" data-h="900">
+<div class="top"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M 5 6 L 13.5 13 L 13.5 26 L 5 26 Z" fill="#14201B" stroke="#14201B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/><path d="M 27 6 L 18.5 13 L 18.5 26 L 27 26 Z" fill="#14201B" stroke="#14201B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg><span>Balast</span></div><div class="chip"><i></i>Live on Robinhood Chain</div></div>
+<div class="mast stake">
+  <div class="mast-l">
+    <span class="eyebrow">Stakes · through Uniswap</span>
+    <h1>Stake a token. <em>Keep every fee.</em></h1>
+    <p class="lede">Pick a pool, deposit, sign once. Uniswap mints your position straight to your wallet, and every swap through the pool pays you your share.</p>
+    <ul class="pts">
+      <li><span><b>0% Balast fee</b> — every fee earned is yours</span></li>
+      <li><span><b>Your wallet holds it</b> — as a Uniswap position NFT</span></li>
+      <li><span><b>No lockup</b> — collect or withdraw any time</span></li>
+    </ul>
+  </div>
+  <div class="stack">
+    <div class="ghost"></div>
+    <div class="stake-card">
+      <div class="pair">
+        <div class="coins"><div class="coin tk">VI</div><div class="coin eth"><img src="../../public/tokens/eth.svg" alt=""></div></div>
+        <div><div class="t">VIRTUAL <span>/ ETH</span></div><div class="s">Uniswap v4 · 0.3% fee tier</div></div>
+        <div class="tag">Example</div>
+      </div>
+      <div class="range">
+        <div class="row"><span class="k">Range</span><span class="v">Full range · 0 → ∞</span></div>
+        <div class="band"><div class="fill"></div><div class="now"><span>now</span></div></div>
+        <div class="ends"><span>ETH side</span><span>VIRTUAL side</span></div>
+      </div>
+      <div class="dep">
+        <div><div class="k">You deposit</div><div class="v">0.10<span>ETH</span></div></div>
+        <div><div class="k">and</div><div class="v">330<span>VIRTUAL</span></div></div>
+      </div>
+      <div class="terms2">
+        <div><span>Balast fee</span><b class="ac">None</b></div>
+        <div><span>Custody</span><b>Your wallet · NFT</b></div>
+        <div><span>Lockup</span><b>None</b></div>
+      </div>
+      <div class="cta">Stake full range<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+    </div>
+    <div class="minted"><i><svg viewBox="0 0 24 24" fill="none" stroke="#1B8353" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></i><span><b>Position minted</b>to your wallet</span></div>
+  </div>
+</div>
+<div class="foot"><span class="site">balast.xyz</span><span class="r"><span>Liquidity layer for Robinhood Chain</span><span>No custody · No emissions</span></span></div>
+</div></body></html>

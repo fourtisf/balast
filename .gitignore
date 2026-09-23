@@ -24,3 +24,4 @@ coverage
 design/directions/*.html
 !design/directions/*.dc.html
 brand/journal/.fonts/
+brand/social/.fonts/

@@ -6,19 +6,43 @@
  * data-w/data-h, fonts are waited for, and the file is written next to
  * its source. Run: npm run brand:social
  */
-import { readdirSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from '@playwright/test';
 
 const dir = resolve(dirname(fileURLToPath(import.meta.url)), '../brand/social');
 const only = process.argv.slice(2);
+
+// The three faces, fetched once into brand/social/.fonts (ignored by git) and
+// declared in social.css ahead of the Google Fonts import. A headless browser
+// behind a proxy often cannot reach Google Fonts, and a banner rendered in the
+// fallback faces is not the site's — the first renders were exactly that.
+const FONT_SOURCE = 'https://raw.githubusercontent.com/google/fonts/main/ofl/';
+const FONTS = {
+  'InstrumentSerif-Regular.ttf': 'instrumentserif/InstrumentSerif-Regular.ttf',
+  'InstrumentSerif-Italic.ttf': 'instrumentserif/InstrumentSerif-Italic.ttf',
+  'DMSans.ttf': 'dmsans/DMSans%5Bopsz,wght%5D.ttf',
+  'IBMPlexMono-Regular.ttf': 'ibmplexmono/IBMPlexMono-Regular.ttf',
+  'IBMPlexMono-Medium.ttf': 'ibmplexmono/IBMPlexMono-Medium.ttf',
+  'IBMPlexMono-SemiBold.ttf': 'ibmplexmono/IBMPlexMono-SemiBold.ttf',
+};
+const fontDir = resolve(dir, '.fonts');
+mkdirSync(fontDir, { recursive: true });
+for (const [name, path] of Object.entries(FONTS)) {
+  const out = resolve(fontDir, name);
+  if (!existsSync(out)) execFileSync('curl', ['-sSfL', '-o', out, FONT_SOURCE + path]);
+}
 const files = readdirSync(dir)
   .filter((f) => f.endsWith('.html') && (only.length === 0 || only.some((o) => f.includes(o))))
   .sort();
 
+// The preinstalled Chromium when there is one (PLAYWRIGHT_BROWSERS_PATH), so
+// a pinned Playwright version never has to download its own.
+const PREINSTALLED = '/opt/pw-browsers/chromium';
 const browser = await chromium.launch({
-  executablePath: process.env.CHROME_PATH || undefined,
+  executablePath: process.env.CHROME_PATH || (existsSync(PREINSTALLED) ? PREINSTALLED : undefined),
 });
 for (const file of files) {
   const html = readFileSync(resolve(dir, file), 'utf8');
