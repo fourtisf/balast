@@ -26,7 +26,7 @@ export function LedgerDate() {
   useEffect(() => {
     const asOf = new Date(Date.now() - indexerLagSeconds * 1000);
     setDate(
-      asOf.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }),
+      asOf.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }),
     );
   }, [indexerLagSeconds]);
 

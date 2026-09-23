@@ -24,8 +24,9 @@ const STATUS: Record<TxStatus, { text: string; className: string }> = {
   reverted: { text: 'reverted', className: 'pill down' },
 };
 
+/** In UTC, labelled: the chain and the explorer keep time in UTC, so the list reads the same as the transaction it links to. */
 function when(at: number): string {
-  return new Date(at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return `${new Date(at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC`;
 }
 
 /**

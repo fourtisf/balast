@@ -232,7 +232,7 @@ export function PortfolioBody() {
                     <span>
                       {lp.token.symbol} {lp.protocol === 'v3' ? 'v3 ' : ''}#{position.tokenId}
                       <span className="muted">
-                        {since ? ` · since ${since.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}
+                        {since ? ` · since ${since.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })}` : ''}
                       </span>
                     </span>
                     <span className="num" title={
