@@ -48,7 +48,9 @@ export function PortfolioBody() {
   // No positions and no stakes is a portfolio with nothing in it, and a card
   // reading "$0 · +0.0% all time" is a claim about a history that does not
   // exist (§7). The figures are dashes and the captions say why.
-  const empty = positions.length === 0 && portfolio.stakes.length === 0;
+  // Withdrawn v3 positions: gone from the list, not from the totals.
+  const closed = useMemo(() => portfolio.closed ?? [], [portfolio.closed]);
+  const empty = positions.length === 0 && portfolio.stakes.length === 0 && closed.length === 0;
   const noWallet = live && !wallet;
   const why = noWallet ? 'connect a wallet' : 'no positions yet';
 
@@ -71,9 +73,9 @@ export function PortfolioBody() {
   // on a small position minted recently it is cents, and rounding that to
   // "$0" read as unmeasured (lib/price-impact.ts).
   const impact = portfolio.priceImpactUsd;
-  const summary = priceImpactOf(positions);
+  const summary = priceImpactOf(positions, closed);
   const measured = summary.measured;
-  const unknownImpact = empty || (live && measured === 0);
+  const unknownImpact = empty || (live && measured === 0 && closed.length === 0);
   const impactClass = unknownImpact ? '' : live ? (summary.usd < 0 ? ' down' : '') : impact <= -0.5 ? ' down' : impact >= 0.5 ? ' up' : '';
   const impactTextShown = unknownImpact
     ? '—'
@@ -95,7 +97,10 @@ export function PortfolioBody() {
     [livePositions, fees.fees],
   );
   const earnedKnown = earned.filter((e) => e.earned !== null);
-  const earnedUsd = earnedKnown.length > 0 ? earnedKnown.reduce((a, e) => a + e.earned!.usd, 0) : null;
+  const closedFeesUsd = closed.reduce((a, c) => a + c.feesUsd, 0);
+  const earnedUsd =
+    earnedKnown.length > 0 || closed.length > 0 ? earnedKnown.reduce((a, e) => a + e.earned!.usd, 0) + closedFeesUsd : null;
+  const closedNote = closed.length > 0 ? ` · incl. ${closed.length} closed` : '';
   const earnedPartial = earnedKnown.some((e) => !e.earned!.complete);
   // Why a figure is uncollected fees only: v4 emits no amounts for a collect;
   // a v3 position's collects are known once its history has been read.
@@ -110,11 +115,25 @@ export function PortfolioBody() {
   });
   useEffect(() => {
     if (!live || !walletAddress) return;
-    const readings = earnedKnown.map((e) => e.earned!.reading);
+    // A closed position's earned is its fees paid out, final: recorded like
+    // the open ones, so the day it closed keeps what it earned.
+    const readings = [
+      ...earnedKnown.map((e) => e.earned!.reading),
+      ...closed.map(
+        (c): EarnedReading => ({
+          ref: `v3:${c.tokenId}`,
+          earned0: BigInt(c.fees0),
+          earned1: BigInt(c.fees1),
+          usdPerUnit0: c.priceUsd0 / 10 ** c.decimals0,
+          usdPerUnit1: c.priceUsd1 / 10 ** c.decimals1,
+          mintedAt: c.mintedAt,
+        }),
+      ),
+    ];
     if (readings.length > 0) recordEarned(walletAddress, readings);
     setDaily(dailyEarnedUsd(walletAddress, readings));
     // Re-recorded on every fee reading: the latest reading of a day wins.
-  }, [live, walletAddress, fees.fees]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [live, walletAddress, fees.fees, closed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -141,9 +160,11 @@ export function PortfolioBody() {
                 ? why
                 : uncollectedUsd !== null
                   ? readings.length === livePositions.length
-                    ? `${usdFine(uncollectedUsd)} uncollected · collect from the row${earnedPartial ? partialNote : ''}`
-                    : `${readings.length} of ${livePositions.length} positions read`
-                  : fees.reading
+                    ? `${usdFine(uncollectedUsd)} uncollected · collect from the row${earnedPartial ? partialNote : ''}${closedNote}`
+                    : `${readings.length} of ${livePositions.length} positions read${closedNote}`
+                  : livePositions.length === 0 && closed.length > 0
+                    ? `all time · from ${closed.length} closed position${closed.length === 1 ? '' : 's'}`
+                    : fees.reading
                     ? 'reading from the chain…'
                     : fees.error
                       ? 'the chain did not answer'
@@ -171,7 +192,7 @@ export function PortfolioBody() {
                   // those — said, not summed as zero.
                   `${measured} of ${positions.length} positions measured`
                 : impactPct
-                  ? `${impactPct} vs holding the principal, at the same prices`
+                  ? `${impactPct} vs holding the principal, at the same prices${closedNote}`
                   : 'vs holding the principal, at the same prices'}
           </div>
         </div>
@@ -245,6 +266,30 @@ export function PortfolioBody() {
                       {e ? usdFine(e.usd) : '—'}
                       {e && days ? <span className="muted"> · ≈ {usdFine(e.usd / days)}/day</span> : null}
                       {e && !e.complete ? <span className="muted"> · uncollected</span> : null}
+                    </span>
+                  </li>
+                );
+              })}
+              {closed.map((c) => {
+                const since = c.mintedAt ? new Date(c.mintedAt) : null;
+                return (
+                  <li key={`closed:${c.tokenId}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13.5 }}>
+                    <span>
+                      {c.token.symbol} v3 #{c.tokenId}
+                      <span className="muted">
+                        {since ? ` · since ${since.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })}` : ''} · closed
+                      </span>
+                    </span>
+                    <span
+                      className="num"
+                      title={
+                        c.feesComplete
+                          ? 'Fees this position paid out before it was withdrawn, read from its own logs.'
+                          : 'Fees paid out through this browser; a collect sent from elsewhere would not be counted here.'
+                      }
+                    >
+                      {usdFine(c.feesUsd)}
+                      <span className="muted"> · paid out</span>
                     </span>
                   </li>
                 );

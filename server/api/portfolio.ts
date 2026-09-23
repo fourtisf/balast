@@ -35,7 +35,7 @@
 import type { Address, Hex } from 'viem';
 import { CHAIN, NATIVE_ETH, isEther } from '../../lib/chain';
 import { feeTierBpsFromPips } from '../../lib/format';
-import type { LivePosition, Quote, UserPosition } from '../../lib/data/types';
+import type { ClosedPosition, LivePosition, Quote, UserPosition } from '../../lib/data/types';
 import type { V3OnchainPosition } from '../../lib/v3/positions';
 import type { V3History } from './v3-history';
 import type { V4OnchainPosition, V4Read } from '../../lib/v4/positions';
@@ -79,6 +79,8 @@ export interface PortfolioResponse {
   positions: UserPosition[];
   netValueUsd: number;
   priceImpactUsd: number;
+  /** v3 positions this wallet withdrew, from their own logs. */
+  closed?: ClosedPosition[];
   /** Every position was valued at today's prices (live slot0, live ether) rather than the indexer's. */
   pricedToday?: boolean;
   chain: ChainStatus;
@@ -359,6 +361,8 @@ export async function buildPortfolio(
     v4Candidates?: bigint[];
     /** Per v3 token id, transactions the browser sent for it: a second way to find its history. */
     v3TxHints?: Map<string, Hex[]>;
+    /** v3 token ids this browser withdrew, with the pool each was in: listed as closed positions once their logs check out. */
+    v3Closed?: Map<string, string>;
     /** The v4 scanner could not reach back to the indexer's last id. */
     scanPartial?: boolean;
     /**
@@ -628,8 +632,11 @@ export async function buildPortfolio(
   const positions: UserPosition[] = [];
   // How many positions were valued at today's prices; the page says which.
   let todayCount = 0;
-  for (const entry of entries) {
-    const pool = entry.pool;
+  // Each side's dollar price for a pool: the traded side at the pool's own
+  // price NOW when the chain answered and the quote's dollar price is today's
+  // — USDG, or ether from the live feed — else at the indexer's. The same one
+  // path (§4.3); only its date moves.
+  const pricesFor = (pool: PoolMeta, now: { sqrtPriceX96: bigint } | undefined) => {
     const tokenFirst = tokenIsCurrency0(pool.token0, pool.token1, usdg);
     const traded = (tokenFirst ? pool.token0 : pool.token1).toLowerCase();
     const priceOf = (address: string): number => {
@@ -641,14 +648,6 @@ export async function buildPortfolio(
       // not the traded token's price borrowed.
       return a === traded ? pool.priceUsd : 0;
     };
-    // Today's price when the chain answered for the pool, else the indexer's.
-    const now = live.get(pool.id);
-    const sqrt = now?.sqrtPriceX96 ?? pool.sqrt;
-    const tick = now?.tick ?? pool.tick;
-
-    // The traded side at the pool's own price NOW when the chain answered and
-    // the quote's dollar price is today's — USDG, or ether from the live feed
-    // — else at the indexer's. The same one path (§4.3); only its date moves.
     let p0 = priceOf(pool.token0);
     let p1 = priceOf(pool.token1);
     const quoteToday = (address: string) => address.toLowerCase() === usdg || (isEther(address) && liveEth !== null);
@@ -665,6 +664,16 @@ export async function buildPortfolio(
         }
       }
     }
+    return { tokenFirst, p0, p1, pricedToday };
+  };
+
+  for (const entry of entries) {
+    const pool = entry.pool;
+    // Today's price when the chain answered for the pool, else the indexer's.
+    const now = live.get(pool.id);
+    const sqrt = now?.sqrtPriceX96 ?? pool.sqrt;
+    const tick = now?.tick ?? pool.tick;
+    const { tokenFirst, p0, p1, pricedToday } = pricesFor(pool, now);
     if (pricedToday) todayCount += 1;
     const priced = sqrt > 0n;
     const amounts = priced
@@ -766,10 +775,87 @@ export async function buildPortfolio(
     });
   }
 
+  // v3 positions this wallet withdrew (the browser names them, with the pool
+  // each was in). Read from their own logs with a net liquidity of zero, so
+  // what is listed as closed is closed; and checked against the receipts —
+  // the pool the mint went into, and a transaction this wallet sent — so a
+  // position is never valued in the wrong pool, or claimed for a wallet that
+  // did not hold it.
+  const closedPositions = async (): Promise<ClosedPosition[]> => {
+    const wanted = options.v3Closed;
+    if (!chain?.v3History || !wanted || wanted.size === 0) return [];
+    const open = new Set(positions.filter((p) => p.live?.protocol === 'v3').map((p) => p.tokenId));
+    const ids = [...wanted.keys()].filter((id) => !open.has(id)).slice(0, 30);
+    if (ids.length === 0) return [];
+    const histories = await chain
+      .v3History(ids.map((id) => ({ tokenId: BigInt(id), liquidity: 0n, hints: options.v3TxHints?.get(id) })))
+      .catch(() => new Map<string, V3History>());
+    const metas = await poolsById([...new Set(ids.map((id) => wanted.get(id)!))]);
+    const unread = [...metas.values()].filter((m) => m.protocol === 'v3' && !live.has(m.id));
+    const extra =
+      unread.length > 0
+        ? await chain
+            .slot0s(
+              unread.map((m) => ({
+                id: m.id,
+                protocol: m.protocol,
+                address: m.address,
+                key: { currency0: m.token0 as Address, currency1: m.token1 as Address, fee: m.feeTier, tickSpacing: m.tickSpacing, hooks: m.hooks as Address },
+              })),
+            )
+            .catch(() => new Map<string, { sqrtPriceX96: bigint; tick: number }>())
+        : new Map<string, { sqrtPriceX96: bigint; tick: number }>();
+    const out: ClosedPosition[] = [];
+    for (const id of ids) {
+      const h = histories.get(id);
+      const pool = metas.get(wanted.get(id)!);
+      if (!h || !pool || pool.protocol !== 'v3') continue;
+      if (!h.pools.includes(pool.address.toLowerCase()) || !h.senders.includes(owner)) continue;
+      const { tokenFirst, p0, p1 } = pricesFor(pool, live.get(pool.id) ?? extra.get(pool.id));
+      if (!(p0 > 0) || !(p1 > 0)) continue;
+      const usd = (a0: bigint, a1: bigint) => human(a0, pool.d0) * p0 + human(a1, pool.d1) * p1;
+      const depositedUsd = usd(h.in0, h.in1);
+      const withdrawnUsd = usd(h.out0, h.out1);
+      const quoteAddress = tokenFirst ? pool.token1 : pool.token0;
+      out.push({
+        tokenId: id,
+        poolId: pool.id,
+        protocol: 'v3',
+        token: {
+          address: tokenFirst ? pool.token0 : pool.token1,
+          symbol: tokenFirst ? pool.s0 : pool.s1,
+          logoColor: (tokenFirst ? pool.c0 : pool.c1) ?? 'var(--fg-3)',
+          logoUrl: (tokenFirst ? pool.l0 : pool.l1) ?? undefined,
+        },
+        quote: quoteAddress.toLowerCase() === usdg ? 'USDG' : 'ETH',
+        tokenIsCurrency0: tokenFirst,
+        decimals0: pool.d0,
+        decimals1: pool.d1,
+        priceUsd0: p0,
+        priceUsd1: p1,
+        in0: h.in0.toString(),
+        in1: h.in1.toString(),
+        out0: h.out0.toString(),
+        out1: h.out1.toString(),
+        fees0: h.collectedFees0.toString(),
+        fees1: h.collectedFees1.toString(),
+        depositedUsd,
+        withdrawnUsd,
+        feesUsd: usd(h.collectedFees0, h.collectedFees1),
+        priceImpactUsd: withdrawnUsd - depositedUsd,
+        feesComplete: h.collectedKnown,
+        mintedAt: h.mintedAt ? h.mintedAt.toISOString() : null,
+      });
+    }
+    return out;
+  };
+  const closed = await closedPositions();
+
   return {
     wallet: owner,
     asOf: asOf.toISOString(),
     positions,
+    ...(closed.length > 0 ? { closed } : {}),
     netValueUsd: positions.reduce((a, p) => a + (p.valueUnknown ? 0 : p.valueUsd), 0),
     priceImpactUsd: positions.reduce((a, p) => a + (p.priceImpactUsd ?? 0), 0),
     pricedToday: positions.length > 0 && todayCount === positions.length,

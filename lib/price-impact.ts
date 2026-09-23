@@ -18,15 +18,23 @@ export interface PriceImpact {
   usd: number;
   /** Against what holding those positions' principal would be worth. Null when that is not known. */
   pct: number | null;
-  /** How many positions the figure covers. */
+  /** How many open positions the figure covers. */
   measured: number;
 }
 
-export function priceImpactOf(positions: UserPosition[]): PriceImpact {
+export function priceImpactOf(
+  positions: UserPosition[],
+  /** Positions already withdrawn: their realised impact, against what they put in. */
+  closed: { priceImpactUsd: number; depositedUsd: number }[] = [],
+): PriceImpact {
   let usd = 0;
   let hold = 0;
   let holdKnown = true;
   let measured = 0;
+  for (const c of closed) {
+    usd += c.priceImpactUsd;
+    hold += c.depositedUsd;
+  }
   for (const p of positions) {
     if (p.priceImpactUsd === undefined) continue;
     measured += 1;
@@ -35,7 +43,8 @@ export function priceImpactOf(positions: UserPosition[]): PriceImpact {
     if (h == null || !(h > 0)) holdKnown = false;
     else hold += h;
   }
-  return { usd, pct: measured > 0 && holdKnown && hold > 0 ? (usd / hold) * 100 : null, measured };
+  const any = measured + closed.length > 0;
+  return { usd, pct: any && holdKnown && hold > 0 ? (usd / hold) * 100 : null, measured };
 }
 
 /**

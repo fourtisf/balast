@@ -339,7 +339,44 @@ export interface UserPosition {
   live?: LivePosition;
 }
 
+/**
+ * A v3 position this wallet has withdrawn: gone from the chain, so from the
+ * list of open positions, but not from what the wallet earned or lost. Read
+ * from the position's own logs (server/api/v3-history.ts) — every amount off
+ * a receipt, the net liquidity checked to be zero — and valued at today's
+ * prices, the same basis as the open positions beside it.
+ */
+export interface ClosedPosition {
+  tokenId: string;
+  poolId: string;
+  protocol: 'v3';
+  token: { address: string; symbol: string; logoColor: string; logoUrl?: string };
+  quote: Quote;
+  tokenIsCurrency0: boolean;
+  decimals0: number;
+  decimals1: number;
+  priceUsd0: number;
+  priceUsd1: number;
+  /** Raw units, as decimal strings: everything put in, taken out as principal, and paid out as fees. */
+  in0: string;
+  in1: string;
+  out0: string;
+  out1: string;
+  fees0: string;
+  fees1: string;
+  depositedUsd: number;
+  withdrawnUsd: number;
+  feesUsd: number;
+  /** What came out as principal against what went in, at the same prices: the realised price impact. */
+  priceImpactUsd: number;
+  /** False when found from this browser's transactions alone: a collect sent from elsewhere could be missing from the fees. */
+  feesComplete: boolean;
+  mintedAt: string | null;
+}
+
 export interface Portfolio {
+  /** Live: v3 positions this wallet withdrew, so the totals are all time and not only what is open. */
+  closed?: ClosedPosition[];
   netValueUsd: number;
   netChangeUsd: number;
   netChangePct: number;

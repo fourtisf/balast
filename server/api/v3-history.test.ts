@@ -38,9 +38,15 @@ describe('a v3 position’s history, from its own logs', () => {
       deposited1: 8n,
       collectedFees0: 11n,
       collectedFees1: 2n,
+      in0: 750n,
+      in1: 10n,
+      out0: 150n,
+      out1: 2n,
       liquidity: 1200n,
       mintedAt: new Date((1_790_000_000 + 10) * 1000),
       collectedKnown: true,
+      pools: [],
+      senders: [],
     });
   });
 

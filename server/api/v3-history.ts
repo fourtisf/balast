@@ -36,6 +36,9 @@ export const V3_MANAGER_EVENTS = parseAbi([
   'event Collect(uint256 indexed tokenId, address recipient, uint256 amount0, uint256 amount1)',
 ]);
 
+/** A v3 pool's own Mint log: Mint(sender, owner indexed, tickLower indexed, tickUpper indexed, amount, amount0, amount1). */
+const POOL_MINT_TOPIC = toEventSelector('Mint(address,address,int24,int24,uint128,uint256,uint256)');
+
 const TOPICS = {
   increase: toEventSelector('IncreaseLiquidity(uint256,uint128,uint256,uint256)'),
   decrease: toEventSelector('DecreaseLiquidity(uint256,uint128,uint256,uint256)'),
@@ -49,10 +52,23 @@ export interface V3History {
   /** Fees already paid out to the owner: Σcollect − Σdecrease, per side, never below zero. */
   collectedFees0: bigint;
   collectedFees1: bigint;
+  /** Gross, per side: everything ever put in, and every principal ever taken out. A closed position's net is zero; these are what it did. */
+  in0: bigint;
+  in1: bigint;
+  out0: bigint;
+  out1: bigint;
   /** Net liquidity the history adds up to; must equal the chain's. */
   liquidity: bigint;
   /** When the first IncreaseLiquidity landed. */
   mintedAt: Date | null;
+  /**
+   * The v3 pools the position's own receipts minted into (the pool's `Mint`
+   * log with the manager as owner), and who sent those transactions. A
+   * closed position is told apart by what the browser says (its pool, its
+   * wallet), and these are what that is checked against.
+   */
+  pools: string[];
+  senders: string[];
   /**
    * False when the explorer did not answer and the history was summed from
    * the browser's own transaction hints alone: the liquidity check still
@@ -138,10 +154,21 @@ export async function historyFromReceipts(
   const wanted = manager.toLowerCase();
   const h = { inc0: 0n, inc1: 0n, dec0: 0n, dec1: 0n, col0: 0n, col1: 0n, liq: 0n };
   let firstIncrease: { block: bigint; index: number } | null = null;
+  const pools = new Set<string>();
+  const senders = new Set<string>();
+  const managerTopic = `0x${wanted.slice(2).padStart(64, '0')}`;
   const unique = [...new Set(txs.map((t) => t.toLowerCase() as Hex))].slice(0, MAX_TXS);
   const receipts = await Promise.all(unique.map((hash) => client.getTransactionReceipt({ hash })));
   for (const receipt of receipts) {
     if (receipt.status !== 'success') continue;
+    let touches = false;
+    for (const log of receipt.logs) {
+      if ((log.topics[0] ?? '').toLowerCase() === POOL_MINT_TOPIC && (log.topics[1] ?? '').toLowerCase() === managerTopic) {
+        pools.add(log.address.toLowerCase());
+      }
+      if (log.address.toLowerCase() === wanted && (log.topics[1] ?? '').toLowerCase() === topic1) touches = true;
+    }
+    if (touches && typeof receipt.from === 'string') senders.add(receipt.from.toLowerCase());
     for (const log of receipt.logs) {
       if (log.address.toLowerCase() !== wanted || (log.topics[1] ?? '').toLowerCase() !== topic1) continue;
       let decoded;
@@ -174,9 +201,15 @@ export async function historyFromReceipts(
     deposited1: pos(h.inc1 - h.dec1),
     collectedFees0: pos(h.col0 - h.dec0),
     collectedFees1: pos(h.col1 - h.dec1),
+    in0: h.inc0,
+    in1: h.inc1,
+    out0: h.dec0,
+    out1: h.dec1,
     liquidity: h.liq,
     mintedAt: block ? new Date(Number(block.timestamp) * 1000) : null,
     collectedKnown,
+    pools: [...pools],
+    senders: [...senders],
   };
 }
 
@@ -195,11 +228,17 @@ export interface SerializedHistory {
   d1: string;
   c0: string;
   c1: string;
+  i0?: string;
+  i1?: string;
+  o0?: string;
+  o1?: string;
   liquidity: string;
   mintedAt: string | null;
   collectedKnown: boolean;
   at: number;
   txs?: string[];
+  pools?: string[];
+  senders?: string[];
 }
 
 function serialize(h: V3History, at: number, txs: string[]): SerializedHistory {
@@ -208,11 +247,17 @@ function serialize(h: V3History, at: number, txs: string[]): SerializedHistory {
     d1: h.deposited1.toString(),
     c0: h.collectedFees0.toString(),
     c1: h.collectedFees1.toString(),
+    i0: h.in0.toString(),
+    i1: h.in1.toString(),
+    o0: h.out0.toString(),
+    o1: h.out1.toString(),
     liquidity: h.liquidity.toString(),
     mintedAt: h.mintedAt ? h.mintedAt.toISOString() : null,
     collectedKnown: h.collectedKnown,
     at,
     txs,
+    pools: h.pools,
+    senders: h.senders,
   };
 }
 
@@ -224,9 +269,16 @@ function deserialize(s: SerializedHistory): Kept | null {
         deposited1: BigInt(s.d1),
         collectedFees0: BigInt(s.c0),
         collectedFees1: BigInt(s.c1),
+        // Kept before the gross figures were: in is the net, out is nothing.
+        in0: BigInt(s.i0 ?? s.d0),
+        in1: BigInt(s.i1 ?? s.d1),
+        out0: BigInt(s.o0 ?? '0'),
+        out1: BigInt(s.o1 ?? '0'),
         liquidity: BigInt(s.liquidity),
         mintedAt: s.mintedAt ? new Date(s.mintedAt) : null,
         collectedKnown: s.collectedKnown !== false,
+        pools: s.pools ?? [],
+        senders: s.senders ?? [],
       },
       at: Number(s.at) || 0,
       txs: new Set((s.txs ?? []).map((t) => t.toLowerCase())),

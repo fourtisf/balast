@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { formatUnits } from 'viem';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
@@ -8,7 +9,7 @@ import { TokenBadge } from '@/components/ui/TokenBadge';
 import { EXPLORER_URL } from '@/lib/chain';
 import { getProvider } from '@/lib/data';
 import type { TokenMeta, UserPosition } from '@/lib/data/types';
-import { countdown, quoteLabel, usdExact } from '@/lib/format';
+import { countdown, quoteLabel, usdExact, usdFine } from '@/lib/format';
 import { positionRef } from '@/lib/position-ref';
 import { impactPctText, impactText } from '@/lib/price-impact';
 import { SHAPES } from '@/lib/shapes';
@@ -62,6 +63,16 @@ export function PositionList({
   const { portfolio, pools } = useMarket();
   const { query, wallet } = useUi();
   const router = useRouter();
+  // Withdraw closes a position, so it asks twice: the first click says what
+  // will happen, the second sends it to the wallet. Collect fees leaves the
+  // position open and asks once. The question lapses after a few seconds, so
+  // a stray click later does not land on a button already armed.
+  const [confirming, setConfirming] = useState<{ ref: string; then: 'withdraw' | 'rebalance' } | null>(null);
+  useEffect(() => {
+    if (!confirming) return;
+    const t = setTimeout(() => setConfirming(null), 8_000);
+    return () => clearTimeout(t);
+  }, [confirming]);
   const live = getProvider().kind === 'live';
 
   // A live position's pool can sit below the listing bar and still be
@@ -75,6 +86,11 @@ export function PositionList({
       ? token !== null && token.address.toLowerCase() === only
       : q === '' || (token !== null && (token.symbol.toLowerCase().includes(q) || token.name.toLowerCase().includes(q)));
   const positions = portfolio.positions.filter((p) => matchesToken(tokenOf(p)));
+  // Withdrawn v3 positions: the portfolio page lists them under the open
+  // ones with what each earned and lost, so the totals above add up to rows.
+  const closed = only
+    ? []
+    : (portfolio.closed ?? []).filter((c) => q === '' || c.token.symbol.toLowerCase().includes(q));
   const stakes = only ? [] : portfolio.stakes.filter((s) => matchesToken(pools.find((p) => p.id === s.poolId)?.token ?? null));
   // Out of range, and known to be: a pool the indexer has no price for is not
   // "stranded", it is unread (UserPosition.rangeUnknown).
@@ -200,30 +216,56 @@ export function PositionList({
                   >
                     Collect fees
                   </button>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    disabled={!canAct}
-                    title="Burn the position: its liquidity and its fees go to your wallet in one transaction"
-                    onClick={() => void actions.withdraw(position)}
-                  >
-                    Withdraw
-                  </button>
-                  {!position.inRange && !position.rangeUnknown && position.range !== 'full' && (
-                    <button
-                      className="btn btn-brand btn-sm"
-                      disabled={!canAct}
-                      data-testid="rebalance"
-                      title="Withdraw this position, then open the builder on the same pool and width, centred on today's price. The new mint is a second transaction you sign there."
-                      onClick={() =>
-                        void actions.withdraw(position).then((ok) => {
-                          if (ok) router.push(rebalanceHref(position));
-                        })
-                      }
-                    >
-                      Rebalance
-                    </button>
+                  {confirming?.ref === ref ? (
+                    <>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setConfirming(null)}>
+                        Keep it open
+                      </button>
+                      <button
+                        className="btn btn-brand btn-sm"
+                        disabled={!canAct}
+                        data-testid="confirm-withdraw"
+                        onClick={() => {
+                          const then = confirming.then;
+                          setConfirming(null);
+                          void actions.withdraw(position).then((ok) => {
+                            if (ok && then === 'rebalance') router.push(rebalanceHref(position));
+                          });
+                        }}
+                      >
+                        Yes, close the position
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        disabled={!canAct}
+                        title="Close the position: all of its liquidity and its fees go to your wallet, and it stops earning. Asks you to confirm first."
+                        onClick={() => setConfirming({ ref, then: 'withdraw' })}
+                      >
+                        Withdraw
+                      </button>
+                      {!position.inRange && !position.rangeUnknown && position.range !== 'full' && (
+                        <button
+                          className="btn btn-brand btn-sm"
+                          disabled={!canAct}
+                          data-testid="rebalance"
+                          title="Withdraw this position, then open the builder on the same pool and width, centred on today's price. The new mint is a second transaction you sign there."
+                          onClick={() => setConfirming({ ref, then: 'rebalance' })}
+                        >
+                          Rebalance
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
+              )}
+              {confirming?.ref === ref && (
+                <p className="hint" role="status" style={{ marginTop: 6, textAlign: 'right' }}>
+                  This closes #{position.tokenId}: all of its {token.symbol} and {quote}, plus its fees, go back to your
+                  wallet and it stops earning. To take only the fees and keep it open, use Collect fees.
+                </p>
               )}
               {busy && (
                 <p className="hint" style={{ marginTop: 6 }} aria-live="polite">
@@ -323,6 +365,11 @@ export function PositionList({
               <b>Connect a wallet</b>Its positions — the NFTs Uniswap&rsquo;s v3 and v4 position managers minted to
               it — appear here, marked to market, with their uncollected fees read from the chain.
             </>
+          ) : live && closed.length > 0 ? (
+            <>
+              <b>No open positions</b>Every position this wallet opened here has been withdrawn; what each earned is
+              listed below and counted in the totals.
+            </>
           ) : live ? (
             <>
               <b>No positions yet</b>Mint one from Positions, or stake from a pool. A position minted here appears as
@@ -334,6 +381,46 @@ export function PositionList({
               marked to market, with the fees they earned.
             </>
           )}
+        </div>
+      )}
+
+      {closed.length > 0 && (
+        <div style={{ marginTop: 16 }} data-testid="closed-positions">
+          <h3 className="sect-h" style={{ fontSize: 14, marginBottom: 8 }}>
+            Closed
+          </h3>
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 10 }}>
+            {closed.map((c) => {
+              const pct = c.depositedUsd > 0 ? impactPctText((c.priceImpactUsd / c.depositedUsd) * 100) : null;
+              return (
+                <li key={`closed:${c.tokenId}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <span style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
+                    <TokenBadge token={{ address: c.token.address, symbol: c.token.symbol, name: c.token.symbol, decimals: 18, logoColor: c.token.logoColor, logoUrl: c.token.logoUrl }} />
+                    <span>
+                      <b>
+                        {c.token.symbol} / {c.quote}
+                      </b>{' '}
+                      <span className="muted">v3 #{c.tokenId} · withdrawn</span>
+                    </span>
+                  </span>
+                  <span className="num" style={{ fontSize: 12.5, textAlign: 'right' }}>
+                    <span title="What went in and what came back out as principal, both at today's prices.">
+                      {usdFine(c.depositedUsd)} in → {usdFine(c.withdrawnUsd)} out
+                    </span>
+                    <br />
+                    <span className={c.feesUsd > 0 ? 'up' : 'muted'} title={c.feesComplete ? 'Fees paid out, from its own logs.' : 'Fees paid out through this browser; a collect sent from elsewhere is not counted.'}>
+                      +{usdFine(c.feesUsd)} fees
+                    </span>
+                    {' · '}
+                    <span className={c.priceImpactUsd < 0 ? 'down' : 'muted'}>
+                      price impact {impactText(c.priceImpactUsd)}
+                      {pct ? ` (${pct})` : ''}
+                    </span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
 

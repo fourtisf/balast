@@ -159,3 +159,19 @@ export function v3TxHints(wallet: string, store?: TxStorage): string[] {
   }
   return [...new Set(pairs.filter((p) => /^\d{1,30}:0x[0-9a-fA-F]{64}$/.test(p)))].slice(0, 40);
 }
+
+/**
+ * `tokenId@poolId` for each v3 position this browser withdrew, newest first,
+ * so the portfolio can keep what it earned in the totals after it is gone
+ * from the chain. The server lists one only when its own logs say it was
+ * closed, in that pool, by this wallet.
+ */
+export function closedV3(wallet: string, store?: TxStorage): string[] {
+  const out: string[] = [];
+  for (const r of listTx(wallet, store)) {
+    if (r.kind !== 'withdraw' || r.status !== 'success' || !r.tokenId || !r.poolId) continue;
+    const pair = `${r.tokenId}@${r.poolId.toLowerCase()}`;
+    if (/^\d{1,30}@v3:0x[0-9a-f]{40}$/.test(pair)) out.push(pair);
+  }
+  return [...new Set(out)].slice(0, 30);
+}

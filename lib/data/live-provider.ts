@@ -1,5 +1,5 @@
 import { restoreSnapshot, storeSnapshot } from './snapshot-cache';
-import { mintedV4Ids, v3TxHints } from '../tx-history';
+import { closedV3, mintedV4Ids, v3TxHints } from '../tx-history';
 import type { DataProvider, MarketListener, MarketSnapshot, Portfolio, Unsubscribe, UserPosition } from './types';
 
 /**
@@ -152,7 +152,13 @@ export class LiveProvider implements DataProvider {
       // And the transactions it sent for v3 positions, so a position minted
       // here is measured even when the explorer does not answer.
       const v3tx = v3TxHints(wallet);
-      const params = [hints.length > 0 ? `v4=${hints.join(',')}` : '', v3tx.length > 0 ? `v3tx=${v3tx.join(',')}` : ''].filter(Boolean);
+      // And the v3 positions it withdrew, so what they earned stays in the totals.
+      const closed = closedV3(wallet);
+      const params = [
+        hints.length > 0 ? `v4=${hints.join(',')}` : '',
+        v3tx.length > 0 ? `v3tx=${v3tx.join(',')}` : '',
+        closed.length > 0 ? `v3closed=${closed.join(',')}` : '',
+      ].filter(Boolean);
       const query = params.length > 0 ? `?${params.join('&')}` : '';
       const response = await fetch(`${API_BASE}/api/portfolio/${wallet}${query}`, { cache: 'no-store' });
       if (!response.ok) return;
@@ -163,6 +169,7 @@ export class LiveProvider implements DataProvider {
         priceImpactUsd: number;
         pricedToday?: boolean;
         chain?: Portfolio['chain'];
+        closed?: Portfolio['closed'];
       };
       // The wallet may have changed while this was in flight.
       if (this.wallet !== wallet) return;
@@ -201,6 +208,9 @@ export class LiveProvider implements DataProvider {
         wallet,
         pricedToday: body.pricedToday,
         chain,
+        // A closed position stays closed: one read once stays in the totals
+        // when a later read cannot place it (the explorer slow, the node busy).
+        closed: mergeClosed(previous?.closed, body.closed),
       };
       this.reissue();
     } catch {
@@ -282,4 +292,11 @@ function browserStorage(): Storage | null {
   } catch {
     return null;
   }
+}
+
+function mergeClosed(before: Portfolio['closed'], now: Portfolio['closed']): Portfolio['closed'] {
+  if (!before?.length) return now;
+  const byId = new Map(before.map((c) => [c.tokenId, c]));
+  for (const c of now ?? []) byId.set(c.tokenId, c);
+  return [...byId.values()];
 }

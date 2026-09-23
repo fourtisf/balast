@@ -797,7 +797,7 @@ export async function buildServer(
    * snapshot; the query is a handful of rows and it is rate limited like
    * any other. 503 for the same reasons the snapshot is.
    */
-  app.get<{ Params: { wallet: string }; Querystring: { v4?: string | string[]; v3tx?: string | string[] } }>('/api/portfolio/:wallet', async (request, reply) => {
+  app.get<{ Params: { wallet: string }; Querystring: { v4?: string | string[]; v3tx?: string | string[]; v3closed?: string | string[] } }>('/api/portfolio/:wallet', async (request, reply) => {
     const wallet = request.params.wallet.toLowerCase();
     if (!/^0x[0-9a-f]{40}$/.test(wallet)) {
       return reply.code(400).send({ statusCode: 400, error: 'bad-address', message: 'Not an address.' });
@@ -828,6 +828,14 @@ export async function buildServer(
       if (list.length < 10) list.push(match[2].toLowerCase() as `0x${string}`);
       v3TxHints.set(match[1], list);
     }
+    // `?v3closed=tokenId@poolId,…`: v3 positions this browser withdrew. Listed
+    // as closed only when their own logs add up to zero liquidity, minted into
+    // that pool, from this wallet (portfolio.ts).
+    const v3Closed = new Map<string, string>();
+    for (const pair of ([] as string[]).concat(request.query.v3closed ?? []).join(',').split(',').slice(0, 30)) {
+      const match = /^(\d{1,30})@(v3:0x[0-9a-fA-F]{40})$/.exec(pair.trim());
+      if (match) v3Closed.set(match[1], match[2].toLowerCase());
+    }
     const scanned = v4Scanner?.owned(wallet) ?? [];
     // Every v4 NFT the explorer says this wallet holds, however old: the scan
     // covers only the newest ids and the indexer is weeks behind (§30).
@@ -839,6 +847,7 @@ export async function buildServer(
       ethUsd: cached?.snapshot && cached.snapshot.global.ethPriceBasis !== 'chain' ? cached.snapshot.global.ethPriceUsd : null,
       v4Candidates: [...scanned, ...hinted, ...(listed ?? [])],
       v3TxHints,
+      v3Closed,
       // Complete when the explorer answered for this wallet, or the scan
       // covers every id; otherwise the page says the list may be missing some.
       scanPartial: portfolioChain !== null && listed === null && !(v4Scanner?.complete() ?? false),

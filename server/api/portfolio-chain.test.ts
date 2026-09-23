@@ -30,6 +30,7 @@ import {
 } from '../test/fixture';
 import { Poller } from '../indexer/poller';
 import { buildPortfolio, forgetV3Reads, type ChainPortfolioReader } from './portfolio';
+import type { V3History } from './v3-history';
 import type { V3OnchainPosition } from '../../lib/v3/positions';
 import type { V4OnchainPosition } from '../../lib/v4/positions';
 import { getSqrtRatioAtTick } from '../chain/tick-math';
@@ -383,7 +384,7 @@ describe('v3 positions, enumerated on chain', () => {
       v3History: async (positions) => {
         asked.push(positions.map((p) => p.liquidity));
         return new Map([
-          ['5', { deposited0: 10n ** 18n, deposited1: 10n ** 17n, collectedFees0: 7n, collectedFees1: 9n, liquidity: v3held.liquidity, mintedAt: new Date('2026-09-20T00:00:00Z'), collectedKnown: true }],
+          ['5', { deposited0: 10n ** 18n, deposited1: 10n ** 17n, collectedFees0: 7n, collectedFees1: 9n, in0: 10n ** 18n, in1: 10n ** 17n, out0: 0n, out1: 0n, liquidity: v3held.liquidity, mintedAt: new Date('2026-09-20T00:00:00Z'), collectedKnown: true, pools: [], senders: [] }],
         ]);
       },
     });
@@ -420,7 +421,7 @@ describe('v3 positions, enumerated on chain', () => {
       v3History: async (positions) => {
         seen.push(positions.map((p) => p.hints));
         return new Map([
-          ['5', { deposited0: 10n ** 18n, deposited1: 10n ** 17n, collectedFees0: 0n, collectedFees1: 0n, liquidity: v3held.liquidity, mintedAt: null, collectedKnown: false }],
+          ['5', { deposited0: 10n ** 18n, deposited1: 10n ** 17n, collectedFees0: 0n, collectedFees1: 0n, in0: 10n ** 18n, in1: 10n ** 17n, out0: 0n, out1: 0n, liquidity: v3held.liquidity, mintedAt: null, collectedKnown: false, pools: [], senders: [] }],
         ]);
       },
     });
@@ -429,6 +430,49 @@ describe('v3 positions, enumerated on chain', () => {
     expect(seen).toEqual([[[hint]]]);
     expect(p.live!.holdUsd).not.toBeNull();
     expect(p.live!.collectedFees0 ?? null).toBeNull();
+  });
+
+  it('lists a withdrawn position as closed, with its fees and realised impact, only when its logs check out', async () => {
+    const poolId = `v3:${V3_POOL.toLowerCase()}`;
+    const closedHistory = (over: Partial<V3History> = {}): V3History => ({
+      deposited0: 0n,
+      deposited1: 0n,
+      collectedFees0: 10n ** 15n,
+      collectedFees1: 10n ** 14n,
+      in0: 10n ** 18n,
+      in1: 10n ** 17n,
+      out0: 9n * 10n ** 17n,
+      out1: 11n * 10n ** 16n,
+      liquidity: 0n,
+      mintedAt: new Date('2026-09-23T10:00:00Z'),
+      collectedKnown: true,
+      pools: [V3_POOL.toLowerCase()],
+      senders: [BOB.toLowerCase()],
+      ...over,
+    });
+    const asked: bigint[][] = [];
+    const run = (h: V3History) =>
+      buildPortfolio(BOB, USDG, {
+        chain: fakeChain({
+          v3Positions: async () => [],
+          v3History: async (positions) => {
+            asked.push(positions.map((p) => p.liquidity));
+            return new Map([['7', h]]);
+          },
+        }),
+        v3Closed: new Map([['7', poolId]]),
+      });
+    const out = (await run(closedHistory()))!;
+    // Asked as closed: a history that adds up to zero liquidity.
+    expect(asked[0]).toEqual([0n]);
+    expect(out.closed).toHaveLength(1);
+    const c = out.closed![0];
+    expect(c.feesUsd).toBeGreaterThan(0);
+    expect(c.priceImpactUsd).toBeCloseTo(c.withdrawnUsd - c.depositedUsd, 9);
+    expect(c.fees0).toBe((10n ** 15n).toString());
+    // Minted into another pool, or never sent by this wallet: not this wallet's closed position.
+    expect((await run(closedHistory({ pools: ['0x000000000000000000000000000000000000beef'] })))!.closed).toBeUndefined();
+    expect((await run(closedHistory({ senders: ['0x000000000000000000000000000000000000beef'] })))!.closed).toBeUndefined();
   });
 
   it('values a position at today’s price when the chain answered for the pool and ether is priced live', async () => {

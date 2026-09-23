@@ -5310,3 +5310,37 @@ answer, and a page that treated "did not answer" as "does not exist".
 - **Small figures keep their digits.** `usdFine` prints a figure under a
   cent to two significant digits (`$0.0041`), and the price impact's
   percentage the same (`−0.0034%`), rather than `<$0.01`.
+
+### Closed positions in the totals, UTC, and a Withdraw that asks twice
+
+Three asks off the same page. *Jamnya ubah pakai UTC aja*: every time the
+activity list, the fee list and the dateline print is UTC now and says so —
+the chain and the explorer keep UTC, so the list reads the same as the
+transaction it links to.
+
+*Position kenapa cuma 1, harusnya semuanya ditotalin*: the one open position
+was right — VIRTUAL #1284575 had been withdrawn — but the totals forgot
+everything a withdrawn position had earned. **Withdrawn v3 positions are
+listed as closed** (`ClosedPosition`, a *Closed* list under the open ones)
+and counted in *Fees earned* and *Price impact on holdings*, which say
+`incl. N closed`. The browser names them (`?v3closed=tokenId@poolId`, from
+its own withdraw records); the server reads each one's logs as a history
+that must add up to **zero** liquidity, and lists it only when the receipts
+show the mint went into that pool (the pool's own `Mint` log with the
+manager as owner) and that this wallet sent them. `V3History` carries the
+gross amounts now (`in`, `out`), because a closed position's net is zero;
+its realised price impact is what came out as principal against what went
+in, at today's prices, the same basis as the open rows. v4 positions are
+not included: a v4 collect emits no amounts, so a closed v4 position's fees
+cannot be read back.
+
+*Saya tidak pernah withdraw VIRTUAL*: the Activity list showed a confirmed
+withdrawal of it, in the same minute as the CASHCAT zap. Nothing on the site
+sends a withdrawal on its own — only the Withdraw and Rebalance buttons call
+it, and every transaction needs the wallet's signature — so it was a click
+and a confirmation among the several prompts a zap asks for. The money went
+to the wallet, not anywhere else; the explorer link on that row shows it.
+But a one-click button that closes a position was too easy to hit. **Withdraw
+and Rebalance now ask on the page first** — *Yes, close the position* or
+*Keep it open*, with a line saying what closing does and that Collect fees
+is the one that keeps it open — and the question lapses after eight seconds.
