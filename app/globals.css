@@ -437,17 +437,6 @@ h1 em{font-style:normal;color:var(--fg-2)}
 /* Below 1180px the rail keeps its icons and drops its words. The words stay
    in the document, so every link still says where it goes. */
 @media (max-width:1180px){
-  :root{--side:76px}
-  .side{padding:18px 12px;align-items:stretch}
-  .brand{justify-content:center;padding:4px 0}
-  .brand-name,.side-h,.side-net span,.side-soc .soc span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
-  .nav-links a{justify-content:center;padding:0}
-  .nav-links a .nav-label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
-  .nav-links a.on::before{left:-12px}
-  .nav-tag{position:absolute;top:4px;right:6px;width:8px;height:8px;padding:0;margin:0;border-radius:50%;font-size:0;color:transparent;overflow:hidden}
-  .nav-tag.down{background:var(--red);border-color:var(--red)}
-  .side-net{justify-content:center;padding:10px 0}
-  .side-soc .soc{justify-content:center;padding:0}
   .facts{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
 @media (max-width:1100px){
@@ -609,6 +598,25 @@ h1 em{font-style:normal;color:var(--fg-2)}
 .side-soc{display:block}
 .side-soc .soc{width:100%;justify-content:flex-start;height:38px;border-radius:10px;border-color:var(--bd-n);background:var(--panel-2);color:var(--fg-2);font-size:12.5px}
 .side-soc .soc:hover{color:var(--fg);background:var(--raise)}
+/* The left side is a narrow icon rail on every desktop width, as on
+   DexScreener: the table gets the room. Each page's name is still in the
+   link, read by a screen reader and shown beside the icon on hover or
+   keyboard focus. Below 900px the rail becomes the strip across the top. */
+@media (min-width:901px){
+  :root{--side:64px}
+  .side{padding:12px 8px;align-items:stretch}
+  .brand{justify-content:center;padding:4px 0}
+  .brand-name,.side-net span,.side-soc .soc span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+  .nav-links a{justify-content:center;padding:0;height:40px}
+  .nav-links a .nav-label{position:absolute;left:calc(100% + 12px);top:50%;transform:translateY(-50%);padding:5px 10px;border-radius:6px;
+    background:var(--raise);border:1px solid var(--bd);color:var(--fg);font-size:12.5px;font-weight:600;white-space:nowrap;
+    opacity:0;pointer-events:none;transition:opacity var(--t-hover);box-shadow:0 8px 24px -8px rgba(0,0,0,.8);z-index:40}
+  .nav-links a:hover .nav-label,.nav-links a:focus-visible .nav-label{opacity:1}
+  .nav-tag{position:absolute;top:6px;right:8px;width:7px;height:7px;padding:0;margin:0;border:0;border-radius:50%;font-size:0;color:transparent;overflow:hidden;background:var(--fg-4)}
+  .nav-tag.down{background:var(--red)}
+  .side-net{justify-content:center;padding:10px 0}
+  .side-soc .soc{justify-content:center;padding:0;height:36px}
+}
 @media (max-width:900px){.side-soc .soc{width:auto;height:34px;padding:0 12px}.side-soc .soc span{position:static;width:auto;height:auto;clip:auto;overflow:visible}}
 @media (max-width:440px){.side-soc .soc span{display:none}.side-soc .soc{width:34px;padding:0;justify-content:center}}
 

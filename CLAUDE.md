@@ -5522,9 +5522,9 @@ viewed mostly on a **laptop**. This section is that style, desktop first.
   cell, because it is the convention every DexScreener user reads by. It
   is the owner's reference, so it is the owner's call.
 - **The Pools page is a screen, not a page.** A one-line title and lede, the
-  global figures as one strip of five cells, then `TopTokens` (the four
-  largest by the board's own `rankByCap`, as pump.fun-style cards with a
-  big figure, a chart and three stats), then the table.
+  global figures as one strip of five cells, then the table. (Four
+  pump.fun-style cards for the largest tokens sat between them for one
+  commit; the owner had them removed.)
 - **The table reads left to right like DexScreener's**: rank, token with its
   pair (`PONS / ETH`), price, age, buys/sells, volume, 24h, liquidity, market
   cap, 7-day chart. Rows are 54px. Columns drop in that spirit as the width
@@ -5536,8 +5536,13 @@ viewed mostly on a **laptop**. This section is that style, desktop first.
   `tokenPrice` in `lib/format.ts` writes it the way trading screens do: a
   fraction of a cent keeps its digits, as `$0.0₅123` for 0.00000123. A
   missing price is a dash.
-- **Compact chrome.** A 216px sidebar, a 56px top bar, 36px controls and
-  8px radii throughout.
+- **Compact chrome.** A 56px top bar, 36px controls and 8px radii
+  throughout.
+- **The left side is a 64px icon rail** on every desktop width, as on
+  DexScreener, at the owner's request. The page names stay in the links
+  (read by screen readers, and shown beside the icon on hover or keyboard
+  focus), and the out-of-range count becomes a red dot. Below 900px the
+  rail becomes the strip across the top, as before.
 
 ### Unchanged
 

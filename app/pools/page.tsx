@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Leaderboard } from '@/components/pools/Leaderboard';
 import { LivePayouts } from '@/components/pools/LivePayouts';
-import { TopTokens } from '@/components/pools/TopTokens';
 import { Masthead } from '@/components/shell/Masthead';
 
 export const metadata: Metadata = { title: 'Pools' };
@@ -16,8 +15,6 @@ export default function PoolsPage() {
         lede="Ranked live by market cap. Stake into any of them through Uniswap, straight from your wallet."
         facts
       />
-
-      <TopTokens />
 
       <Leaderboard />
 
