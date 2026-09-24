@@ -10,7 +10,7 @@ import { TokenBadge } from '@/components/ui/TokenBadge';
 import { useFlip } from '@/hooks/useFlip';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import type { Pool, Quote } from '@/lib/data/types';
-import { ageLabel, usd } from '@/lib/format';
+import { ageLabel, quoteLabel, tokenPrice, usd } from '@/lib/format';
 import {
   RANK_MIN_VOLUME_USD,
   ago,
@@ -20,6 +20,7 @@ import {
   shownCap,
   shownChange,
   shownLiquidity,
+  shownPrice,
   shownSplit,
   shownVolume,
   shownYield,
@@ -127,12 +128,14 @@ export function Leaderboard() {
       <div className="lb-cols" aria-hidden="true">
         <span className="c-rk">#</span>
         <span className="c-tok">Token</span>
-        <span className="c-mc">Market cap</span>
-        <span className="c-liq">Liquidity</span>
-        <span className="c-vol">Volume 24h</span>
+        <span className="c-price">Price</span>
+        <span className="c-age">Age</span>
         <span className="c-split">{facet === 'yield' ? 'Fee yield' : 'Buys / sells'}</span>
+        <span className="c-vol">Volume</span>
         <span className="c-chg">24h</span>
-        <span className="c-spark">Volume 7d</span>
+        <span className="c-liq">Liquidity</span>
+        <span className="c-mc">Mkt cap</span>
+        <span className="c-spark">7d</span>
       </div>
 
       <ol className="lb-rows">
@@ -196,6 +199,15 @@ function Row({
   const volume = shownVolume(pool);
   const change = shownChange(pool);
   const split = shownSplit(pool);
+  const price = shownPrice(pool);
+  const priceTitle =
+    price.value === null
+      ? 'No source has a price for this token yet.'
+      : price.basis === 'chain-now'
+        ? "Price in this pool, from the chain's own head."
+        : price.basis === 'live'
+          ? 'Price from an aggregator, on the token\u2019s deepest pair.'
+          : 'Price at the last indexed block.';
   const source = sourceName(pool);
   const quoted = pool.market ? `${source}, ${ago(pool.market.at)}` : 'indexed swaps';
   const across =
@@ -244,7 +256,7 @@ function Row({
   return (
     <li ref={registerRef} className={`lb-row${leader ? ' lead' : ''}`} onClick={onOpen}>
       <span className="rk" aria-hidden="true">
-        {String(rank).padStart(2, '0')}
+        #{rank}
       </span>
 
       {/* A button, so every row is keyboard-reachable at every width — the
@@ -258,7 +270,10 @@ function Row({
       >
         <TokenBadge token={pool.token} className="logo lg" />
         <span className="tok-id">
-          <span className="n">{pool.token.symbol}</span>
+          <span className="n">
+            {pool.token.symbol}
+            <span className="q"> / {quoteLabel(pool)}</span>
+          </span>
           <span className="s" title={pool.token.name}>
             <span className="tok-name">{pool.token.name}</span>
             {/* On a phone the cap column is gone; the figure takes the name's place. */}
@@ -269,45 +284,12 @@ function Row({
         </span>
       </button>
 
-      <div className="lb-fig" data-col="mc" title={capTitle}>
-        <Flash as="div" className="big num" text={capValue} />
-        {capTag && <span className="cap">{capTag}</span>}
+      <div className="lb-fig lb-price" data-col="price" title={priceTitle}>
+        <Flash as="div" className="big num" text={tokenPrice(price.value)} />
       </div>
 
-      {/* Unknown liquidity is a dash, not a zero (§14). */}
-      <div className="lb-fig lb-liq" data-col="liq" title={liquidityTitle}>
-        <Flash as="div" className="big num" text={liquidityText} />
-        {liquidity.value !== null && liquidity.basis !== 'chain' && <span className="cap">live</span>}
-      </div>
-
-      {/* Volume is on the row whatever the ranking, and beside it the buys
-          and sells it is made of. Live, both are the token's across its
-          pairs — a token here has several pools, and reading the day off
-          one of them was what put $17.9K on NVDA. The fee figure left the
-          row at the owner's request; fees remain the yield's basis, the
-          masthead's headline and the drawer's line. */}
-      <div
-        className="lb-fig lb-vol"
-        title={
-          volume.basis === 'chain-now'
-            ? "Volume over the last 24 hours in this pool, from the chain's own head — the same arithmetic as every other figure here, over blocks minutes old rather than the backfill's."
-            : volume.basis === 'live'
-              ? `Volume over the last 24 hours from ${quoted}${across}` +
-                (pool.market && pool.market.pairs > 0
-                  ? ` (deepest: ${pool.market.dexId || 'pair'} ${pool.market.pairAddress.slice(0, 10)}…)`
-                  : '')
-              : pool.market === null
-                ? "Volume over the last 24 hours of chain time in this pool, from indexed swaps. Neither the chain's head nor an aggregator has anything newer."
-                : 'Volume over the last 24 hours of chain time in this pool, from indexed swaps.'
-        }
-      >
-        <Flash as="div" className="big num" text={usd(volume.value)} />
-        {/* Three words, because there are three answers and they are weeks
-            apart: `now` is the chain's own head, `live` an aggregator, and
-            `chain` the backfill's last indexed day (§25). */}
-        <span className={`src src-${volume.basis === 'chain-now' ? 'now' : volume.basis === 'live' ? 'live' : 'chain'}`}>
-          {volume.basis === 'chain-now' ? 'now' : volume.basis === 'live' ? 'live' : 'chain'}
-        </span>
+      <div className="lb-fig lb-age" data-col="age" title={`Pool created ${age} ago`}>
+        <span className="big num">{age}</span>
       </div>
 
       {facet !== 'yield' ? (
@@ -367,7 +349,7 @@ function Row({
           </div>
         )
       ) : (
-        <div className="lb-fig lb-split">
+        <div className="lb-fig lb-split lb-yield">
           <Flash
             as="div"
             className={`big num${insufficient ? ' muted' : ' up'}`}
@@ -380,6 +362,36 @@ function Row({
           <span className="cap">{yieldLabel(shownY)}</span>
         </div>
       )}
+
+      {/* Volume is on the row whatever the ranking, and beside it the buys
+          and sells it is made of. Live, both are the token's across its
+          pairs — a token here has several pools, and reading the day off
+          one of them was what put $17.9K on NVDA. The fee figure left the
+          row at the owner's request; fees remain the yield's basis, the
+          masthead's headline and the drawer's line. */}
+      <div
+        className="lb-fig lb-vol"
+        title={
+          volume.basis === 'chain-now'
+            ? "Volume over the last 24 hours in this pool, from the chain's own head — the same arithmetic as every other figure here, over blocks minutes old rather than the backfill's."
+            : volume.basis === 'live'
+              ? `Volume over the last 24 hours from ${quoted}${across}` +
+                (pool.market && pool.market.pairs > 0
+                  ? ` (deepest: ${pool.market.dexId || 'pair'} ${pool.market.pairAddress.slice(0, 10)}…)`
+                  : '')
+              : pool.market === null
+                ? "Volume over the last 24 hours of chain time in this pool, from indexed swaps. Neither the chain's head nor an aggregator has anything newer."
+                : 'Volume over the last 24 hours of chain time in this pool, from indexed swaps.'
+        }
+      >
+        <Flash as="div" className="big num" text={usd(volume.value)} />
+        {/* Three words, because there are three answers and they are weeks
+            apart: `now` is the chain's own head, `live` an aggregator, and
+            `chain` the backfill's last indexed day (§25). */}
+        <span className={`src src-${volume.basis === 'chain-now' ? 'now' : volume.basis === 'live' ? 'live' : 'chain'}`}>
+          {volume.basis === 'chain-now' ? 'now' : volume.basis === 'live' ? 'live' : 'chain'}
+        </span>
+      </div>
 
       <Flash
         as="div"
@@ -395,6 +407,17 @@ function Row({
       >
         <Change pct={change.value} />
       </Flash>
+
+      {/* Unknown liquidity is a dash, not a zero (§14). */}
+      <div className="lb-fig lb-liq" data-col="liq" title={liquidityTitle}>
+        <Flash as="div" className="big num" text={liquidityText} />
+        {liquidity.value !== null && liquidity.basis !== 'chain' && <span className="cap">live</span>}
+      </div>
+
+      <div className="lb-fig" data-col="mc" title={capTitle}>
+        <Flash as="div" className="big num" text={capValue} />
+        {capTag && <span className="cap">{capTag}</span>}
+      </div>
 
       <div className="lb-spark" title="Volume by 12-hour bucket over the trailing week, from indexed swaps">
         <AreaSpark values={pool.volumeHistory} negative={(change.value ?? 0) < 0} />

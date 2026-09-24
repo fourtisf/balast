@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Leaderboard } from '@/components/pools/Leaderboard';
 import { LivePayouts } from '@/components/pools/LivePayouts';
+import { TopTokens } from '@/components/pools/TopTokens';
 import { Masthead } from '@/components/shell/Masthead';
 
 export const metadata: Metadata = { title: 'Pools' };
@@ -11,14 +12,12 @@ export default function PoolsPage() {
     <section>
       <Masthead
         eyebrow="Live · Robinhood Chain"
-        title={
-          <>
-            Earn the fees <em>every trade</em> pays.
-          </>
-        }
-        lede="Every token with real liquidity on Robinhood Chain, ranked live. Stake into any of them through Uniswap, straight from your wallet."
+        title="Top tokens on Robinhood Chain"
+        lede="Ranked live by market cap. Stake into any of them through Uniswap, straight from your wallet."
         facts
       />
+
+      <TopTokens />
 
       <Leaderboard />
 

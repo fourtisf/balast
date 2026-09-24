@@ -85,6 +85,25 @@ export function price(n: number): string {
   return `$${n.toLocaleString('en-US', { maximumFractionDigits: n < 1 ? 4 : 2 })}`;
 }
 
+const SUBSCRIPT = '₀₁₂₃₄₅₆₇₈₉';
+
+/**
+ * A token's price the way a trading screen writes it. Launchpad tokens trade
+ * at fractions of a cent, where `price()` would print `$0`, so four or more
+ * zeros after the point are counted in a subscript: 0.00000123 is
+ * `$0.0₅123`. Four significant digits below a dollar, two decimals above.
+ */
+export function tokenPrice(n: number | null): string {
+  if (n === null || !Number.isFinite(n) || n <= 0) return '—';
+  if (n >= 1) return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const digits = n.toFixed(20).slice(2);
+  const zeros = digits.length - digits.replace(/^0+/, '').length;
+  const significant = digits.slice(zeros, zeros + 4).replace(/0+$/, '') || '0';
+  if (zeros < 4) return `$0.${'0'.repeat(zeros)}${significant}`;
+  const sub = String(zeros).split('').map((d) => SUBSCRIPT[Number(d)]).join('');
+  return `$0.0${sub}${significant}`;
+}
+
 /** 1656 -> "69d", 24 -> "1d", 1 -> "1h". Matches the prototype's age column. */
 export function ageLabel(hours: number): string {
   if (hours < 24) return `${Math.max(1, Math.floor(hours))}h`;

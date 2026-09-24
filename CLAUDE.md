@@ -5499,3 +5499,52 @@ under the figure, not a sentence. The board's subtitle is one short line.
 
 **Verified**: typecheck, lint, the unit tests, the production build and all
 41 Playwright tests, plus screenshots at 1440, 1280 and 390px.
+
+---
+
+## 38. A trading screen: DexScreener and pump.fun as the reference
+
+After two rounds of Night (§37) and a board of three sketched directions,
+ALFA's verdict was still *tampilannya looking bad*. Guessing again would
+have cost a fourth round, so the question changed: which crypto site does
+ALFA already think looks right? The answer was **DexScreener / pump.fun**,
+viewed mostly on a **laptop**. This section is that style, desktop first.
+
+### What moved
+
+- **Monochrome, so the numbers are the colour.** The accent is white
+  (`--ac #EDEEF1`): the primary button, the active nav item, the charts.
+  Green (`--pos`) and red (`--red`) are the only colours on the page.
+  Surfaces are neutral near-blacks with solid hairlines, as on a trading
+  screen.
+- **Buys are green and sells are red**, in the buys/sells column and its
+  bar. That sets aside §5's "red means only a negative number" for this one
+  cell, because it is the convention every DexScreener user reads by. It
+  is the owner's reference, so it is the owner's call.
+- **The Pools page is a screen, not a page.** A one-line title and lede, the
+  global figures as one strip of five cells, then `TopTokens` (the four
+  largest by the board's own `rankByCap`, as pump.fun-style cards with a
+  big figure, a chart and three stats), then the table.
+- **The table reads left to right like DexScreener's**: rank, token with its
+  pair (`PONS / ETH`), price, age, buys/sells, volume, 24h, liquidity, market
+  cap, 7-day chart. Rows are 54px. Columns drop in that spirit as the width
+  shrinks: age and the chart at 1400px, buys/sells at 1100px, the Stake
+  column at 900px, price and liquidity at 760px, market cap at 640px (it
+  moves under the ticker), the rank at 420px.
+- **A price column.** `shownPrice` in `lib/market-figures.ts` takes the
+  price from the same source as the volume and change beside it.
+  `tokenPrice` in `lib/format.ts` writes it the way trading screens do: a
+  fraction of a cent keeps its digits, as `$0.0₅123` for 0.00000123. A
+  missing price is a dash.
+- **Compact chrome.** A 216px sidebar, a 56px top bar, 36px controls and
+  8px radii throughout.
+
+### Unchanged
+
+Every figure and its source; the honest-numbers rules (§7) apart from the
+buys/sells colours above; the `DataProvider` boundary; everything that
+sends a transaction.
+
+**Verified**: typecheck, lint, the unit tests (new `tokenPrice` cases),
+the production build and all 41 Playwright tests, plus screenshots at
+1440 and 1280px.

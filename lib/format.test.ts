@@ -3,6 +3,7 @@ import { CONTRACTS, NATIVE_ETH } from './chain';
 import type { Pool } from './data/types';
 import {
   ageLabel,
+  tokenPrice,
   countdown,
   duration,
   feeTierLabel,
@@ -226,5 +227,20 @@ describe('usdFine, for small figures', () => {
     expect(usdFine(0.37)).toBe('$0.37');
     expect(usdFine(0)).toBe('$0');
     expect(usdFine(3e-8)).toBe('<$0.000001');
+  });
+});
+
+describe('tokenPrice', () => {
+  it('writes a trading-screen price at every magnitude', () => {
+    expect(tokenPrice(1234.5)).toBe('$1,234.50');
+    expect(tokenPrice(0.7529)).toBe('$0.7529');
+    expect(tokenPrice(0.01234)).toBe('$0.01234');
+    expect(tokenPrice(0.000123)).toBe('$0.000123');
+    expect(tokenPrice(0.00000123)).toBe('$0.0₅123');
+    expect(tokenPrice(0.000000000012)).toBe('$0.0₁₀12');
+  });
+  it('is a dash when there is no price', () => {
+    expect(tokenPrice(null)).toBe('—');
+    expect(tokenPrice(0)).toBe('—');
   });
 });

@@ -55,6 +55,17 @@ export function shownVolume(pool: Pool): Shown<number> {
     : { value: pool.volume24hUsd, basis: 'chain', scope: 'pool' };
 }
 
+/**
+ * The token's price in dollars, from the same source as the volume and the
+ * change beside it, so the three on a row describe the same moment. Null
+ * when no source has a price, which renders as a dash.
+ */
+export function shownPrice(pool: Pool): Shown<number | null> {
+  if (pool.now && pool.now.priceUsd !== null) return { value: pool.now.priceUsd, basis: 'chain-now', scope: 'pool' };
+  if (pool.market && pool.market.priceUsd !== null) return { value: pool.market.priceUsd, basis: 'live', scope: 'token' };
+  return { value: pool.priceUsd > 0 ? pool.priceUsd : null, basis: 'chain', scope: 'pool' };
+}
+
 /** The 24h price change, from the same source as the volume beside it. */
 export function shownChange(pool: Pool): Shown<number | null> {
   if (pool.now) return { value: pool.now.change24hPct, basis: 'chain-now', scope: 'pool' };

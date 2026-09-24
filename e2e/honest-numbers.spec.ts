@@ -74,7 +74,7 @@ test.describe('honest numbers', () => {
     await page.goto('/portfolio', { waitUntil: 'networkidle' });
     const status = page.locator('.pnl-row .down').first();
     await expect(status).toContainText('out of range — earning nothing');
-    await expect(status).toHaveCSS('color', 'rgb(255, 92, 103)');
+    await expect(status).toHaveCSS('color', 'rgb(242, 73, 92)');
   });
 
   test('shows price impact on holdings as a negative figure', async ({ page }) => {
