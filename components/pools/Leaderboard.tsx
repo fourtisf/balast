@@ -90,10 +90,10 @@ export function Leaderboard() {
           </h2>
           <p className="lb-sub">
             {facet === 'mc'
-              ? `Ranked by market cap among tokens with ${usd(RANK_MIN_VOLUME_USD)}+ of live volume today · the rest follow, quiet tokens last`
+              ? `By market cap · tokens with ${usd(RANK_MIN_VOLUME_USD)}+ traded today first`
               : facet === 'volume'
-                ? 'Ranked by 24h volume · live figures rank ahead of the chain\u2019s · fee yield appears at seven days of history'
-                : 'Ranked by fee yield · fees over liquidity, annualised · only pools with seven days of history'}
+                ? 'By 24h volume · today\u2019s figures ahead of older ones'
+                : 'By fee yield · pools with seven days of history'}
           </p>
         </div>
         <div className="row">
@@ -122,6 +122,17 @@ export function Leaderboard() {
             ))}
           </div>
         </div>
+      </div>
+
+      <div className="lb-cols" aria-hidden="true">
+        <span className="c-rk">#</span>
+        <span className="c-tok">Token</span>
+        <span className="c-mc">Market cap</span>
+        <span className="c-liq">Liquidity</span>
+        <span className="c-vol">Volume 24h</span>
+        <span className="c-split">{facet === 'yield' ? 'Fee yield' : 'Buys / sells'}</span>
+        <span className="c-chg">24h</span>
+        <span className="c-spark">Volume 7d</span>
       </div>
 
       <ol className="lb-rows">
@@ -194,14 +205,15 @@ function Row({
         ? " across the token's pools on this chain"
         : '';
 
-  const capText =
+  const capValue = cap.kind === 'mc' || cap.kind === 'fdv' ? usd(cap.value as number) : '—';
+  const capTag =
     cap.kind === 'native'
       ? 'native asset'
-      : cap.kind === 'mc'
-        ? `MC ${usd(cap.value as number)}${cap.fdvBeside ? ` · FDV ${usd(cap.fdvBeside)}` : ''}`
-        : cap.kind === 'fdv'
-          ? `FDV ${usd(cap.value as number)}`
-          : 'MC —';
+      : cap.kind === 'fdv'
+        ? 'fdv'
+        : cap.kind === 'mc' && cap.fdvBeside
+          ? `fdv ${usd(cap.fdvBeside)}`
+          : null;
   const capTitle =
     cap.kind === 'native'
       ? "Ether is the chain's native asset: no token contract, no supply to read, so no market cap."
@@ -247,15 +259,26 @@ function Row({
         <TokenBadge token={pool.token} className="logo lg" />
         <span className="tok-id">
           <span className="n">{pool.token.symbol}</span>
-          {/* Figures first, name last: the line clips at the end when the
-              column is narrow, and the name is the one part the symbol above
-              it already says. Unknown liquidity is a dash, not a zero (§14). */}
           <span className="s" title={pool.token.name}>
-            <span title={capTitle}>{capText}</span> ·{' '}
-            <span title={liquidityTitle}>liquidity {liquidityText}</span> · {pool.token.name}
+            <span className="tok-name">{pool.token.name}</span>
+            {/* On a phone the cap column is gone; the figure takes the name's place. */}
+            <span className="tok-mc" title={capTitle}>
+              MC {capValue}
+            </span>
           </span>
         </span>
       </button>
+
+      <div className="lb-fig" data-col="mc" title={capTitle}>
+        <Flash as="div" className="big num" text={capValue} />
+        {capTag && <span className="cap">{capTag}</span>}
+      </div>
+
+      {/* Unknown liquidity is a dash, not a zero (§14). */}
+      <div className="lb-fig lb-liq" data-col="liq" title={liquidityTitle}>
+        <Flash as="div" className="big num" text={liquidityText} />
+        {liquidity.value !== null && liquidity.basis !== 'chain' && <span className="cap">live</span>}
+      </div>
 
       {/* Volume is on the row whatever the ranking, and beside it the buys
           and sells it is made of. Live, both are the token's across its
@@ -282,9 +305,8 @@ function Row({
         {/* Three words, because there are three answers and they are weeks
             apart: `now` is the chain's own head, `live` an aggregator, and
             `chain` the backfill's last indexed day (§25). */}
-        <span className="cap">
-          vol · 24h
-          {volume.basis === 'chain-now' ? ' · now' : volume.basis === 'live' ? ' · live' : ' · chain'}
+        <span className={`src src-${volume.basis === 'chain-now' ? 'now' : volume.basis === 'live' ? 'live' : 'chain'}`}>
+          {volume.basis === 'chain-now' ? 'now' : volume.basis === 'live' ? 'live' : 'chain'}
         </span>
       </div>
 
@@ -345,7 +367,7 @@ function Row({
           </div>
         )
       ) : (
-        <div className="lb-fig">
+        <div className="lb-fig lb-split">
           <Flash
             as="div"
             className={`big num${insufficient ? ' muted' : ' up'}`}

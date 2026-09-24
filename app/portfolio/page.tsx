@@ -14,7 +14,7 @@ export default function PortfolioPage() {
             Your fees, <em>day by day</em>.
           </>
         }
-        lede="Every position, marked to market, with the fees it has actually earned and a way to collect them. Nothing here is projected."
+        lede="Every position at today's prices, with the fees it has earned and a way to collect them. Nothing here is projected."
       />
       <PortfolioBody />
     </section>

@@ -5461,3 +5461,41 @@ at 360px.
 
 **Verified**: typecheck, lint, 562 unit tests, the production build and
 all 41 Playwright tests, plus screenshots at 1440, 1024 and 390px.
+
+### A second pass: a table, not a list of sentences
+
+ALFA's verdict on the first Night deploy: *ui ux masih still bad*. No
+specifics, so the page was read the way a first-time visitor reads it, and
+five things stood out.
+
+- **The board had no column headers.** Market cap and liquidity rode in a
+  grey line under the ticker, truncated on most rows, so the two figures a
+  person compares were the two they could not read. The leaderboard is a
+  real table now: a header row (`.lb-cols`) and one column each for market
+  cap, liquidity, volume, buys/sells, 24h and the 7-day chart, on one grid
+  (`--lb-grid`). Below 1320px the chart goes (its narrow column stays for
+  the Stake button), below 900px the buys/sells, below 640px market cap and
+  liquidity, with the market cap taking the name's place under the ticker,
+  and below 420px the rank. The totals test reads the liquidity column
+  (`[data-col="liq"]`) now.
+- **The headline took the first screen.** Headlines are 26–38px and one
+  line of copy. Only `/pools` carries the figure tiles (`Masthead facts`);
+  the other pages were repeating five numbers that had nothing to do with
+  them. The tiles are Value locked, Fees 24h (summed from the rows, §12),
+  Paid to LPs, Open positions and ETH.
+- **The contract address moved to the top bar**, as a `$BLST 0xe8f7…EE83`
+  chip that copies on click, on every page.
+- **Figures are sans with tabular digits.** Mono read as a terminal. Instrument
+  Sans has true tabular figures (checked: `1111`, `8888` and `0000` measure
+  the same), so columns still line up. Addresses and hashes keep the mono,
+  because there each character is read one by one.
+- **Token marks are dark coins.** Pastel discs looked like stickers on a
+  dark page. The disc is the hue at 40% saturation and 20% lightness, the ink
+  the same hue at 70/80. The test re-derives the contrast: 7.12:1 at worst,
+  at hue 240.
+
+The source of the day's volume (`now`, `live`, `chain`) is a small tag
+under the figure, not a sentence. The board's subtitle is one short line.
+
+**Verified**: typecheck, lint, the unit tests, the production build and all
+41 Playwright tests, plus screenshots at 1440, 1280 and 390px.

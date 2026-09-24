@@ -40,22 +40,23 @@ function hash(input: string): number {
  * meaning anything. Fixing them means every mark carries the same weight in
  * a listing and the ink's contrast is knowable in advance.
  *
- * The disc is a pastel tint — light enough to sit on paper without shouting —
- * and the ink is the same hue, dark, so the monogram reads as one object
- * rather than black text stamped on a coloured circle. The numbers were
- * measured, not chosen by eye: across all 360 hues this pair keeps the
- * monogram at 5.06:1 or better, with yellow (hue 60) the hardest case, as it
- * is for any light disc.
+ * The disc is a deep tint that sits on the dark page (§37) the way a coin
+ * sits on felt, and the ink is the same hue, light, so the monogram reads
+ * as one object rather than white text stamped on a coloured circle. The
+ * numbers were measured, not chosen by eye: across all 360 hues this pair
+ * keeps the monogram at 7.12:1 or better, with blue (hue 240) the hardest
+ * case, as it is for any light ink — blue is the darkest hue at a given
+ * lightness.
  */
-const DISC_SAT = 60;
-const DISC_LIGHT = 86;
-const INK_SAT = 45;
-const INK_LIGHT = 28;
+const DISC_SAT = 40;
+const DISC_LIGHT = 20;
+const INK_SAT = 70;
+const INK_LIGHT = 80;
 
 export interface TokenMark {
   /** Disc fill. */
   bg: string;
-  /** Monogram colour: the disc's own hue, dark enough to read on it. */
+  /** Monogram colour: the disc's own hue, light enough to read on it. */
   ink: string;
 }
 

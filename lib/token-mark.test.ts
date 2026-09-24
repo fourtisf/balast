@@ -36,8 +36,8 @@ describe('tokenMark', () => {
     // §5 stops meaning anything.
     for (let i = 0; i < 200; i++) {
       const mark = tokenMark(`0x${(i * 7919).toString(16).padStart(40, '0')}`);
-      const disc = /^hsl\((\d{1,3}) 60% 86%\)$/.exec(mark.bg);
-      const ink = /^hsl\((\d{1,3}) 45% 28%\)$/.exec(mark.ink);
+      const disc = /^hsl\((\d{1,3}) 40% 20%\)$/.exec(mark.bg);
+      const ink = /^hsl\((\d{1,3}) 70% 80%\)$/.exec(mark.ink);
       expect(disc, mark.bg).not.toBeNull();
       expect(ink, mark.ink).not.toBeNull();
       expect(ink![1]).toBe(disc![1]);
@@ -50,8 +50,8 @@ describe('tokenMark', () => {
    * The badge is aria-hidden and the ticker sits beside it as real text, so
    * the monogram is decorative — but an illegible badge is still a bad badge.
    * This walks all 360 hues the hash can produce and checks the ink clears
-   * the bar on each one. Yellow is the hard case on a light disc: at the same
-   * lightness it is far brighter than blue, so it is where the pair is tuned.
+   * the bar on each one. Blue is the hard case for a light ink: at the same
+   * lightness it is the darkest hue, so it is where the pair is tuned.
    */
   it('keeps the monogram legible on every hue it can produce', () => {
     const { DISC_SAT, DISC_LIGHT, INK_SAT, INK_LIGHT, luminance, contrast } = MARK_INTERNALS;
@@ -70,11 +70,11 @@ describe('tokenMark', () => {
     }
     // WCAG AA for body text, on every hue, not on average.
     expect(worst).toBeGreaterThan(4.5);
-    // Measured at 5.06:1 across the whole wheel, worst at hue 60. Anything
+    // Measured at 7.12:1 across the whole wheel, worst at hue 240. Anything
     // materially below that means the palette moved and the measurement
     // needs redoing.
-    expect(worst).toBeGreaterThan(5);
-    expect(worstHue).toBe(60);
+    expect(worst).toBeGreaterThan(7);
+    expect(worstHue).toBe(240);
   });
 });
 

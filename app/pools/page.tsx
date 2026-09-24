@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Leaderboard } from '@/components/pools/Leaderboard';
-import { LedgerDate, LedgerHeadline } from '@/components/pools/Ledger';
 import { LivePayouts } from '@/components/pools/LivePayouts';
 import { Masthead } from '@/components/shell/Masthead';
 
@@ -10,7 +9,16 @@ export const metadata: Metadata = { title: 'Pools' };
 export default function PoolsPage() {
   return (
     <section>
-      <Masthead eyebrow={<LedgerDate />} title={<LedgerHeadline />} />
+      <Masthead
+        eyebrow="Live · Robinhood Chain"
+        title={
+          <>
+            Earn the fees <em>every trade</em> pays.
+          </>
+        }
+        lede="Every token with real liquidity on Robinhood Chain, ranked live. Stake into any of them through Uniswap, straight from your wallet."
+        facts
+      />
 
       <Leaderboard />
 

@@ -15,7 +15,7 @@ export default function PositionsPage() {
             Shape your liquidity <em>by hand</em>.
           </>
         }
-        lede="Choose a range, pick a shape, set a deposit. Balast splits it across bins and mints them through Uniswap's PositionManager straight to your wallet, in one transaction. Nothing is held by Balast."
+        lede="Pick a range and a shape. Uniswap mints each bin straight to your wallet, and nothing is held by Balast."
       />
       {/* The builder reads ?pool= and ?range= from the URL, which Next renders inside a boundary. */}
       <Suspense fallback={null}>

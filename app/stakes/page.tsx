@@ -12,10 +12,10 @@ export default function StakesPage() {
         eyebrow="Stakes"
         title={
           <>
-            Stake once. Earn the pool&rsquo;s fee on <em>every trade</em>.
+            Stake once. <em>Earn on every trade</em>.
           </>
         }
-        lede="A stake is one full-range position in the pool, minted through Uniswap's PositionManager straight to your wallet as an NFT. It earns the pool's fee on every trade, in the pool's own tokens, and is never out of range. No lockup, no Balast fee, nothing held by Balast. Pick a pool below — holding only ETH or USDG is enough."
+        lede="A stake is one full-range position, minted by Uniswap straight to your wallet. Never out of range, no lockup, no Balast fee. ETH or USDG is enough to start."
       />
       <VaultGrid />
       <MyStakes />

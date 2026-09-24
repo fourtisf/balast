@@ -2,22 +2,22 @@ import type { ReactNode } from 'react';
 import { Facts } from './Facts';
 
 /**
- * Every page opens the same way: an eyebrow, a headline, a line of copy,
- * and the global figures as a row of tiles beneath. The listing's headline
- * is the day's numbers; the other pages' headlines are what the page does.
+ * Every page opens the same way: an eyebrow, a headline and one line of
+ * copy saying what the page does. The listing also carries the global
+ * figures as a row of tiles; no other page repeats them.
  */
 export function Masthead({
   eyebrow,
   title,
   lede,
   actions,
-  facts = true,
+  facts = false,
 }: {
   eyebrow: ReactNode;
   title: ReactNode;
   lede?: ReactNode;
   actions?: ReactNode;
-  /** Off where there is no market to read from — the error page. */
+  /** The global figures, as tiles. On the listing only; elsewhere they repeat what the page is not about. */
   facts?: boolean;
 }) {
   return (

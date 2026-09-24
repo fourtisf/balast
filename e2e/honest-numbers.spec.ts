@@ -95,7 +95,7 @@ test.describe('honest numbers', () => {
     // Both figures are read in one pass, so a tick cannot land between them.
     const { locked, depths } = await page.evaluate(() => ({
       locked: document.querySelector('.facts [data-fact="tvl"]')!.textContent ?? '',
-      depths: Array.from(document.querySelectorAll('#main .lb-row .tok-id .s')).map(
+      depths: Array.from(document.querySelectorAll('#main .lb-row [data-col="liq"] .big')).map(
         (el) => el.textContent ?? '',
       ),
     }));
@@ -103,7 +103,7 @@ test.describe('honest numbers', () => {
     const money = (m: RegExpExecArray | null) =>
       m ? Number(m[1].replace(/,/g, '')) * scale[m[2] ?? ''] : NaN;
     const top = money(/\$([\d.,]+)([KMB])?/.exec(locked));
-    const rows = depths.reduce((sum, t) => sum + money(/liquidity \$([\d.]+)([KMB])?/.exec(t)), 0);
+    const rows = depths.reduce((sum, t) => sum + money(/\$([\d.]+)([KMB])?/.exec(t)), 0);
     expect(depths.length).toBeGreaterThan(1);
     // $15.11M in the masthead, eleven rounded depths beneath it — the same
     // number, to within the rounding of the row figures.

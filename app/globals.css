@@ -70,7 +70,7 @@
      its shadow, which the page is already too dark to show. */
   --shadow-card:inset 0 1px 0 rgba(255,255,255,.045),0 1px 2px rgba(0,0,0,.4),0 24px 48px -32px rgba(0,0,0,.8);
   --shadow-pill:0 1px 2px rgba(0,0,0,.4);
-  --shadow-badge:inset 0 1px 0 rgba(255,255,255,.5),inset 0 -2px 4px rgba(0,0,0,.18),0 1px 3px rgba(0,0,0,.5);
+  --shadow-badge:inset 0 0 0 1px rgba(255,255,255,.09),inset 0 1px 0 rgba(255,255,255,.12),0 1px 3px rgba(0,0,0,.5);
   --shadow-drawer:-32px 0 64px -24px rgba(0,0,0,.8);
 }
 
@@ -89,7 +89,11 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 input,select{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--ac);outline-offset:2px}
 ::selection{background:var(--ac);color:var(--on-ac)}
-.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+/* Figures are set in the sans with tabular digits, so columns line up
+   without the terminal look of a mono. Addresses and hashes keep the mono:
+   there every character is read one by one. */
+.num{font-family:var(--sans);font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;letter-spacing:-.01em}
+code,.mono,.ca-chip .num,.btn .num,.ca .num,.wallet-addr{font-family:var(--mono);letter-spacing:0}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .skip{position:fixed;left:12px;top:-60px;z-index:120;background:var(--fg);color:var(--panel);
   padding:10px 16px;border-radius:99px;font-size:13px;font-weight:600;transition:top .15s}
@@ -124,7 +128,7 @@ input,select{font:inherit;color:inherit}
 
 .nav{position:sticky;top:0;z-index:25;background:rgba(7,8,11,.72);backdrop-filter:blur(14px) saturate(140%);-webkit-backdrop-filter:blur(14px) saturate(140%);border-bottom:1px solid var(--bd-n)}
 .nav-in{display:flex;align-items:center;gap:10px;height:64px;padding:0 var(--pad);max-width:calc(var(--wrap) + 2 * var(--pad));margin:0 auto}
-.search{margin-right:auto;width:340px;min-width:0;display:flex;align-items:center;gap:10px;height:40px;padding:0 14px;border:1px solid var(--bd-n);border-radius:10px;background:var(--panel);transition:.2s}
+.search{margin-right:auto;width:320px;min-width:0;display:flex;align-items:center;gap:10px;height:40px;padding:0 14px;border:1px solid var(--bd-n);border-radius:10px;background:var(--panel);transition:.2s}
 .search:focus-within{border-color:var(--bd-2);box-shadow:0 0 0 4px var(--ac-dim)}
 .search svg{width:16px;height:16px;stroke:var(--fg-3);fill:none;stroke-width:1.8;stroke-linecap:round;flex:none}
 .search input{flex:1;min-width:0;background:none;border:0;outline:0;font-size:13.5px;color:var(--fg)}
@@ -137,6 +141,11 @@ input,select{font:inherit;color:inherit}
 .lag.behind i{background:var(--fg-3);box-shadow:none;animation:none}
 .lag .num{font-weight:600;color:var(--fg)}
 
+.ca-chip{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 12px;border:1px solid var(--bd-n);border-radius:10px;background:var(--panel);font-size:12.5px;color:var(--fg-2);white-space:nowrap;flex:none;transition:var(--t-hover)}
+.ca-chip:hover{color:var(--fg);border-color:var(--bd)}
+.ca-chip .ca-t{font-weight:700;color:var(--ac-2)}
+.ca-chip .num{font-size:12px}
+.ca-chip svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linejoin:round;opacity:.7}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 18px;flex:none;border:1px solid transparent;border-radius:10px;font-family:var(--sans);font-size:13.5px;font-weight:600;white-space:nowrap;transition:.18s}
 .btn-ink{background:var(--fg);color:var(--bg)}
 .btn-ink:hover{background:var(--ink-2)}
@@ -152,13 +161,13 @@ input,select{font:inherit;color:inherit}
 .card{background:linear-gradient(180deg,rgba(255,255,255,.022),rgba(255,255,255,0) 40%),var(--panel);border:1px solid var(--bd-n);border-radius:var(--r-card);min-width:0;box-shadow:var(--shadow-card)}
 .grid>*,.builder>*,.router>*,.sum>*,.vaults>*,.rangebox>*,.shape>*{min-width:0}
 .eyebrow,.sect-h{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3);font-weight:600}
-h1{font-family:var(--sans);font-weight:700;font-size:clamp(28px,3.8vw,46px);line-height:1.06;letter-spacing:-.032em;margin:0;text-wrap:balance}
+h1{font-family:var(--sans);font-weight:700;font-size:clamp(26px,2.9vw,38px);line-height:1.1;letter-spacing:-.03em;margin:0;text-wrap:balance}
 h1 em{font-style:normal;color:var(--ac-2)}
-.lede{color:var(--fg-2);font-size:15px;max-width:64ch;margin:0;line-height:1.6}
+.lede{color:var(--fg-2);font-size:14.5px;max-width:64ch;margin:0;line-height:1.6}
 
 /* ---------- masthead: a headline over a row of figures ---------- */
-.mast{display:flex;flex-direction:column;gap:28px;margin-bottom:36px}
-.mast-l{display:flex;flex-direction:column;gap:14px;min-width:0;max-width:860px}
+.mast{display:flex;flex-direction:column;gap:22px;margin-bottom:28px}
+.mast-l{display:flex;flex-direction:column;gap:10px;min-width:0;max-width:760px}
 .mast-eyebrow{display:inline-flex;align-self:flex-start;align-items:center;gap:8px;padding:6px 12px 6px 10px;border:1px solid rgba(124,140,255,.22);border-radius:99px;background:var(--ac-dim);color:var(--ac-3);letter-spacing:.1em}
 .mast-eyebrow i{width:6px;height:6px;border-radius:50%;background:var(--ac);box-shadow:0 0 8px var(--ac-glow)}
 .mast-actions{margin-top:4px}
@@ -166,15 +175,21 @@ h1 em{font-style:normal;color:var(--ac-2)}
 .facts>div{display:flex;flex-direction:column;gap:8px;padding:16px 18px;border:1px solid var(--bd-n);border-radius:14px;
   background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,0) 60%),var(--panel);box-shadow:var(--shadow-card);min-width:0}
 .facts dt{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3)}
-.facts dd{margin:0;font-weight:600;font-size:20px;letter-spacing:-.02em;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.facts dd{margin:0;font-weight:600;font-size:22px;letter-spacing:-.025em;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* ---------- leaderboard: one card, a header row, rows beneath ---------- */
 .lb{margin-bottom:28px;background:linear-gradient(180deg,rgba(255,255,255,.022),rgba(255,255,255,0) 30%),var(--panel);border:1px solid var(--bd-n);border-radius:var(--r-card);box-shadow:var(--shadow-card);overflow:hidden}
 .lb-h{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:20px 22px 18px;border-bottom:1px solid var(--bd-n)}
 .lb-title{font-family:var(--sans);font-weight:700;font-size:20px;line-height:1.1;margin:0 0 6px;letter-spacing:-.025em}
 .lb-sub{margin:0;font-size:12.5px;color:var(--fg-3);max-width:70ch}
+.lb{--lb-grid:36px minmax(170px,1.6fr) 112px 112px 118px 136px 88px 150px}
+.lb-cols{display:grid;grid-template-columns:var(--lb-grid);gap:16px;align-items:center;padding:10px 22px 10px 12px;border-bottom:1px solid var(--bd-n);background:rgba(255,255,255,.015);
+  font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3)}
+.lb-cols span{text-align:right;white-space:nowrap}
+.lb-cols .c-rk{padding-left:12px;text-align:left}
+.lb-cols .c-tok{text-align:left}
 .lb-rows{list-style:none;margin:0;padding:0}
-.lb-row{position:relative;display:grid;grid-template-columns:52px minmax(0,1fr) 130px 150px 100px 220px;align-items:center;gap:20px;min-height:72px;padding:10px 22px 10px 12px;border-bottom:1px solid var(--bd-n);cursor:pointer;transition:background var(--t-hover),transform var(--t-reorder)}
+.lb-row{position:relative;display:grid;grid-template-columns:var(--lb-grid);align-items:center;gap:16px;min-height:68px;padding:10px 22px 10px 12px;border-bottom:1px solid var(--bd-n);cursor:pointer;transition:background var(--t-hover),transform var(--t-reorder)}
 .lb-row:last-child{border-bottom:0}
 .lb-row::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:2px;border-radius:0 2px 2px 0;background:var(--ac);box-shadow:0 0 10px var(--ac-glow);opacity:0;transition:var(--t-hover)}
 .lb-row:hover{background:var(--panel-2)}
@@ -182,10 +197,15 @@ h1 em{font-style:normal;color:var(--ac-2)}
 .lb-row.lead{background:linear-gradient(90deg,var(--ac-dim),transparent 55%)}
 .lb-row.lead .rk{color:var(--ac-2)}
 .lb-row.enter{animation:rowin .5s ease-out}
-.rk{font-family:var(--mono);font-size:13px;font-weight:500;line-height:1;color:var(--fg-4);padding-left:12px}
+.rk{font-family:var(--sans);font-variant-numeric:tabular-nums;font-size:13px;font-weight:600;line-height:1;color:var(--fg-4);padding-left:12px}
 .lb-fig{display:flex;flex-direction:column;align-items:flex-end;gap:2px;text-align:right;min-width:0}
-.lb-fig .big{font-weight:600;font-size:16px;line-height:1.25;white-space:nowrap}
+.lb-fig .big{font-weight:600;font-size:14.5px;line-height:1.25;white-space:nowrap}
 .lb-fig .cap{font-size:10.5px;color:var(--fg-3);white-space:nowrap;letter-spacing:.02em}
+/* Where the day's figure came from: the chain's head, an aggregator, or the
+   backfill. A quiet tag, not a status colour. */
+.src{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-3);line-height:1.4}
+.src-chain{color:var(--fg-4)}
+.tok-mc{display:none}
 .lb-split{gap:1px}
 .lb-side{display:flex;align-items:baseline;gap:6px;font-size:12.5px;font-weight:500;white-space:nowrap}
 .lb-side .cap{font-size:10px;letter-spacing:.06em;text-transform:uppercase;min-width:26px;text-align:left}
@@ -203,7 +223,7 @@ h1 em{font-style:normal;color:var(--ac-2)}
 .tok{display:flex;align-items:center;gap:14px;min-width:0}
 .tok-btn{width:100%;text-align:left;padding:0;background:none;border:0;font:inherit;color:inherit;cursor:pointer;min-width:0}
 .logo{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-family:var(--sans);font-weight:700;font-size:11px;letter-spacing:.04em;flex:none;position:relative;overflow:hidden;
-  background-image:linear-gradient(155deg,rgba(255,255,255,.45),rgba(255,255,255,0) 55%);box-shadow:var(--shadow-badge)}
+  background-image:linear-gradient(155deg,rgba(255,255,255,.10),rgba(255,255,255,0) 60%);box-shadow:var(--shadow-badge)}
 .logo.lg{width:40px;height:40px;font-size:12px}
 /* A token's logo, when a source supplied one. The badge's derived colour
    stays painted underneath, so an image that fails to load leaves something
@@ -214,10 +234,11 @@ h1 em{font-style:normal;color:var(--ac-2)}
 .tok-id{display:block;min-width:0}
 .tok .n,.tok-id .n{display:block;font-weight:700;font-size:16px;letter-spacing:-.02em;line-height:1.2}
 .tok .s,.tok-id .s{display:block;color:var(--fg-3);font-size:13px;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.lb-row .tok .n{font-size:15.5px}
+.lb-row .tok .n{font-size:15px}
+.lb-row .tok{gap:12px}
 
 /* a 24h move: green up, red down, a dash in no colour when unknown (§5, §7) */
-.chg{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:99px;font-family:var(--mono);font-size:12px;font-weight:600;white-space:nowrap}
+.chg{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:99px;font-family:var(--sans);font-variant-numeric:tabular-nums;font-size:12.5px;font-weight:600;white-space:nowrap}
 .chg.up{background:var(--pos-dim);color:var(--pos)}
 .chg.down{background:var(--red-dim);color:var(--red)}
 .chg.none{color:var(--fg-3);padding:0;background:none;font-weight:500}
@@ -311,7 +332,7 @@ h1 em{font-style:normal;color:var(--ac-2)}
 .field label,.field .lbl{display:block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg-3);margin-bottom:9px;font-weight:600}
 .inp{display:flex;align-items:center;border:1px solid var(--bd);border-radius:var(--r);background:var(--bg);padding:0 16px;height:50px;gap:10px;transition:.2s}
 .inp:focus-within{border-color:var(--bd-2);box-shadow:0 0 0 3px var(--ac-dim)}
-.inp input{border:0;outline:0;background:none;flex:1;font-family:var(--mono);font-size:17px;font-weight:600;min-width:0;color:var(--fg)}
+.inp input{border:0;outline:0;background:none;flex:1;font-family:var(--sans);font-variant-numeric:tabular-nums;font-size:18px;font-weight:600;min-width:0;color:var(--fg)}
 .inp input::placeholder{color:var(--fg-4);font-family:var(--sans);font-weight:500}
 .inp select{color:var(--fg);background:var(--bg);border:0;outline:0;flex:1;font-weight:600;font-size:15px;min-width:0}
 .inp .unit{font-weight:600;color:var(--fg-3);font-size:12px;letter-spacing:.06em;flex:none}
@@ -330,7 +351,7 @@ h1 em{font-style:normal;color:var(--ac-2)}
 .vault{padding:22px;display:flex;flex-direction:column;gap:16px;transition:.2s}
 .vault:hover{border-color:rgba(124,140,255,.28);box-shadow:var(--shadow-card),0 0 0 1px rgba(124,140,255,.08),0 20px 50px -30px var(--ac-glow)}
 .vault .top-r2{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
-.vault .apr{font-family:var(--mono);font-size:36px;font-weight:600;line-height:1;color:var(--pos);letter-spacing:-.03em}
+.vault .apr{font-family:var(--sans);font-variant-numeric:tabular-nums;font-size:38px;font-weight:600;line-height:1;color:var(--pos);letter-spacing:-.03em}
 .vault .apr.none{color:var(--fg-3)}
 .vault .apr small{font-family:var(--sans);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;display:block;margin-top:10px;letter-spacing:.1em}
 .vault .meta{display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600}
@@ -429,10 +450,16 @@ h1 em{font-style:normal;color:var(--ac-2)}
   .side-soc .soc{justify-content:center;padding:0}
   .facts{grid-template-columns:repeat(3,minmax(0,1fr))}
   .facts>div:last-child{grid-column:span 2}
-  .lb-row{grid-template-columns:44px minmax(0,1fr) 120px 140px 100px 180px;gap:16px}
+  .lb{--lb-grid:32px minmax(150px,1.5fr) 104px 104px 112px 128px 80px 64px}
 }
 @media (max-width:1100px){
-  .search{width:240px}
+  .search{width:220px}
+}
+/* The chart goes first; its column stays, narrow, to hold the Stake button. */
+@media (max-width:1320px){
+  .lb{--lb-grid:32px minmax(150px,1.5fr) 104px 104px 112px 128px 80px 64px}
+  .lb-spark svg,.lb-cols .c-spark{visibility:hidden}
+  .lb-spark svg{display:none}
 }
 @media (max-width:980px){
   .vaults{grid-template-columns:1fr 1fr}
@@ -464,7 +491,9 @@ h1 em{font-style:normal;color:var(--ac-2)}
   .nav-in{height:auto;padding-top:12px;padding-bottom:0}
   .search{flex:1 1 150px;width:auto}
   .wrap{padding-top:24px}
-  .lb-row{grid-template-columns:40px minmax(0,1fr) 110px 130px 100px}
+  .lb{--lb-grid:30px minmax(130px,1fr) 100px 100px 104px 76px}
+  .lb-split,.lb-cols .c-split,.lb-cols .c-spark{display:none}
+  .ca-chip .ca-t{display:none}
   .lb-spark{display:none}                          /* the sparkline goes first */
   .g4{grid-template-columns:1fr 1fr}
 }
@@ -479,7 +508,16 @@ h1 em{font-style:normal;color:var(--ac-2)}
   .cal{grid-template-columns:repeat(7,1fr)}
   .sum .v{white-space:normal}
   .tl{grid-template-columns:1fr;gap:6px}
-  .lb-row{grid-template-columns:34px minmax(0,1fr) 96px 78px;gap:10px;min-height:64px;padding-left:6px}
+  .lb{--lb-grid:26px minmax(0,1fr) 96px 76px}
+  .lb-row{gap:10px;min-height:62px;padding-left:6px}
+  .lb-cols{gap:10px;padding-left:6px;padding-right:14px}
+  .lb-row [data-col="mc"],.lb-liq,.lb-cols .c-mc,.lb-cols .c-liq{display:none}
+  .tok-mc{display:inline}
+  .tok-name{display:none}
+  .foot{flex-direction:column;align-items:flex-start;gap:14px}
+  .foot-r{gap:8px 18px}
+  .ca-chip{padding:0 10px}
+  .ca-chip .num{display:none}
   .lb-split{display:none}                          /* then the split: the total is the figure */
   .rk{font-size:12px;padding-left:8px}
   .logo.lg{width:32px;height:32px;font-size:10.5px}
@@ -492,7 +530,10 @@ h1 em{font-style:normal;color:var(--ac-2)}
 }
 @media (min-width:641px){.wallet-short{display:none}}
 @media (max-width:420px){
-  .lb-row{grid-template-columns:minmax(0,1fr) 92px 72px;gap:8px;padding-left:14px}
+  .lb{--lb-grid:minmax(0,1fr) 92px 72px}
+  .lb-row{gap:8px;padding-left:14px}
+  .lb-cols{gap:8px;padding-left:14px}
+  .lb-cols .c-rk{display:none}
   .rk{display:none}                                /* the rank: the order says it */
   .chg{padding:3px 7px;font-size:11px}
   .lag .lag-word{display:none}
