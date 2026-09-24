@@ -5,7 +5,7 @@ import { LedgerDate, LedgerHeadline } from '@/components/pools/Ledger';
 import { LivePayouts } from '@/components/pools/LivePayouts';
 import { Masthead } from '@/components/shell/Masthead';
 
-export const metadata: Metadata = { title: 'Pools — Balast' };
+export const metadata: Metadata = { title: 'Pools' };
 
 export default function PoolsPage() {
   return (

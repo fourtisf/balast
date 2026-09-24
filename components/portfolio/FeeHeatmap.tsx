@@ -6,7 +6,7 @@ import { ether } from '@/lib/format';
 const DAYS_PER_ROW = 14;
 
 /**
- * Eight weeks of daily ether fees. Brighter green = more fees.
+ * Eight weeks of daily ether fees. Brighter = more fees.
  *
  * The grid itself is decorative — every value it encodes is also written out
  * in the summary below it, which is where a screen reader reads the data from.

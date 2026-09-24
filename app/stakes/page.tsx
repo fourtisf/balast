@@ -3,7 +3,7 @@ import { Masthead } from '@/components/shell/Masthead';
 import { MyStakes } from '@/components/stakes/MyStakes';
 import { VaultGrid } from '@/components/stakes/VaultGrid';
 
-export const metadata: Metadata = { title: 'Stakes — Balast' };
+export const metadata: Metadata = { title: 'Stakes' };
 
 export default function StakesPage() {
   return (

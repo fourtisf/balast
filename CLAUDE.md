@@ -5395,3 +5395,69 @@ no token and should not be posted. §13's recommendation to ship without a
 token was the doc's; the launch is the owner's decision, and nothing on the
 site says the token earns anything — Balast takes no fee, so there is
 nothing for it to earn.
+
+---
+
+## 37. Night: a premium dark redesign, and the name held in one place
+
+ALFA asked for the whole look changed, as a senior team would ship it, and
+for a new name. A reference board went out first (names and three premium
+directions). ALFA's answer: *startup premium dark*, and the name later.
+
+### What moved
+
+**Dark, not paper.** The Journal (§19) is replaced. The page is near-black
+(`--bg #07080B`), cards are lifted by a highlight on their top edge rather
+than a shadow, and one soft accent glow sits behind the top of every page.
+The token names are unchanged, so components changed values, not variables.
+
+**The colour rule changes, by the owner's choice.** §5 and §19 made green
+the only accent. Now:
+
+- **Periwinkle (`--ac #7C8CFF`) is the brand and whatever is active**: the
+  selected nav item, the primary button, focus, the leader row, sparklines.
+- **Green (`--pos`) means a rising number and nothing else**: a 24h gain, a
+  fee yield, fees paid out.
+- **Red (`--red`) still means a falling number and nothing else.**
+
+Nothing else is coloured. `e2e/honest-numbers.spec.ts` asserts the new red.
+
+**Two faces.** Instrument Sans for everything read, set heavy and tight for
+headlines. JetBrains Mono for everything counted. No serif any more.
+
+**A left rail, not a top bar.** `Sidebar` in `components/shell/TopNav.tsx`
+holds the brand, the six pages with icons, X and the network. Below 1180px
+it narrows to a 76px icon rail: the labels stay in the document, and a red
+dot stands in for the out-of-range count. Below 900px it becomes a strip
+across the top whose links scroll inside themselves. `TopBar` holds search,
+the indexer chip and the wallet, and is sticky and frosted.
+
+**The masthead** is a pill eyebrow, a heavy sans headline, and the global
+figures as a row of five tiles instead of a column beside it. **The
+leaderboard** is one card with a header and a mono rank. **Drawers and
+dialogs** blur what is behind them.
+
+### The name
+
+`BRAND` in `lib/site.ts` is now the only place the chrome reads the name
+from: the rail, the footer, the X link's label, and the page titles (the
+layout's `title.template`, so pages set only `'Pools'`, `'Stakes'`, and so
+on). Renaming the chrome is that one line plus `DOMAIN`. Copy inside the
+pages, the logo mark and the brand assets still say Balast and move with
+the same rename.
+
+Three things the rename cannot change and ALFA should weigh: **$BLST's**
+on-chain name and ticker are fixed in the contract; the **@Balastdotfi**
+handle can be renamed but old links break; and **balast.xyz** should
+301 to whatever domain replaces it. "Bolster" was recommended because it
+contains B-L-S-T in order, so the ticker still fits.
+
+### Unchanged
+
+Every figure, its source and every honest-numbers rule (§7); the
+`DataProvider` boundary; mint, collect and withdraw through Uniswap; the
+drawer's focus trap; `prefers-reduced-motion`; and no horizontal scroll
+at 360px.
+
+**Verified**: typecheck, lint, 562 unit tests, the production build and
+all 41 Playwright tests, plus screenshots at 1440, 1024 and 390px.

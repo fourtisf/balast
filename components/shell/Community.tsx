@@ -1,6 +1,6 @@
 'use client';
 
-import { SOCIAL, X_HANDLE } from '@/lib/site';
+import { BRAND, SOCIAL, X_HANDLE } from '@/lib/site';
 
 /**
  * Where the project talks: X.
@@ -25,7 +25,7 @@ export function Community({ className = '' }: { className?: string }) {
   return (
     <div className={`community ${className}`.trim()}>
       {SOCIAL.x ? (
-        <a className="soc" href={SOCIAL.x} target="_blank" rel="noopener noreferrer" title={`Follow ${X_HANDLE} on X`} aria-label={`Balast on X, ${X_HANDLE}`}>
+        <a className="soc" href={SOCIAL.x} target="_blank" rel="noopener noreferrer" title={`Follow ${X_HANDLE} on X`} aria-label={`${BRAND} on X, ${X_HANDLE}`}>
           {icon}
           {label}
         </a>

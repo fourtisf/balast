@@ -1,6 +1,6 @@
 import { CHAIN, CONTRACTS, EXPLORER_URL } from '@/lib/chain';
 import { shortWallet } from '@/lib/format';
-import { TOKEN_CA, TOKEN_TICKER } from '@/lib/site';
+import { BRAND, TOKEN_CA, TOKEN_TICKER } from '@/lib/site';
 import { Community } from './Community';
 import { Mark } from './Logo';
 
@@ -8,8 +8,10 @@ export function Footer() {
   return (
     <footer className="foot">
       <div className="foot-l">
-        <Mark size={18} color="var(--fg-4)" />
-        Balast · {CHAIN.name} · chain {CHAIN.id}
+        <Mark size={16} color="var(--fg-3)" />
+        <span>
+          {BRAND} · {CHAIN.name} · chain {CHAIN.id}
+        </span>
       </div>
       <div className="foot-r">
         <Community className="foot" />

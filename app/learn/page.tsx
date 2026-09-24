@@ -4,7 +4,7 @@ import { Masthead } from '@/components/shell/Masthead';
 import { CONTRACTS, EXPLORER_URL } from '@/lib/chain';
 
 export const metadata: Metadata = {
-  title: 'Learn — Balast',
+  title: 'Learn',
   description: 'How providing liquidity through Balast works, what it earns, and what can go wrong.',
 };
 

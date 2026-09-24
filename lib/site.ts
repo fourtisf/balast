@@ -3,6 +3,15 @@
  * metadata, Open Graph cards, the nginx config and every link we ever print.
  */
 
+/**
+ * The product's name, in one place. The owner has asked for a new name and
+ * not chosen it yet; until then every piece of chrome — the navigation, the
+ * footer, page titles, link previews — reads it from here, so the rename is
+ * this line and the domain below. Copy inside pages still says Balast and
+ * moves with the same rename.
+ */
+export const BRAND = 'Balast';
+
 /** The apex domain. No protocol, no trailing slash. */
 export const DOMAIN = 'balast.xyz';
 

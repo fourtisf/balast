@@ -3,6 +3,7 @@
 import { usePools } from '@/components/providers/MarketProvider';
 import { Flash } from '@/components/ui/Flash';
 import { count, usd } from '@/lib/format';
+import { CHAIN } from '@/lib/chain';
 
 const WORDS = [
   'No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six',
@@ -17,7 +18,7 @@ const WORDS = [
  * (§7) — so removing the date hides nothing.
  */
 export function LedgerDate() {
-  return <>The Balast ledger</>;
+  return <>Live markets · {CHAIN.name}</>;
 }
 
 /**
@@ -34,7 +35,7 @@ export function LedgerHeadline() {
   if (n === 0) {
     return (
       <>
-        Nothing on the ledger <em>yet</em>.
+        No markets listed <em>yet</em>.
       </>
     );
   }
@@ -42,8 +43,8 @@ export function LedgerHeadline() {
 
   return (
     <>
-      <em>{word}</em> {n === 1 ? 'market' : 'markets'} on the ledger.{' '}
-      <Flash as="em" text={usd(fees24h)} /> in fees in the last 24 hours.
+      <em>{word}</em> {n === 1 ? 'market' : 'markets'} live.{' '}
+      <Flash as="em" text={usd(fees24h)} /> paid to liquidity providers in the last 24 hours.
     </>
   );
 }

@@ -3,7 +3,7 @@ import { Suspense } from 'react';
 import { ShapeBuilder } from '@/components/positions/ShapeBuilder';
 import { Masthead } from '@/components/shell/Masthead';
 
-export const metadata: Metadata = { title: 'Positions — Balast' };
+export const metadata: Metadata = { title: 'Positions' };
 
 export default function PositionsPage() {
   return (

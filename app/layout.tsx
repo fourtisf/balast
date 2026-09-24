@@ -1,77 +1,77 @@
 import type { Metadata, Viewport } from 'next';
-import { DM_Sans, IBM_Plex_Mono, Instrument_Serif } from 'next/font/google';
+import { Instrument_Sans, JetBrains_Mono } from 'next/font/google';
 import { MarketProvider } from '@/components/providers/MarketProvider';
 import { UiProvider } from '@/components/providers/UiProvider';
 import { Footer } from '@/components/shell/Footer';
 import { StakeDrawer } from '@/components/shell/StakeDrawer';
-import { TopNav } from '@/components/shell/TopNav';
+import { Sidebar, TopBar } from '@/components/shell/TopNav';
 import { WalletModal } from '@/components/shell/WalletModal';
 import { Toast } from '@/components/ui/Toast';
-import { SITE_URL, X_HANDLE } from '@/lib/site';
+import { BRAND, SITE_URL, X_HANDLE } from '@/lib/site';
 import './globals.css';
 
-// Three faces, each with one job (§19): the serif for headlines, the sans
-// for everything read, the mono for everything counted.
-const serif = Instrument_Serif({
-  subsets: ['latin'],
-  weight: '400',
-  style: ['normal', 'italic'],
-  variable: '--font-instrument-serif',
-  display: 'swap',
-});
-
-const sans = DM_Sans({
+// Two faces, each with one job: Instrument Sans for everything read — set
+// tight and heavy it is also the display face — and JetBrains Mono for
+// everything counted, so a number is a number wherever it appears.
+const sans = Instrument_Sans({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
-  variable: '--font-dm-sans',
+  variable: '--font-sans',
   display: 'swap',
 });
 
-const mono = IBM_Plex_Mono({
+const mono = JetBrains_Mono({
   subsets: ['latin'],
   weight: ['400', '500', '600'],
-  variable: '--font-plex-mono',
+  variable: '--font-mono',
   display: 'swap',
 });
+
+const TAGLINE = 'Liquidity layer for Robinhood Chain';
+const DESCRIPTION =
+  "Deposit into any token on Robinhood Chain and earn its pool's swap fees. No lockups, no emissions.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: 'Balast — Liquidity layer for Robinhood Chain',
-  description:
-    'Deposit into any token on Robinhood Chain and earn its pool\'s swap fees. No lockups, no emissions.',
+  title: { default: `${BRAND} — ${TAGLINE}`, template: `%s — ${BRAND}` },
+  description: DESCRIPTION,
   alternates: { canonical: '/' },
   openGraph: {
     type: 'website',
     url: SITE_URL,
-    siteName: 'Balast',
-    title: 'Balast — Liquidity layer for Robinhood Chain',
-    description:
-      'Deposit into any token on Robinhood Chain and earn its pool\'s swap fees. No lockups, no emissions.',
-    images: [{ url: '/og-card.png', width: 1200, height: 630, alt: 'Balast' }],
+    siteName: BRAND,
+    title: `${BRAND} — ${TAGLINE}`,
+    description: DESCRIPTION,
+    images: [{ url: '/og-card.png', width: 1200, height: 630, alt: BRAND }],
   },
   twitter: { card: 'summary_large_image', site: X_HANDLE, images: ['/og-card.png'] },
 };
 
 export const viewport: Viewport = {
-  themeColor: '#F5F3EE',
+  themeColor: '#07080B',
   width: 'device-width',
   initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${serif.variable} ${sans.variable} ${mono.variable}`}>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
       <body>
         <UiProvider>
           <MarketProvider>
             <a className="skip" href="#main">
               Skip to content
             </a>
-            <TopNav />
-            <main className="wrap" id="main">
-              {children}
-              <Footer />
-            </main>
+            <div className="app">
+              <Sidebar />
+              <div className="app-col">
+                <TopBar />
+                <main className="wrap" id="main">
+                  {children}
+                  <Footer />
+                </main>
+              </div>
+            </div>
             <StakeDrawer />
             <WalletModal />
             <Toast />

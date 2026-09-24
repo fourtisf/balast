@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { RouterPanel } from '@/components/router/RouterPanel';
 import { Masthead } from '@/components/shell/Masthead';
 
-export const metadata: Metadata = { title: 'Router — Balast' };
+export const metadata: Metadata = { title: 'Router' };
 
 export default function RouterPage() {
   return (

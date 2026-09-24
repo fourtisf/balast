@@ -238,7 +238,7 @@ export function PortfolioBody() {
               <h2 className="sect-h">Fees earned · by day</h2>
               {daily.values.length > 0 && (
                 <span className="muted" style={{ fontSize: 12 }}>
-                  deeper green = more
+                  brighter = more
                 </span>
               )}
             </div>
@@ -314,7 +314,7 @@ export function PortfolioBody() {
             <h2 className="sect-h">Daily fees · 8 weeks</h2>
             {hasHeatmap && (
               <span className="muted" style={{ fontSize: 12 }}>
-                deeper green = more ETH
+                brighter = more ETH
               </span>
             )}
           </div>
