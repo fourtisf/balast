@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { isEther } from '@/lib/chain';
-import { SITE_URL, logoProxy } from '@/lib/site';
+import { logoProxy, ownSitePath } from '@/lib/site';
 import { monogram, tokenMark } from '@/lib/token-mark';
 import type { TokenMeta } from '@/lib/data/types';
 
@@ -45,10 +45,7 @@ const ETHER_LOGO = '/tokens/eth.svg';
  * never leaves the origin it is already on.
  */
 function ownMarkPath(url: string | null | undefined): string | null {
-  if (!url) return null;
-  if (url.startsWith('/')) return url;
-  const site = SITE_URL.replace(/\/+$/, '');
-  return url.startsWith(`${site}/`) ? url.slice(site.length) : null;
+  return ownSitePath(url);
 }
 
 export function TokenBadge({

@@ -254,7 +254,7 @@ export function WalletModal() {
           <>
             <p className="lede">
               {installed > 0
-                ? 'Pick a wallet. Balast never takes custody: your positions stay in your wallet.'
+                ? 'Pick a wallet. LockFi never takes custody: your positions stay in your wallet.'
                 : 'No wallet extension is installed in this browser. Install one below, or scan with your phone.'}
             </p>
             <div className="wallet-list">

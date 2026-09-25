@@ -109,7 +109,7 @@ describe('refreshLogos', () => {
     });
     expect(await refreshLogos({ url: 'config/tokens.json', chainId: 4663 })).toBe(1);
     expect((await prisma.token.findUniqueOrThrow({ where: { address: weth } })).logoUrl).toBe(
-      'https://balast.xyz/tokens/eth.svg',
+      'https://lockfi.org/tokens/eth.svg',
     );
   });
 });

@@ -36,7 +36,7 @@
 import { createHash } from 'node:crypto';
 import { ContractFunctionExecutionError, getAddress } from 'viem';
 import { CHAIN, CONTRACTS, EXPLORER_URL, GECKOTERMINAL_NETWORK, NATIVE_ETH } from '../../lib/chain';
-import { SITE_URL } from '../../lib/site';
+import { LEGACY_SITE_URLS, SITE_URL, ownSitePath } from '../../lib/site';
 import { rpc } from '../chain/client';
 import { prisma } from '../db';
 import { isSafeLogoUrl } from './logos';
@@ -78,9 +78,7 @@ export type Fetch = (
  * is the check that actually belongs to them.
  */
 export function isOwnSiteUrl(url: string | null | undefined): boolean {
-  if (!url) return false;
-  if (url.startsWith('/')) return true;
-  return url.startsWith(`${SITE_URL.replace(/\/+$/, '')}/`);
+  return ownSitePath(url) !== null;
 }
 
 export async function imageLoads(fetch: Fetch, url: string): Promise<boolean> {
@@ -126,7 +124,7 @@ const TIMEOUT_MS = 10_000;
  * not an answer about the token. A named, browser-shaped agent with a URL
  * to look up is what those rules expect from a well-behaved service.
  */
-export const USER_AGENT = 'Mozilla/5.0 (compatible; Balast/1.0; +https://balast.xyz)';
+export const USER_AGENT = `Mozilla/5.0 (compatible; LockFi/1.0; +${SITE_URL})`;
 
 interface Answer {
   status: number;
@@ -332,7 +330,10 @@ export async function forgetSharedLogos(
   const log = options.log ?? (() => {});
   const fetch = options.fetch ?? (globalThis.fetch as unknown as Fetch);
   const recorded = await prisma.token.findMany({
-    where: { logoUrl: { not: null }, NOT: { logoUrl: { startsWith: `${SITE_URL}/` } } },
+    where: {
+      logoUrl: { not: null },
+      NOT: [SITE_URL, ...LEGACY_SITE_URLS].map((origin) => ({ logoUrl: { startsWith: `${origin}/` } })),
+    },
     select: { address: true, logoUrl: true },
   });
   // Group by the picture, not the URL: the same bytes under many URLs.

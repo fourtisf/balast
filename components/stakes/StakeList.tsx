@@ -63,7 +63,7 @@ export function StakeList() {
     <div className="card mine">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
         <h2 className="sect-h">Stake a pool</h2>
-        <span className="hint">One full-range position each · to your wallet · no Balast fee · no lockup</span>
+        <span className="hint">One full-range position each · to your wallet · no LockFi fee · no lockup</span>
       </div>
       <div className="tbl-wrap" style={{ maxHeight: 'none' }}>
         <table className="tbl" data-testid="stake-list">
@@ -130,7 +130,7 @@ export function StakeList() {
             ) : (
               <>
                 <b>Nothing to stake yet</b>No listed pool can be minted into here yet — either none clears the listing
-                bar, or each runs a hook Balast has not verified.
+                bar, or each runs a hook LockFi has not verified.
               </>
             )}
           </div>

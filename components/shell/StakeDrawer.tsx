@@ -325,7 +325,7 @@ export function StakeDrawer() {
                     {/* §7: the protocol fee is disclosed here, before signing. There is none:
                         nothing of Balast's stands between the position and its fees (§20). */}
                     <div className="disclose">
-                      <span className="muted">Balast fee</span>
+                      <span className="muted">LockFi fee</span>
                       <b className="num">None · every fee is yours</b>
                     </div>
                     <div className="disclose">
@@ -333,7 +333,7 @@ export function StakeDrawer() {
                       <b>Your wallet, as an NFT</b>
                     </div>
                     <div className="disclose">
-                      <span className="muted">Balast holds</span>
+                      <span className="muted">LockFi holds</span>
                       <b>Nothing</b>
                     </div>
                     <div className="disclose">
@@ -344,7 +344,7 @@ export function StakeDrawer() {
                   {stakeTarget && stakeTarget.id !== pool.id && (
                     <p className="hint" style={{ marginTop: 12 }}>
                       This row is {pool.token.symbol}&rsquo;s deepest market, and it runs a hook
-                      Balast has not verified. Staking opens{' '}
+                      LockFi has not verified. Staking opens{' '}
                       <b>
                         {pool.token.symbol} / {quoteLabel(stakeTarget)} · {feeTierLabel(stakeTarget.feeTierBps)}
                       </b>{' '}
@@ -363,8 +363,8 @@ export function StakeDrawer() {
                     {pool.token.launchpad && !pool.stakeable
                       ? `${pool.token.symbol} is still on its ${pool.token.launchpad} curve, and pre-graduation liquidity cannot be staked until the pool graduates.`
                       : !pool.stakeable
-                        ? `This pool runs a hook${hook ? ` (${hook.slice(0, 6)}…${hook.slice(-4)})` : ''} that Balast has not verified. A hook can refuse liquidity, price it on its own curve, or take most of every trade as its fee — one on this chain takes about 98%. It is not offered until someone has looked.`
-                        : `No ${pool.token.symbol} market that clears the listing bar runs a hook Balast has verified, so none is offered for staking yet.`}
+                        ? `This pool runs a hook${hook ? ` (${hook.slice(0, 6)}…${hook.slice(-4)})` : ''} that LockFi has not verified. A hook can refuse liquidity, price it on its own curve, or take most of every trade as its fee — one on this chain takes about 98%. It is not offered until someone has looked.`
+                        : `No ${pool.token.symbol} market that clears the listing bar runs a hook LockFi has verified, so none is offered for staking yet.`}
                   </p>
                 </div>
               )}

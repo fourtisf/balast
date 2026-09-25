@@ -4,29 +4,45 @@
  */
 
 /**
- * The product's name, in one place. The owner has asked for a new name and
- * not chosen it yet; until then every piece of chrome — the navigation, the
- * footer, page titles, link previews — reads it from here, so the rename is
- * this line and the domain below. Copy inside pages still says Balast and
- * moves with the same rename.
+ * The product's name, in one place: the navigation, the footer, page titles
+ * and link previews read it from here (§39).
  */
-export const BRAND = 'Balast';
+export const BRAND = 'LockFi';
 
 /** The apex domain. No protocol, no trailing slash. */
-export const DOMAIN = 'balast.xyz';
+export const DOMAIN = 'lockfi.org';
 
 export const SITE_URL = `https://${DOMAIN}`;
 
 /**
- * Spellings a user might type instead. Each one should be registered and
- * 301'd to DOMAIN — an unowned confusable is a phishing domain someone else
- * gets to point at a wallet drainer.
- *
- * `ballast.xyz`, the English spelling on this same TLD, is NOT ours: it is
- * registered and parked for sale by a third party. Until that is acquired,
- * this is the one real gap in the setup. See deploy/nginx.conf.
+ * Where the site used to live. balast.xyz 301s to DOMAIN (deploy/nginx.conf),
+ * and the database still holds logo URLs recorded under it, so a URL on one
+ * of these is still one of our own files (§39).
  */
-export const DEFENSIVE_DOMAINS = ['www.balast.xyz'] as const;
+export const LEGACY_SITE_URLS = ['https://balast.xyz'] as const;
+
+/**
+ * The same-origin path of a URL on this site, the current domain or a former
+ * one; null for anybody else's URL. A relative path is already one.
+ */
+export function ownSitePath(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (url.startsWith('/')) return url;
+  for (const origin of [SITE_URL, ...LEGACY_SITE_URLS]) {
+    if (url.startsWith(`${origin}/`)) return url.slice(origin.length);
+  }
+  return null;
+}
+
+/**
+ * Hosts that 301 to DOMAIN. An unowned confusable is a phishing domain
+ * someone else gets to point at a wallet drainer.
+ *
+ * `lockfi.com` is NOT ours: it is parked for sale by a third party, and it is
+ * what a person typing the name reaches by default. Acquiring it is the one
+ * real gap in the setup. See deploy/nginx.conf.
+ */
+export const DEFENSIVE_DOMAINS = ['www.lockfi.org', 'balast.xyz', 'www.balast.xyz'] as const;
 
 /**
  * Where the project talks, and the token's contract address.

@@ -15,7 +15,7 @@ export default function PositionsPage() {
             Shape your liquidity <em>by hand</em>.
           </>
         }
-        lede="Pick a range and a shape. Uniswap mints each bin straight to your wallet, and nothing is held by Balast."
+        lede="Pick a range and a shape. Uniswap mints each bin straight to your wallet, and nothing is held by LockFi."
       />
       {/* The builder reads ?pool= and ?range= from the URL, which Next renders inside a boundary. */}
       <Suspense fallback={null}>

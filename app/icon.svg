@@ -1,5 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Balast">
-  <rect width="32" height="32" fill="#F5F3EE"/>
-  <g transform="translate(2.56 2.56) scale(0.84)"><path d="M 5 6 L 13.5 13 L 13.5 26 L 5 26 Z" fill="#14201B" stroke="#14201B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
-  <path d="M 27 6 L 18.5 13 L 18.5 26 L 27 26 Z" fill="#14201B" stroke="#14201B" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="LockFi"><rect width="64" height="64" rx="14" fill="#0A0B0D"/><g transform="translate(6.399999999999999 6.399999999999999) scale(0.8)"><path d="M23 53.5V22.5a9 9 0 0 1 18 0v31" fill="none" stroke="#EDEEF1" stroke-width="6.5"/><rect x="9.75" y="41.5" width="6.5" height="12" rx="1.5" fill="#EDEEF1"/><rect x="28.75" y="32.5" width="6.5" height="21" rx="1.5" fill="#EDEEF1"/><rect x="47.75" y="41.5" width="6.5" height="12" rx="1.5" fill="#EDEEF1"/></g></svg>

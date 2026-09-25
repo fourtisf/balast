@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# First-time server setup for balast.xyz. Run once, as root, on a fresh
+# First-time server setup for lockfi.org. Run once, as root, on a fresh
 # Ubuntu VPS whose DNS already points here.
 #
 #   bash deploy/bootstrap.sh
@@ -9,10 +9,10 @@
 # not apply system updates — do both yourself first.
 set -euo pipefail
 
-DOMAIN=balast.xyz
+DOMAIN=lockfi.org
 APP_USER=balast
 APP_DIR=/var/www/balast
-REPO=https://github.com/fourtisf/depth.git
+REPO=https://github.com/fourtisf/balast.git
 # Overridable, and kept in step with deploy.sh: a default naming whichever
 # session last touched this file will otherwise install an old version of the
 # site on a fresh box and look like it worked.

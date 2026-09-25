@@ -16,6 +16,7 @@
 
 import { getAddress } from 'viem';
 import { CHAIN, EXPLORER_URL, PUBLIC_RPC_URL, PUBLIC_RPC_URLS } from './chain';
+import { BRAND, SITE_URL } from './site';
 
 export interface WalletInfo {
   uuid: string;
@@ -104,10 +105,10 @@ async function walletConnectProvider(): Promise<Eip1193Provider & { accounts: st
     rpcMap: { [CHAIN.id]: PUBLIC_RPC_URL },
     showQrModal: true,
     metadata: {
-      name: 'Balast',
+      name: BRAND,
       description: 'Liquidity layer for Robinhood Chain',
-      url: typeof window !== 'undefined' ? window.location.origin : 'https://balast.xyz',
-      icons: [`${typeof window !== 'undefined' ? window.location.origin : 'https://balast.xyz'}/icon.svg`],
+      url: typeof window !== 'undefined' ? window.location.origin : SITE_URL,
+      icons: [`${typeof window !== 'undefined' ? window.location.origin : SITE_URL}/icon.svg`],
     },
   });
   return provider as unknown as Eip1193Provider & {

@@ -109,7 +109,7 @@ export function PositionList({
       {only && (
         <p className="hint" style={{ marginBottom: 8 }}>
           Each is an NFT in your wallet, earning this pool&rsquo;s fees while the price is in its range. Collect the fees
-          or withdraw the whole position at any time — no lockup, no Balast fee.
+          or withdraw the whole position at any time — no lockup, no LockFi fee.
         </p>
       )}
 

@@ -28,7 +28,7 @@ export default function PoolsPage() {
             <p className="lede">
               Deposit into any token on Robinhood Chain and earn its pool&rsquo;s swap fees, in a
               position minted straight to your wallet. No lockups, no emissions, nothing held by
-              Balast.
+              LockFi.
             </p>
           </div>
           <div className="row">

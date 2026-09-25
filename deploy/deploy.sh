@@ -107,19 +107,102 @@ as_app pm2 save
 # deploy rather than a five-figure number from before the fix.
 as_app pm2 reset all >/dev/null 2>&1 || true
 
-# Only touch nginx if the config in the repo changed.
-if ! diff -q deploy/nginx.conf /etc/nginx/sites-available/balast >/dev/null 2>&1; then
+# ---------------------------------------------------------------------------
+# nginx: lockfi.org, and balast.xyz redirecting to it (§39).
+# ---------------------------------------------------------------------------
+DOMAIN=lockfi.org
+
+# A certificate for DOMAIN, before any config that names it: nginx refuses a
+# config whose ssl_certificate file does not exist, so installing nginx.conf
+# first would fail `nginx -t`. Answers the ACME challenge from a temporary
+# port-80 server, which is removed again whatever certbot says.
+ensure_cert() {
+  [[ -s "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]] && return 0
+  echo "==> certificate for $DOMAIN"
+  local me host got
+  me=$(curl -4 -fsS --max-time 10 https://api.ipify.org 2>/dev/null || true)
+  for host in "$DOMAIN" "www.$DOMAIN"; do
+    got=$(getent ahostsv4 "$host" | awk 'NR==1{print $1}')
+    if [[ -z "$got" || ( -n "$me" && "$got" != "$me" ) ]]; then
+      echo "   $host resolves to '${got:-nothing}'; this box is ${me:-unknown}."
+      echo "   Point its A record here (www as a CNAME to $DOMAIN), wait a few minutes, deploy again."
+      return 1
+    fi
+  done
+  install -d -m 755 /var/www/certbot
+  local acme=/etc/nginx/sites-enabled/lockfi-acme
+  cat > "$acme" <<ACME
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $DOMAIN www.$DOMAIN;
+    location ^~ /.well-known/acme-challenge/ { root /var/www/certbot; default_type "text/plain"; }
+    location / { return 404; }
+}
+ACME
+  if ! nginx -t >/dev/null 2>&1; then
+    rm -f "$acme"
+    echo "   nginx rejected the temporary challenge config:"; nginx -t || true
+    return 1
+  fi
+  systemctl reload nginx
+  local rc=0
+  certbot certonly --webroot -w /var/www/certbot -d "$DOMAIN" -d "www.$DOMAIN" \
+    --agree-tos --non-interactive --register-unsafely-without-email || rc=$?
+  rm -f "$acme"
+  nginx -t >/dev/null 2>&1 && systemctl reload nginx
+  return $rc
+}
+
+# Install a site file if it differs; remember that something changed.
+NGINX_CHANGED=0
+install_site() {
+  local src=$1 name=$2
+  if ! diff -q "$src" "/etc/nginx/sites-available/$name" >/dev/null 2>&1; then
+    install -m 644 "$src" "/etc/nginx/sites-available/$name"
+    NGINX_CHANGED=1
+  fi
+  if [[ ! -L "/etc/nginx/sites-enabled/$name" ]]; then
+    ln -sf "/etc/nginx/sites-available/$name" "/etc/nginx/sites-enabled/$name"
+    NGINX_CHANGED=1
+  fi
+}
+
+if ensure_cert; then
+  # Keep the working config, so a rejected new one is put back rather than
+  # left for the next reload to fail on — which on a shared server would take
+  # every other site on the box down with this one.
+  NGINX_BACKUP=$(mktemp -d)
+  cp -a /etc/nginx/sites-available /etc/nginx/sites-enabled "$NGINX_BACKUP"/
   # Don't install the map if something else on the box already defines
-  # $connection_upgrade: a duplicate `map` fails `nginx -t`, and on a shared
-  # server that takes every other site down on the next reload.
+  # $connection_upgrade: a duplicate `map` fails `nginx -t` too.
   if ! grep -rqs 'connection_upgrade' /etc/nginx/conf.d /etc/nginx/nginx.conf; then
     install -m 644 deploy/upgrade-map.conf /etc/nginx/conf.d/upgrade-map.conf
+    NGINX_CHANGED=1
   fi
-  install -m 644 deploy/nginx.conf /etc/nginx/sites-available/balast
-  nginx -t && systemctl reload nginx
+  install_site deploy/nginx.conf balast
+  # The old name redirects only where its certificate exists (a box that
+  # served balast.xyz); a fresh box has none and skips it.
+  if [[ -s /etc/letsencrypt/live/balast.xyz/fullchain.pem ]]; then
+    install_site deploy/nginx-legacy.conf balast-legacy
+  fi
+  if [[ $NGINX_CHANGED == 1 ]]; then
+    if nginx -t; then
+      systemctl reload nginx
+      echo "==> nginx reloaded: https://$DOMAIN"
+    else
+      echo "!! nginx rejected the new config — the previous one is back, and the site keeps serving"
+      rm -rf /etc/nginx/sites-available /etc/nginx/sites-enabled
+      cp -a "$NGINX_BACKUP"/sites-available "$NGINX_BACKUP"/sites-enabled /etc/nginx/
+      nginx -t && systemctl reload nginx
+    fi
+  fi
+  rm -rf "$NGINX_BACKUP"
+else
+  echo "!! no certificate for $DOMAIN yet — nginx is unchanged and the site stays on its current domain"
 fi
 
-as_app pm2 status
+as_app pm2 list
 
 echo
 # Say what is running, because the question after a deploy that changed

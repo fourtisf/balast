@@ -103,7 +103,7 @@ export function ShapeBuilder() {
           <b>{everyPool.length === 0 ? 'Nothing to mint into yet' : 'No pool is offered for minting'}</b>
           {everyPool.length === 0
             ? 'No pool is listed yet. The builder opens on the first one the indexer lists.'
-            : 'Every listed pool runs a hook Balast has not verified. A hook can refuse liquidity ' +
+            : 'Every listed pool runs a hook LockFi has not verified. A hook can refuse liquidity ' +
               'or take most of every trade as its fee, so none is offered until someone has looked ' +
               '(STAKEABLE_HOOKS).'}
         </div>
@@ -571,7 +571,7 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
                 token.unmintable.length === 1 ? '' : 's'
               } (${[...new Set(token.unmintable.map((m) => quoteLabel(m)))].join(', ')}) ${
                 token.unmintable.length === 1 ? 'runs a hook' : 'run hooks'
-              } Balast has not verified, so ${token.unmintable.length === 1 ? 'it is' : 'they are'} listed but not offered here.`}
+              } LockFi has not verified, so ${token.unmintable.length === 1 ? 'it is' : 'they are'} listed but not offered here.`}
           </p>
         </div>
 
@@ -653,8 +653,8 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
           </div>
           <p className="hint">
             {onChain
-              ? `Bins above the current price hold ${tokenSymbol}; bins below hold ${quoteSymbol}. Holding only one of them is fine: Balast swaps part of it for the other in this same pool first, then mints.`
-              : `Balast swaps part of this into ${tokenSymbol} to fill the shape you choose.`}
+              ? `Bins above the current price hold ${tokenSymbol}; bins below hold ${quoteSymbol}. Holding only one of them is fine: LockFi swaps part of it for the other in this same pool first, then mints.`
+              : `LockFi swaps part of this into ${tokenSymbol} to fill the shape you choose.`}
           </p>
         </div>
 
@@ -826,11 +826,11 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
                 ? `This pool holds its ether as aeWETH. One transaction wraps ${fmtAmount(flow.wrap!.shortfall, 18)} of your ETH into the same amount of it — one token per ether, no price and nothing to slip — and the mint follows.`
               : flow.step === 'zap'
                 ? flow.zap?.quote
-                  ? `The wallet holds ${zapIn} and not enough ${zapOut}. Step 1 swaps ${fmtAmount(flow.zap.quote.amountIn, zapInDecimals)} ${zapIn} for about ${fmtAmount(flow.zap.quote.expectedOut, zapOutDecimals)} ${zapOut} in this same pool, through Uniswap's router — ${(flow.zap.quote.lossBps / 100).toFixed(2)}% to the pool's fee and price impact, and it reverts below ${fmtAmount(flow.zap.quote.minOut, zapOutDecimals)}.${flow.zap.payWithEther && pool.protocol !== 'v3' && wrapped ? ' Paid in ETH: the router wraps it in the same transaction, so no approval is needed.' : ''} Step 2 ${wrapped && pool.protocol !== 'v3' ? 'wraps the ETH side and mints' : 'mints'}, fitted to what the swap delivered. Nothing is held by Balast.`
+                  ? `The wallet holds ${zapIn} and not enough ${zapOut}. Step 1 swaps ${fmtAmount(flow.zap.quote.amountIn, zapInDecimals)} ${zapIn} for about ${fmtAmount(flow.zap.quote.expectedOut, zapOutDecimals)} ${zapOut} in this same pool, through Uniswap's router — ${(flow.zap.quote.lossBps / 100).toFixed(2)}% to the pool's fee and price impact, and it reverts below ${fmtAmount(flow.zap.quote.minOut, zapOutDecimals)}.${flow.zap.payWithEther && pool.protocol !== 'v3' && wrapped ? ' Paid in ETH: the router wraps it in the same transaction, so no approval is needed.' : ''} Step 2 ${wrapped && pool.protocol !== 'v3' ? 'wraps the ETH side and mints' : 'mints'}, fitted to what the swap delivered. Nothing is held by LockFi.`
                   : `The wallet holds ${zapIn} and not enough ${zapOut}: pricing a swap for the rest in this same pool.`
               : flow.step === 'approve'
-                ? `${flow.approvals.length} approval${flow.approvals.length === 1 ? '' : 's'} first, then one transaction to mint. Nothing is held by Balast.`
-                : `${flow.fitted ? `Fitted to your balance: ${(flow.fitted.bps / 100).toFixed(1)}% of the deposit typed, so the mint takes only what the wallet holds. ` : ''}One transaction through Uniswap's ${pool.protocol === 'v3' ? 'v3 position manager' : 'PositionManager'}${flow.plan ? `: ${flow.plan.positions.length} position${flow.plan.positions.length === 1 ? '' : 's'}, each an NFT in your wallet` : ''}. Nothing is held by Balast.`
+                ? `${flow.approvals.length} approval${flow.approvals.length === 1 ? '' : 's'} first, then one transaction to mint. Nothing is held by LockFi.`
+                : `${flow.fitted ? `Fitted to your balance: ${(flow.fitted.bps / 100).toFixed(1)}% of the deposit typed, so the mint takes only what the wallet holds. ` : ''}One transaction through Uniswap's ${pool.protocol === 'v3' ? 'v3 position manager' : 'PositionManager'}${flow.plan ? `: ${flow.plan.positions.length} position${flow.plan.positions.length === 1 ? '' : 's'}, each an NFT in your wallet` : ''}. Nothing is held by LockFi.`
               : 'One transaction. You keep the NFT.'}
           </p>
         )}

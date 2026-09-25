@@ -5,7 +5,7 @@ import { CONTRACTS, EXPLORER_URL } from '@/lib/chain';
 
 export const metadata: Metadata = {
   title: 'Learn',
-  description: 'How providing liquidity through Balast works, what it earns, and what can go wrong.',
+  description: 'How providing liquidity through LockFi works, what it earns, and what can go wrong.',
 };
 
 /**
@@ -18,11 +18,11 @@ export const metadata: Metadata = {
 const SECTIONS: { id: string; q: string; a: React.ReactNode }[] = [
   {
     id: 'what',
-    q: 'What does Balast do?',
+    q: 'What does LockFi do?',
     a: (
       <>
         It helps you provide liquidity to Uniswap pools on Robinhood Chain. You choose a pool and how to spread your
-        deposit; Balast builds the transaction; <b>Uniswap&rsquo;s own contracts</b> create the position and mint it to
+        deposit; LockFi builds the transaction; <b>Uniswap&rsquo;s own contracts</b> create the position and mint it to
         your wallet. Every swap through the pool pays a fee, and your position earns its share of the fees paid while the
         price is inside its range.
       </>
@@ -33,12 +33,12 @@ const SECTIONS: { id: string; q: string; a: React.ReactNode }[] = [
     q: 'Who holds my money?',
     a: (
       <>
-        You do. Balast deploys no contract of its own. Your position is an NFT in your wallet, created by Uniswap&rsquo;s{' '}
+        You do. LockFi deploys no contract of its own. Your position is an NFT in your wallet, created by Uniswap&rsquo;s{' '}
         <a href={`${EXPLORER_URL}/address/${CONTRACTS.positionManager}`} target="_blank" rel="noopener noreferrer">
           PositionManager
         </a>{' '}
         (v4) or NonfungiblePositionManager (v3). Only the wallet holding it can collect its fees or withdraw it. There is
-        no lockup, and Balast takes no fee.
+        no lockup, and LockFi takes no fee.
       </>
     ),
   },
@@ -132,7 +132,7 @@ const SECTIONS: { id: string; q: string; a: React.ReactNode }[] = [
     a: (
       <>
         Uniswap v4 pools can run a <i>hook</i> — extra code the pool calls on every trade and deposit. A hook can take a
-        fee of its own or refuse outside liquidity. Balast offers a hooked pool only once its hook has been looked at and
+        fee of its own or refuse outside liquidity. LockFi offers a hooked pool only once its hook has been looked at and
         allowed; until then its button reads View. Launchpad pools before graduation are listed but not stakeable.
       </>
     ),
@@ -142,7 +142,7 @@ const SECTIONS: { id: string; q: string; a: React.ReactNode }[] = [
     q: 'Where do the numbers come from?',
     a: (
       <>
-        From the chain: every swap and liquidity event, read by Balast&rsquo;s own indexer, priced through one path —
+        From the chain: every swap and liquidity event, read by LockFi&rsquo;s own indexer, priced through one path —
         ether through the ETH/USDG pool, everything else through ether. Today&rsquo;s volume may come from DexScreener or
         GeckoTerminal where the row says <i>live</i>. If the indexer is behind, the top bar says by how much. Nothing is
         projected or subsidised; there are no token emissions.
@@ -159,7 +159,7 @@ const SECTIONS: { id: string; q: string; a: React.ReactNode }[] = [
           explorer
         </a>
         . Every transaction is checked by the network before your wallet asks you to sign — if it would fail, the site
-        says why instead. Keep a little ETH for gas. Any contract address circulating as &ldquo;Balast&rsquo;s
+        says why instead. Keep a little ETH for gas. Any contract address circulating as &ldquo;LockFi&rsquo;s
         token&rdquo; is not ours: there is no token.
       </>
     ),

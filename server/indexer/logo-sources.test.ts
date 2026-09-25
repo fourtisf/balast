@@ -113,7 +113,7 @@ describe('every source', () => {
     await coingecko().lookup(TOKEN, { fetch, log: quiet });
     await coinmarketcap({ apiKey: 'k' }).lookup(TOKEN, { fetch, log: quiet });
     expect(seen.length).toBeGreaterThanOrEqual(4);
-    for (const headers of seen) expect(headers['user-agent']).toMatch(/^Mozilla\/5\.0 \(compatible; Balast/);
+    for (const headers of seen) expect(headers['user-agent']).toMatch(/^Mozilla\/5\.0 \(compatible; LockFi/);
   });
 });
 
@@ -212,7 +212,7 @@ describe('tickers', () => {
     expect(api.calls).toHaveLength(0);
     // The mark is a real file in the repository, on the canonical site by default.
     expect(await tickers({ facts }).lookup('0x00000000000000000000000000000000000000a3', { fetch: api.fetch, log: quiet })).toBe(
-      'https://balast.xyz/tokens/spcx.svg',
+      'https://lockfi.org/tokens/spcx.svg',
     );
     expect(existsSync(join(process.cwd(), 'public', 'tokens', 'spcx.svg'))).toBe(true);
   });

@@ -5553,3 +5553,60 @@ sends a transaction.
 **Verified**: typecheck, lint, the unit tests (new `tokenPrice` cases),
 the production build and all 41 Playwright tests, plus screenshots at
 1440 and 1280px.
+
+---
+
+## 39. LockFi, on lockfi.org
+
+The owner renamed the product **LockFi** and registered **lockfi.org** on
+Hostinger, with an A record to the box (31.97.66.123) and `www` as a CNAME.
+The name was the owner's pick after several rounds of candidates. The mark
+is the **pin arch**, picked from six studies: a padlock's shackle and its
+tumbler pins drawn as one bar chart, tallest in the middle. That is the
+curve the position builder draws, so the logo is a lock made of liquidity.
+
+### What moved
+
+- **The name.** `BRAND` in `lib/site.ts` is `LockFi`, and every page's
+  user-facing copy says LockFi. Identifiers, comments, the package name,
+  the server paths (`/var/www/balast`, the `balast` user and database, the
+  `balast-*` PM2 processes) and this document's history are unchanged. They
+  are not user-facing, and renaming them on a live box would cost a
+  migration for nothing.
+- **The domain.** `DOMAIN` is `lockfi.org`. `balast.xyz` and both `www`
+  hosts answer with a 301 to it, path kept, so every link shared under the
+  old name still works. `LEGACY_SITE_URLS` and `ownSitePath` keep a logo
+  URL recorded under balast.xyz reading as one of the site's own files.
+  Without that, ether's and SPCX's own marks would have become "somebody
+  else's URL" overnight and gone through the load check and the proxy
+  (§21).
+- **The mark.** `components/shell/Logo.tsx` holds the geometry, one colour
+  only. `npm run brand:lockfi` (`scripts/build-brand-lockfi.mjs`) writes the
+  favicon (`app/icon.svg`), the home-screen icon (`app/apple-icon.png`), the
+  link preview card (`public/og-card.png`) and `brand/lockfi/`. The
+  wordmark is Instrument Sans, fetched once into an ignored `.fonts` folder
+  and embedded while rendering. The old `brand/` files stay as history.
+
+### Deploy
+
+`deploy.sh` now gets the lockfi.org certificate itself, on the first run
+that needs it. It checks the DNS points at the box, answers the ACME
+challenge from a temporary port-80 server, and removes that server again
+whatever certbot says. Then it installs `deploy/nginx.conf` (lockfi.org) and,
+only where balast.xyz's certificate exists, `deploy/nginx-legacy.conf` (the
+redirect). Before any nginx change it copies the working config. If
+`nginx -t` rejects the new one, the copy is put back and the site keeps
+serving. The script used to leave a rejected config installed for the next
+reload to fail on, which on a shared server takes every site down.
+
+If the DNS has not reached the box yet, the deploy finishes, nginx is left
+alone, and it says so. Deploying again later completes the move.
+
+### Still open
+
+- **`lockfi.com` is not ours.** It is parked for sale by a third party, and
+  it is what a person typing the name reaches first. For a site that asks
+  for a wallet that is a phishing gap, as `ballast.xyz` was (§13).
+- **The X handle** is still @Balastdotfi, and `SOCIAL.x` points at it.
+- **$BLST** keeps its on-chain name and ticker; a contract cannot rename.
+- The banners in `brand/social/` still say Balast and should not be posted.

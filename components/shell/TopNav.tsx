@@ -79,7 +79,7 @@ export function Sidebar() {
     <aside className="side">
       <Link href="/pools" className="brand" aria-label={`${BRAND}, to the pools`}>
         <span className="brand-mark">
-          <Mark size={18} color="var(--on-ac)" />
+          <Mark size={22} color="var(--on-ac)" />
         </span>
         <span className="brand-name">{BRAND}</span>
       </Link>

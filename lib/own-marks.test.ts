@@ -15,6 +15,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { OWN_STOCK_MARKS } from '../server/indexer/logo-sources';
+import { ownSitePath } from './site';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 
@@ -36,11 +37,11 @@ describe('marks this site serves itself', () => {
     const list = await import('../config/tokens.json');
     const own = (list.default.tokens as { logoURI?: string }[])
       .map((t) => t.logoURI ?? '')
-      .filter((uri) => uri.startsWith('/') || uri.includes('balast.xyz/'));
+      .map((uri) => ownSitePath(uri))
+      .filter((path): path is string => path !== null);
     expect(own.length).toBeGreaterThan(0);
     for (const uri of own) {
-      const path = uri.startsWith('/') ? uri : uri.slice(uri.indexOf('balast.xyz/') + 'balast.xyz'.length);
-      expect(existsSync(`${root}public${path}`), uri).toBe(true);
+      expect(existsSync(`${root}public${uri}`), uri).toBe(true);
     }
   });
 });

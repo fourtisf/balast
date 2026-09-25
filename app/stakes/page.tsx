@@ -15,7 +15,7 @@ export default function StakesPage() {
             Stake once. <em>Earn on every trade</em>.
           </>
         }
-        lede="A stake is one full-range position, minted by Uniswap straight to your wallet. Never out of range, no lockup, no Balast fee. ETH or USDG is enough to start."
+        lede="A stake is one full-range position, minted by Uniswap straight to your wallet. Never out of range, no lockup, no LockFi fee. ETH or USDG is enough to start."
       />
       <VaultGrid />
       <MyStakes />

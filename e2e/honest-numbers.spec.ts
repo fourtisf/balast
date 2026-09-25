@@ -60,7 +60,7 @@ test.describe('honest numbers', () => {
     await page.locator('#main .lb-row .stake-btn').first().click();
     const drawer = page.locator('.drawer');
     // §7: the fee is disclosed here. Under §20 there is none, and that is said.
-    await expect(drawer).toContainText('Balast fee');
+    await expect(drawer).toContainText('LockFi fee');
     await expect(drawer).toContainText('every fee is yours');
     await expect(drawer).toContainText('Lockup');
     await expect(drawer).toContainText('Your wallet, as an NFT');

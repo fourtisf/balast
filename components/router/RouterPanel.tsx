@@ -188,7 +188,7 @@ export function RouterPanel() {
           // The contract is P4, needs its own audit, and is not deployed
           // (§20, §33). The button says so rather than pretending to act.
           disabled
-          title="BalastRouter is phase 4 and not deployed. Nothing on this page sends a transaction."
+          title="The router contract is phase 4 and not deployed. Nothing on this page sends a transaction."
         >
           Router opens later
         </button>
@@ -252,7 +252,7 @@ export function RouterPanel() {
         <div className="note" style={{ marginTop: 8 }}>
           <b>Routed liquidity is permanent.</b>
           <p className="hint">
-            Once fees become pool liquidity they cannot be withdrawn — not by you, not by Balast, not by
+            Once fees become pool liquidity they cannot be withdrawn — not by you, not by LockFi, not by
             anyone. Pausing stops future routes and releases only fees that have not been routed
             yet. The keeper can trigger a route but never receives funds, and the destination pool
             cannot be changed.
