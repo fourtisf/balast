@@ -67,4 +67,4 @@ mv "$TMP" "$ENV_FILE"
 echo "set $KEY"
 echo
 echo "the processes read .env at startup, so this takes effect on:"
-echo "  runuser -u $APP_USER -- pm2 restart balast-indexer balast-api --update-env"
+echo "  runuser -u $APP_USER -- pm2 restart lockfi-indexer lockfi-api --update-env"

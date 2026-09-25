@@ -7,7 +7,7 @@
  * on every restart. Now the anchor the tables were last rebuilt for is
  * remembered (`indexer_state`), so a restart costs the bounded rebuild every
  * pass does. This forgets that, which is how to repair a live box after a
- * change to the aggregation SQL: run it, then `pm2 restart balast-indexer`
+ * change to the aggregation SQL: run it, then `pm2 restart lockfi-indexer`
  * or simply wait for the next pass.
  */
 

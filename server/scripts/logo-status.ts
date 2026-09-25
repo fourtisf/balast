@@ -113,8 +113,8 @@ async function main(): Promise<void> {
   const idleSeconds = cursor ? (Date.now() - cursor.updatedAt.getTime()) / 1000 : null;
   if (counts.checked === 0) {
     process.stdout.write(
-      `  No token has been asked about yet. balast-logos asks one every ${env.logoLookupMs}ms from ` +
-        'the moment it starts; if this stays at zero: pm2 status, then pm2 logs balast-logos --lines 50\n',
+      `  No token has been asked about yet. lockfi-logos asks one every ${env.logoLookupMs}ms from ` +
+        'the moment it starts; if this stays at zero: pm2 status, then pm2 logs lockfi-logos --lines 50\n',
     );
     if (idleSeconds !== null && idleSeconds > 300) {
       const work = await readWork();
@@ -123,7 +123,7 @@ async function main(): Promise<void> {
           ? `  Separately: the indexer cursor has not moved for ${Math.round(idleSeconds)}s — it is on ` +
               `"${work.stage}"${work.detail ? ` (${work.detail})` : ''} since ${work.startedAt}, which writes no block.\n`
           : `  Separately: the indexer cursor has not moved for ${Math.round(idleSeconds)}s. Logos no ` +
-              'longer depend on it, but the numbers do: pm2 logs balast-indexer --lines 100\n',
+              'longer depend on it, but the numbers do: pm2 logs lockfi-indexer --lines 100\n',
       );
     }
   } else if (counts.with_logo === 0) {
@@ -133,7 +133,7 @@ async function main(): Promise<void> {
   } else if (snapshot && listedWithout.some((t) => t.inDb)) {
     process.stdout.write(
       '  The database has logos the snapshot does not. The API rebuilds on the indexer’s ticks; ' +
-        'if this persists past a minute: pm2 restart balast-api\n',
+        'if this persists past a minute: pm2 restart lockfi-api\n',
     );
   } else if (snapshot) {
     process.stdout.write(

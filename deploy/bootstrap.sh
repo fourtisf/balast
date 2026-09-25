@@ -293,11 +293,11 @@ echo "prove the renewal path works:  certbot renew --dry-run"
 echo
 if ! grep -qE '^USDG_ADDRESS=.+' "$APP_DIR/.env"; then
   echo "!! USDG_ADDRESS is still blank in $APP_DIR/.env."
-  echo "   balast-indexer will refuse to start until it is set — deliberately,"
+  echo "   lockfi-indexer will refuse to start until it is set — deliberately,"
   echo "   because without the WETH/USDG anchor every USD figure reads zero."
   echo "   Find USDG on the explorer, set it, then:"
-  echo "     pm2 restart balast-indexer --update-env"
+  echo "     pm2 restart lockfi-indexer --update-env"
   echo
 fi
-echo "watch it index:   pm2 logs balast-indexer"
+echo "watch it index:   pm2 logs lockfi-indexer"
 echo "check the lag:    curl -s localhost:3001/api/health | head -20"

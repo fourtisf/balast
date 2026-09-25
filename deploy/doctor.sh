@@ -223,7 +223,7 @@ if command -v pm2 >/dev/null; then
       let list = [];
       try { list = JSON.parse(raw); } catch { process.stdout.write("PARSE_FAIL\n"); return; }
       const by = new Map(list.map((p) => [p.name, p]));
-      for (const name of ["balast-web", "balast-api", "balast-indexer", "balast-logos"]) {
+      for (const name of ["lockfi-web", "lockfi-api", "lockfi-indexer", "lockfi-logos"]) {
         const p = by.get(name);
         if (!p) { console.log(`${name}\tmissing\t0`); continue; }
         const env = p.pm2_env || {};
@@ -292,11 +292,11 @@ else
     stalled)
       IDLE=$(printf '%s' "$BODY" | grep -o '"idleSeconds":[0-9.]*' | head -1 | cut -d: -f2)
       bad "indexer stalled — nothing written for ${IDLE%.*}s; the site is showing numbers ${LAG%.*}s old"
-      first "runuser -u $APP_USER -- pm2 logs balast-indexer --lines 30 --nostream"
+      first "runuser -u $APP_USER -- pm2 logs lockfi-indexer --lines 30 --nostream"
       ;;
     never-indexed)
       bad "the indexer has never written a block"
-      first "runuser -u $APP_USER -- pm2 logs balast-indexer --lines 30 --nostream"
+      first "runuser -u $APP_USER -- pm2 logs lockfi-indexer --lines 30 --nostream"
       ;;
     no-anchor)
       # Blocks are being indexed but no ETH/USDG pool has been seen, so
@@ -330,7 +330,7 @@ else
   H_SECS=$(printf '%s' "$HEAD" | grep -o '"seconds":[0-9]*' | head -1 | cut -d: -f2)
   if [[ -z "${H_SECS:-}" ]]; then
     warn "head reader: nothing written yet — the board's volume is the backfill's day"
-    also "runuser -u $APP_USER -- pm2 logs balast-indexer --lines 30 --nostream"
+    also "runuser -u $APP_USER -- pm2 logs lockfi-indexer --lines 30 --nostream"
   elif [[ "${H_SECS:-0}" -gt 1800 ]]; then
     warn "head reader: newest swap is $(( H_SECS / 60 ))m old — the board's volume is going stale"
   else
@@ -343,7 +343,7 @@ else
   # there. Its error carries every endpoint's own reason, hosts only.
   if printf '%s' "$BODY" | grep -q '"portfolioScan":null'; then
     warn "portfolio scan: off (PORTFOLIO_CHAIN=false) — /portfolio lists only the indexer's weeks-old record"
-    also "bash $APP_DIR/deploy/set-env.sh PORTFOLIO_CHAIN true && runuser -u $APP_USER -- pm2 restart balast-api --update-env"
+    also "bash $APP_DIR/deploy/set-env.sh PORTFOLIO_CHAIN true && runuser -u $APP_USER -- pm2 restart lockfi-api --update-env"
   elif printf '%s' "$BODY" | grep -q '"portfolioScan"'; then
     SCAN=${BODY#*\"portfolioScan\":}
     # Just this object: it has no nested braces, and a null field here must not
@@ -355,7 +355,7 @@ else
     S_TO=$(printf '%s' "$SCAN" | grep -o '"to":"[0-9]*"' | head -1 | cut -d'"' -f4)
     if [[ -n "${S_ERR:-}" ]]; then
       warn "portfolio scan: failing — $S_ERR"
-      also "runuser -u $APP_USER -- pm2 logs balast-api --lines 50 --nostream | grep 'v4 scan'"
+      also "runuser -u $APP_USER -- pm2 logs lockfi-api --lines 50 --nostream | grep 'v4 scan'"
     elif [[ "${S_SWEPT:-false}" != "true" ]]; then
       # Expected for a few minutes after every restart, and the explorer and
       # the browser's own record cover the gap meanwhile: not a fault.
@@ -431,7 +431,7 @@ else
       ok "live market: starting — the API came up ${UPTIME}s ago and is building its first snapshot"
     else
       warn "live market: $M_NOTE"
-      also "runuser -u $APP_USER -- pm2 logs balast-api --lines 80 --nostream | grep -i snapshot"
+      also "runuser -u $APP_USER -- pm2 logs lockfi-api --lines 80 --nostream | grep -i snapshot"
     fi
   fi
 fi

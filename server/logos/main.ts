@@ -1,7 +1,7 @@
 /**
  * The logo process.
  *
- *   npm run logos            (PM2: balast-logos)
+ *   npm run logos            (PM2: lockfi-logos)
  *
  * Token logos used to be looked up inside the indexer's pass — one token
  * per pass, on a clock. That tied a decoration to the sync's health: the

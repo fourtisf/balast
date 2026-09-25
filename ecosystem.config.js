@@ -4,10 +4,10 @@
  * Three processes, because they fail independently and you want to know which
  * one did:
  *
- *   balast-web      the Next.js front end
- *   balast-api      Fastify: /api/snapshot and the websocket
- *   balast-indexer  the log poller
- *   balast-logos    token logos, one lookup at a time — its own process, so
+ *   lockfi-web      the Next.js front end
+ *   lockfi-api      Fastify: /api/snapshot and the websocket
+ *   lockfi-indexer  the log poller
+ *   lockfi-logos    token logos, one lookup at a time — its own process, so
  *                   a decoration never waits on the sync
  *
  * The indexer is the one that matters most when it dies. §7 and the P3
@@ -29,7 +29,7 @@
 module.exports = {
   apps: [
     {
-      name: 'balast-web',
+      name: 'lockfi-web',
       script: 'node_modules/next/dist/bin/next',
       args: 'start -p 3000',
       cwd: '/var/www/balast',
@@ -48,7 +48,7 @@ module.exports = {
       time: true,
     },
     {
-      name: 'balast-api',
+      name: 'lockfi-api',
       script: 'node_modules/.bin/tsx',
       args: 'server/api/main.ts',
       cwd: '/var/www/balast',
@@ -73,7 +73,7 @@ module.exports = {
       time: true,
     },
     {
-      name: 'balast-indexer',
+      name: 'lockfi-indexer',
       script: 'node_modules/.bin/tsx',
       args: 'server/indexer/main.ts',
       cwd: '/var/www/balast',
@@ -103,7 +103,7 @@ module.exports = {
       time: true,
     },
     {
-      name: 'balast-logos',
+      name: 'lockfi-logos',
       script: 'node_modules/.bin/tsx',
       args: 'server/logos/main.ts',
       cwd: '/var/www/balast',

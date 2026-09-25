@@ -100,6 +100,16 @@ as_app env DATABASE_URL="$DATABASE_URL" npx prisma migrate deploy
 # is usually the fix. A crashed process would silently stay crashed through
 # the one command meant to repair it. `startOrReload` against the ecosystem
 # file starts whatever is not running and reloads whatever is.
+#
+# The processes were named balast-* until §39. startOrReload would start the
+# lockfi-* names beside them — two web servers fighting for :3000, two
+# indexers writing one cursor — so the old names are removed first. A few
+# seconds of downtime, once; the build above is already done.
+for old in balast-web balast-api balast-indexer balast-logos; do
+  if as_app pm2 describe "$old" >/dev/null 2>&1; then
+    as_app pm2 delete "$old" >/dev/null && echo "==> removed the old process $old (now ${old/balast-/lockfi-})"
+  fi
+done
 as_app pm2 startOrReload ecosystem.config.js --update-env
 as_app pm2 save
 
@@ -223,7 +233,7 @@ for _ in $(seq 1 30); do
   sleep 2
 done
 if [[ -z "$BODY" ]]; then
-  echo "  the API did not answer on :3001 — runuser -u $APP_USER -- pm2 logs balast-api --lines 30 --nostream"
+  echo "  the API did not answer on :3001 — runuser -u $APP_USER -- pm2 logs lockfi-api --lines 30 --nostream"
 else
   printf '%s' "$BODY" | node -e '
     let raw = "";
@@ -255,9 +265,9 @@ else
           break;
         }
         case "stalled":
-          console.log(`  STALLED — nothing written for ${Math.round(i.idleSeconds || 0)}s. runuser -u balast -- pm2 logs balast-indexer --lines 30 --nostream`); break;
+          console.log(`  STALLED — nothing written for ${Math.round(i.idleSeconds || 0)}s. runuser -u balast -- pm2 logs lockfi-indexer --lines 30 --nostream`); break;
         case "never-indexed":
-          console.log("  the indexer has never written a block — runuser -u balast -- pm2 logs balast-indexer --lines 30 --nostream"); break;
+          console.log("  the indexer has never written a block — runuser -u balast -- pm2 logs lockfi-indexer --lines 30 --nostream"); break;
         case "misconfigured":
           console.log("  MISCONFIGURED: " + h.message); break;
         default:

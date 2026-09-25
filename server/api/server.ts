@@ -687,7 +687,7 @@ export async function buildServer(
         status === 'misconfigured'
           ? problem!
           : status === 'never-indexed'
-            ? 'The indexer has never written a block. Check `pm2 logs balast-indexer`.'
+            ? 'The indexer has never written a block. Check `pm2 logs lockfi-indexer`.'
             : status === 'no-anchor'
               ? // The anchor's own reason, and then the fact that decides what
                 // to do about it: a sync that has not reached the pools yet is

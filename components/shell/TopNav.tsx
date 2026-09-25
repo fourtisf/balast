@@ -7,7 +7,7 @@ import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { CHAIN } from '@/lib/chain';
 import { duration, shortWallet } from '@/lib/format';
-import { BRAND, TOKEN_CA, TOKEN_TICKER } from '@/lib/site';
+import { BRAND } from '@/lib/site';
 import { Community } from './Community';
 import { Mark } from './Logo';
 
@@ -143,19 +143,10 @@ export function Sidebar() {
  */
 export function TopBar() {
   const { indexerLagSeconds } = useMarket();
-  const { query, setQuery, wallet, openWallet, showToast } = useUi();
+  const { query, setQuery, wallet, openWallet } = useUi();
   const pathname = usePathname();
   const router = useRouter();
 
-  const copyAddress = async () => {
-    try {
-      await navigator.clipboard.writeText(TOKEN_CA);
-      showToast(`$${TOKEN_TICKER} contract address copied`);
-    } catch {
-      // Clipboard access can be refused; the full address is in the tooltip.
-      showToast(TOKEN_CA);
-    }
-  };
   const behind = indexerLagSeconds > LAG_THRESHOLD_SECONDS;
   const filtersHere = SEARCHABLE.includes(pathname);
 
@@ -184,24 +175,6 @@ export function TopBar() {
             autoComplete="off"
           />
         </div>
-
-        {/* The token's contract address, on every page: the one place people
-            look for it, and the tooltip says any other address is not ours. */}
-        {TOKEN_CA && (
-          <button
-            className="ca-chip"
-            onClick={copyAddress}
-            data-fact="ca"
-            title={`$${TOKEN_TICKER} · ${TOKEN_CA} — click to copy. This is the only official address; any other is not ours.`}
-          >
-            <span className="ca-t">${TOKEN_TICKER}</span>
-            <span className="num">{shortWallet(TOKEN_CA)}</span>
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <rect x="6.5" y="6.5" width="10" height="10" rx="2" />
-              <path d="M13.5 6.5V5a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 5v7A1.5 1.5 0 0 0 5 13.5h1.5" />
-            </svg>
-          </button>
-        )}
 
         {/* Indexer freshness (§7: never render stale numbers as if they were
             live). Neutral by design — red is reserved for negative numbers. */}

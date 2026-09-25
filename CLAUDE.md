@@ -5568,11 +5568,16 @@ curve the position builder draws, so the logo is a lock made of liquidity.
 ### What moved
 
 - **The name.** `BRAND` in `lib/site.ts` is `LockFi`, and every page's
-  user-facing copy says LockFi. Identifiers, comments, the package name,
-  the server paths (`/var/www/balast`, the `balast` user and database, the
-  `balast-*` PM2 processes) and this document's history are unchanged. They
-  are not user-facing, and renaming them on a live box would cost a
-  migration for nothing.
+  user-facing copy says LockFi. The PM2 processes are `lockfi-web`,
+  `lockfi-api`, `lockfi-indexer` and `lockfi-logos`, at the owner's request.
+  `deploy.sh` removes the old `balast-*` processes before it starts the new
+  names, since two web servers cannot share :3000 and two indexers must not
+  write one cursor. Identifiers, comments, the package name, the server paths
+  (`/var/www/balast`, the `balast` user and database, `/var/log/balast`), the
+  browser storage keys and this document's history are unchanged. None is
+  user-facing. Renaming the storage keys would wipe every visitor's
+  transaction history and remembered wallet, and renaming the paths would be
+  a migration on a live box for nothing.
 - **The domain.** `DOMAIN` is `lockfi.org`. `balast.xyz` and both `www`
   hosts answer with a 301 to it, path kept, so every link shared under the
   old name still works. `LEGACY_SITE_URLS` and `ownSitePath` keep a logo
@@ -5607,6 +5612,9 @@ alone, and it says so. Deploying again later completes the move.
 - **`lockfi.com` is not ours.** It is parked for sale by a third party, and
   it is what a person typing the name reaches first. For a site that asks
   for a wallet that is a phishing gap, as `ballast.xyz` was (§13).
-- **The X handle** is still @Balastdotfi, and `SOCIAL.x` points at it.
-- **$BLST** keeps its on-chain name and ticker; a contract cannot rename.
+- **$BLST is gone from the site.** The owner had the token and its contract
+  address removed: the top bar's chip, the footer line, `TOKEN_CA` and its
+  test. LockFi has no token, which `/learn` already said.
+- **The X handle** is being renamed by the owner. `SOCIAL.x` in
+  `lib/site.ts` is the one line to change when the new handle arrives.
 - The banners in `brand/social/` still say Balast and should not be posted.

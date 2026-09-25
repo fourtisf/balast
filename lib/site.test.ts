@@ -1,15 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getAddress, isAddress } from 'viem';
-import { SITE_URL, TOKEN_CA, ownSitePath } from './site';
-
-describe('the token contract address', () => {
-  it('is a valid, checksummed address', () => {
-    // The site tells people any other address is not ours, so this one must
-    // be exactly right: a mistyped digit would send them to a different token.
-    expect(isAddress(TOKEN_CA, { strict: true })).toBe(true);
-    expect(getAddress(TOKEN_CA)).toBe(TOKEN_CA);
-  });
-});
+import { SITE_URL, ownSitePath } from './site';
 
 describe('ownSitePath', () => {
   it('reads a URL on the current domain as a path', () => {

@@ -4,7 +4,7 @@
  * This exists because its absence took the deploy down. `bootstrap.sh` wrote
  * `/var/www/balast/.env`, Node does not read `.env` files, PM2 does not
  * either, and the secrets must not go into `ecosystem.config.js` because that
- * is in the repository — so `balast-api` and `balast-indexer` both died on
+ * is in the repository — so `lockfi-api` and `lockfi-indexer` both died on
  * "DATABASE_URL is required" pointing at a file that was sitting right there.
  */
 

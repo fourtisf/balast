@@ -77,7 +77,7 @@ lag=$(printf '%s' "$body" | grep -o '"lagSeconds":[0-9.]*' | head -1 | cut -d: -
 case "$status" in
   never-indexed)
     alert "never-indexed" \
-      "the indexer has never written a block — check USDG_ADDRESS and pm2 logs balast-indexer"
+      "the indexer has never written a block — check USDG_ADDRESS and pm2 logs lockfi-indexer"
     exit 1
     ;;
   stalled)
@@ -119,7 +119,7 @@ if command -v pm2 >/dev/null; then
       try { list = JSON.parse(raw); } catch { process.stdout.write(" pm2(unreadable)"); return; }
       const by = new Map(list.map((p) => [p.name, p]));
       const out = [];
-      for (const name of ["balast-web", "balast-api", "balast-indexer", "balast-logos"]) {
+      for (const name of ["lockfi-web", "lockfi-api", "lockfi-indexer", "lockfi-logos"]) {
         const p = by.get(name);
         const state = p && p.pm2_env && p.pm2_env.status ? p.pm2_env.status : "missing";
         if (state !== "online") out.push(` ${name}(${state})`);

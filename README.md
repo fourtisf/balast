@@ -268,13 +268,13 @@ certificate. It is safe to re-run: it skips what exists and never regenerates
 the password or overwrites `.env`.
 
 It will finish with `USDG_ADDRESS` still blank and tell you so. Set it, then
-`pm2 restart balast-indexer --update-env`.
+`pm2 restart lockfi-indexer --update-env`.
 
 The pieces:
 
 | File | What it is |
 |---|---|
-| `ecosystem.config.js` | PM2: `balast-web`, `balast-api`, `balast-indexer` |
+| `ecosystem.config.js` | PM2: `lockfi-web`, `lockfi-api`, `lockfi-indexer` |
 | `deploy/nginx.conf` | TLS, security headers, `/api/` (never cached), `/api/stream` (websocket, 1h timeout), immutable `/_next/static` |
 | `deploy/nginx-bootstrap.conf` | HTTP-only first pass, so certbot has something to answer with |
 | `deploy/upgrade-map.conf` | the `$connection_upgrade` map — only install it if nothing else on the box defines one |
@@ -290,7 +290,7 @@ duplicate `map` fails the same test.
 Watching it work:
 
 ```bash
-pm2 logs balast-indexer
+pm2 logs lockfi-indexer
 curl -s localhost:3001/api/health
 ```
 
@@ -344,7 +344,7 @@ Set what it finds without opening an editor:
 ./deploy/set-env.sh USDG_ADDRESS 0x...
 ./deploy/set-env.sh START_BLOCK 4821337
 ./deploy/set-env.sh                      # show current values, secrets masked
-runuser -u balast -- pm2 restart balast-indexer balast-api --update-env
+runuser -u balast -- pm2 restart lockfi-indexer lockfi-api --update-env
 ```
 
 It replaces the line or appends it, validates anything ending `_ADDRESS`, and

@@ -419,7 +419,7 @@ export class MarketFeed {
     if (answered) {
       this.lastRefreshAt = this.now();
       this.lastError = lastRefusal;
-      // One line whenever the picture changes, so `pm2 logs balast-api`
+      // One line whenever the picture changes, so `pm2 logs lockfi-api`
       // answers "why does every row read chain" without anyone guessing.
       const summary = this.status();
       const per = summary.sources.map((x) => `${x.name} ${x.quoted}`).join(', ');

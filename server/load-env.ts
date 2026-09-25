@@ -4,7 +4,7 @@
  *   import './load-env';   // FIRST, before anything that reads process.env
  *
  * Node does not read `.env` files. Next.js does, which is why the web
- * process worked while `balast-api` and `balast-indexer` crash-looped on
+ * process worked while `lockfi-api` and `lockfi-indexer` crash-looped on
  * "DATABASE_URL is required" — `bootstrap.sh` wrote the file and nothing
  * opened it. PM2 does not read one either, and the secrets must not go into
  * `ecosystem.config.js`, because that is in the repository.

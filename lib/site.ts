@@ -45,7 +45,7 @@ export function ownSitePath(url: string | null | undefined): string | null {
 export const DEFENSIVE_DOMAINS = ['www.lockfi.org', 'balast.xyz', 'www.balast.xyz'] as const;
 
 /**
- * Where the project talks, and the token's contract address.
+ * Where the project talks.
  *
  * X is the one channel: @Balastdotfi, the account the owner named. Telegram
  * was offered as a second icon and removed at the owner's request.
@@ -56,10 +56,9 @@ export const DEFENSIVE_DOMAINS = ['www.lockfi.org', 'balast.xyz', 'www.balast.xy
  * the real account as a default the placeholder overrode. A fact this
  * public belongs in the repository, where a change is a reviewed commit.
  *
- * The contract address is a constant for the same reason. It was an
- * environment variable read at build time, and a blank or stale value in
- * the box's .env would have shown "coming soon", or the wrong address, on
- * a site that tells people any other address is not ours.
+ * LockFi has no token (§39). The site showed $BLST's contract address
+ * until the rename; the owner had it removed, and /learn says any address
+ * circulating as LockFi's token is not ours.
  */
 export const SOCIAL = {
   x: 'https://x.com/Balastdotfi',
@@ -67,14 +66,6 @@ export const SOCIAL = {
 
 /** The X handle, for the site's own metadata; derived so it cannot disagree with the link. */
 export const X_HANDLE = `@${SOCIAL.x.replace(/\/+$/, '').split('/').pop()}`;
-
-/**
- * $BLST, launched on Pons (ponsfamily.com), 23 September 2026. The address
- * the owner gave, checksummed; a test asserts it stays valid. Empty would
- * render "CA · coming soon".
- */
-export const TOKEN_CA: string = '0xe8f7E3d2D4B9733E13aBb173F4c1BDDBEAFbEE83';
-export const TOKEN_TICKER = 'BLST';
 
 /**
  * Where the API lives, from the browser's point of view. Empty means the

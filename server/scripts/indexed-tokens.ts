@@ -90,7 +90,7 @@ async function main(): Promise<void> {
           `  ${r.address}  ${r.symbol}  ${r.pools} pool(s), ${r.ether_pools} with ether, ${r.decimals} decimals\n`,
         );
       }
-      process.stdout.write('\nTo pin one:  ./deploy/set-env.sh USDG_ADDRESS 0x…  then  pm2 restart balast-indexer balast-api\n');
+      process.stdout.write('\nTo pin one:  ./deploy/set-env.sh USDG_ADDRESS 0x…  then  pm2 restart lockfi-indexer lockfi-api\n');
     }
     if (behind !== null && behind > 50_000n) {
       process.stdout.write(
