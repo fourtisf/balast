@@ -5666,3 +5666,45 @@ Nothing in the flow, the figures or the ids the tests use changed.
 
 **Verified**: typecheck, lint, 566 unit tests, the production build and all
 41 Playwright tests, plus screenshots at 1440px.
+
+---
+
+## 41. The fee tier, explained where it is chosen; and a black logo
+
+ALFA, on CASHCAT / ETH with the 0.5% pool selected: *apa maksudnya fee
+tier*, then *harusnya dijelasin biar ga bingung, dan logonya kenapa biru, saya
+mau hitam premium*.
+
+### The fee tier says what it is
+
+The selected pool had $0 of volume that day, beside a 1% pool holding $8.49M,
+and nothing on the page said why that mattered. §40's redesign had dropped
+the one sentence that did. The tier pills are now small cards, one per pool:
+the tier, the pool's **liquidity**, and the **fees it paid its LPs in the
+last 24 hours** (the head reader's per-pool figure, §25; a dash where
+unmeasured). The tier that paid the most is marked **Most active**, in green,
+because that is a positive number. Under the cards, a short paragraph says
+it plainly:
+
+- every trade pays this percentage to the pool's liquidity providers;
+- each tier is a separate pool with its own traders, and you earn only from
+  the one you pick;
+- a higher percentage earns nothing if nobody trades there.
+
+The group keeps its accessible name, *Fee tier*, and each card still
+carries a `$` figure or a dash, so the tests that guard §27's rule pass
+unchanged.
+
+### The logo tile is black
+
+The owner wanted the logo in premium black, not blue. The tile is a
+graphite-to-black gradient with a light top edge and a hairline ring, so it
+still reads on a black page and on a dark tab strip. The sidebar tile, the
+favicon, the home-screen icon and the link card's tile all use it
+(`blackIconSvg` in `scripts/build-brand-lockfi.mjs`;
+`brand/lockfi/icon-black*` is the primary icon, and the blue icons are
+removed). **Signal blue stays for buttons and active controls**; only the
+logo changed.
+
+**Verified**: typecheck, lint, 566 unit tests, the production build and all
+41 Playwright tests, plus a screenshot of the tier cards at 1440px.

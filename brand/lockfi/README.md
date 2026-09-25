@@ -7,7 +7,7 @@ are written from it by `npm run brand:lockfi`.
 | File | Use |
 |---|---|
 | `mark-white.svg`, `mark-black.svg`, `mark-currentcolor.svg` | The mark alone |
-| `icon-blue*.svg/png` | The primary icon: favicon, X avatar, app icon (white mark on signal blue) |
+| `icon-black*.svg/png` | The primary icon: favicon, X avatar, app icon (white mark on the premium black tile) |
 | `icon-dark*.svg/png` | White mark on the site's black |
 | `icon-dark-square*` | Full-bleed, for platforms that round the corners themselves |
 | `icon-light*`, `icon-white-tile.svg` | On light grounds |

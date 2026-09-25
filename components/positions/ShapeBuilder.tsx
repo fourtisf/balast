@@ -474,6 +474,15 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
   const headPrice = flow.live ? `${num(flow.live.tokenPriceInQuote)} ${quoteSymbol}` : tokenPrice(shownPrice(pool).value);
   const headLiquidity = shownLiquidity(pool).value;
   const headVolume = shownVolume(pool).value;
+  // The tier that paid its LPs the most today — the one worth pointing at.
+  const busiestTier = (() => {
+    let best: { id: string; fees: number } | null = null;
+    for (const m of group.markets) {
+      const fees = m.now?.fees24hUsd ?? 0;
+      if (fees > 0 && (!best || fees > best.fees)) best = { id: m.id, fees };
+    }
+    return best?.id ?? null;
+  })();
 
   const statusLine = !valid ? (
     <p className="hint down status" role="alert">
@@ -630,32 +639,50 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
         {group.markets.length > 1 && (
           <div className="field grow">
             <span className="lbl" id="tier-label">
-              Fee tier · pool liquidity
+              Fee tier
             </span>
-            <div className="seg wrap" role="group" aria-labelledby="tier-label">
+            {/* Each tier is its own pool, so each option says what separates
+                it from the others: what a trade pays, how much sits in it,
+                and what it actually paid its LPs today. The last is the one
+                that decides what a position earns, so the busiest is marked. */}
+            <div className="tiers" role="group" aria-labelledby="tier-label">
               {group.markets.map((m) => {
                 const depth = poolLiquidityUsd(m);
+                const fees = m.now ? m.now.fees24hUsd : null;
+                const busiest = m.id === busiestTier;
                 return (
                   <button
                     key={m.id}
-                    className={m.id === pool.id ? 'on' : undefined}
+                    className={`tier${m.id === pool.id ? ' on' : ''}`}
                     aria-pressed={m.id === pool.id}
                     onClick={() => choose(m.id)}
-                    title={
-                      depth === null
-                        ? 'This pool’s liquidity cannot be reconstructed from its own events yet.'
-                        : `${usd(depth)} of liquidity in this pool`
-                    }
                   >
-                    {tierLabel(m, group.markets)}{' '}
-                    <span className="num" style={{ opacity: 0.7 }}>
-                      {depth === null ? '—' : usd(depth)}
+                    <span className="tier-top">
+                      <b>{tierLabel(m, group.markets)}</b>
+                      {busiest && <span className="tier-tag">Most active</span>}
+                    </span>
+                    <span className="tier-row">
+                      <span>Liquidity</span>
+                      <span className="num">{depth === null ? '—' : usd(depth)}</span>
+                    </span>
+                    <span className="tier-row">
+                      <span>Fees 24h</span>
+                      <span className={`num${fees !== null && fees > 0 ? ' up' : ''}`}>{fees === null ? '—' : usd(fees)}</span>
                     </span>
                   </button>
                 );
               })}
             </div>
           </div>
+        )}
+        {group.markets.length > 1 && (
+        <div className="tier-explain">
+          <b>What is a fee tier?</b> Every trade in a pool pays this percentage, and that money goes to the people
+          providing liquidity there — you, once you deposit. Each tier is a separate pool with its own traders, so you
+          earn only from the one you pick. A higher percentage earns nothing if nobody trades there: pick the pool
+          with the most <i>fees 24h</i>
+          {busiestTier ? ', marked Most active' : ''}.
+        </div>
         )}
         <p className="hint market-note">
           {wrapped ? 'This pool holds its ether as aeWETH; the mint wraps what your wallet is short of. ' : ''}

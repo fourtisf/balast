@@ -28,8 +28,14 @@ const FONT_URL =
 const INK = '#0A0B0D';
 const WHITE = '#EDEEF1';
 const PAPER = '#F3F3F1';
-/** Signal blue (§40): the filled shade, so the white mark on it holds 5.2:1. */
-const BLUE = '#2563EB';
+/**
+ * The logo tile is black (§41): a gradient from graphite to near-black, lit on
+ * its top edge and ringed by a hairline so it still reads on a black page or a
+ * dark tab strip. The site's blue stays for buttons and active controls.
+ */
+const TILE_TOP = '#2A2C33';
+const TILE_MID = '#0D0E11';
+const TILE_BOTTOM = '#030304';
 
 // ── The mark: Logo.tsx, on a 64-unit grid ─────────────────────────────────
 const SHACKLE = 'M23 53.5V22.5a9 9 0 0 1 18 0v31';
@@ -69,22 +75,39 @@ function iconSvg({ ground, ink, radius = 14, scale = 0.72 }) {
   );
 }
 
+/** The mark on the premium black tile. `radius` 0 is full-bleed. */
+function blackIconSvg({ radius = 14, scale = 0.72 } = {}) {
+  const t = (64 - 64 * scale) / 2;
+  const ring = radius === 0 ? '' : `<rect x=".5" y=".5" width="63" height="63" rx="${radius - 0.5}" fill="none" stroke="rgba(255,255,255,.14)"/>`;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="LockFi">` +
+    `<defs><linearGradient id="g" x1="0" y1="0" x2=".35" y2="1">` +
+    `<stop offset="0" stop-color="${TILE_TOP}"/><stop offset=".55" stop-color="${TILE_MID}"/><stop offset="1" stop-color="${TILE_BOTTOM}"/>` +
+    `</linearGradient><linearGradient id="h" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop offset="0" stop-color="#FFFFFF" stop-opacity=".22"/><stop offset=".08" stop-color="#FFFFFF" stop-opacity="0"/>` +
+    `</linearGradient></defs>` +
+    `<rect width="64" height="64" rx="${radius}" fill="url(#g)"/>` +
+    `<rect width="64" height="64" rx="${radius}" fill="url(#h)"/>${ring}` +
+    `<g transform="translate(${t} ${t}) scale(${scale})">${markShapes(WHITE)}</g></svg>\n`
+  );
+}
+
 // ── Files that need no font ────────────────────────────────────────────────
 mkdirSync(OUT, { recursive: true });
 const svgs = {
   'mark-white.svg': markSvg(WHITE),
   'mark-black.svg': markSvg(INK),
   'mark-currentcolor.svg': markSvg('currentColor'),
-  'icon-blue.svg': iconSvg({ ground: BLUE, ink: '#FFFFFF' }),
-  'icon-blue-square.svg': iconSvg({ ground: BLUE, ink: '#FFFFFF', radius: 0 }),
+  'icon-black.svg': blackIconSvg(),
+  'icon-black-square.svg': blackIconSvg({ radius: 0 }),
   'icon-dark.svg': iconSvg({ ground: INK, ink: WHITE }),
   'icon-dark-square.svg': iconSvg({ ground: INK, ink: WHITE, radius: 0 }),
   'icon-light.svg': iconSvg({ ground: PAPER, ink: INK }),
   'icon-white-tile.svg': iconSvg({ ground: WHITE, ink: INK }),
 };
 for (const [name, svg] of Object.entries(svgs)) writeFileSync(join(OUT, name), svg);
-// The favicon: the blue tile, a touch larger mark so it holds at 16px.
-writeFileSync(join(ROOT, 'app', 'icon.svg'), iconSvg({ ground: BLUE, ink: '#FFFFFF', radius: 14, scale: 0.8 }));
+// The favicon: the black tile, a touch larger mark so it holds at 16px.
+writeFileSync(join(ROOT, 'app', 'icon.svg'), blackIconSvg({ radius: 14, scale: 0.8 }));
 
 // ── The face, for the lockups and the card ────────────────────────────────
 mkdirSync(FONTS, { recursive: true });
@@ -105,7 +128,7 @@ function lockupHtml({ ground, ink, mark = 160 }) {
 const CARD = `<div class="card">
   <div class="glow"></div>
   <div class="top">
-    <div class="tile"><svg viewBox="0 0 64 64">${markShapes('#FFFFFF')}</svg></div>
+    <div class="tile"><svg viewBox="0 0 64 64">${markShapes(WHITE)}</svg></div>
     <span class="name">LockFi</span>
   </div>
   <div class="mid">
@@ -124,7 +147,9 @@ html,body{margin:0;padding:0;background:transparent}
 .card{position:relative;width:1200px;height:630px;box-sizing:border-box;padding:72px 80px;background:${INK};color:${WHITE};font-family:'Instrument Sans',sans-serif;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between}
 .glow{position:absolute;inset:-40% -10% auto auto;width:900px;height:700px;background:radial-gradient(closest-side,rgba(59,130,246,.22),transparent);pointer-events:none}
 .top{display:flex;align-items:center;gap:22px;position:relative}
-.tile{width:84px;height:84px;border-radius:20px;background:${BLUE};display:grid;place-items:center}
+.tile{width:84px;height:84px;border-radius:20px;display:grid;place-items:center;
+  background:linear-gradient(160deg,${TILE_TOP} 0%,${TILE_MID} 55%,${TILE_BOTTOM} 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 1px rgba(255,255,255,.12),0 12px 32px -12px rgba(0,0,0,.9)}
 .tile svg{width:62px;height:62px;display:block}
 .name{font-size:56px;font-weight:700;letter-spacing:-.04em}
 .mid{position:relative}
@@ -157,9 +182,9 @@ const svgPage = (svg, px) =>
   `<div style="width:${px}px;height:${px}px">${svg.replace('width="64" height="64"', `width="${px}" height="${px}"`)}</div>`;
 
 for (const [src, px] of [
-  ['icon-blue.svg', 1024],
-  ['icon-blue.svg', 512],
-  ['icon-blue-square.svg', 1024],
+  ['icon-black.svg', 1024],
+  ['icon-black.svg', 512],
+  ['icon-black-square.svg', 1024],
   ['icon-dark.svg', 1024],
   ['icon-dark.svg', 512],
   ['icon-dark-square.svg', 1024],
@@ -169,7 +194,7 @@ for (const [src, px] of [
 ]) {
   await shoot(svgPage(svgs[src], px), join(OUT, src.replace('.svg', `-${px}.png`)), { width: px, height: px });
 }
-await shoot(svgPage(iconSvg({ ground: BLUE, ink: '#FFFFFF', radius: 0, scale: 0.72 }), 180), join(ROOT, 'app', 'apple-icon.png'), {
+await shoot(svgPage(blackIconSvg({ radius: 0 }), 180), join(ROOT, 'app', 'apple-icon.png'), {
   width: 180,
   height: 180,
   transparent: false,
