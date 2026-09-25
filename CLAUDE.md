@@ -5708,3 +5708,25 @@ logo changed.
 
 **Verified**: typecheck, lint, 566 unit tests, the production build and all
 41 Playwright tests, plus a screenshot of the tier cards at 1440px.
+
+---
+
+## 42. The introduction banners, in LockFi's own look
+
+The owner asked for premium banners to introduce LockFi on X, drawn from
+scratch and matching the site. `npm run brand:social`
+(`scripts/build-lockfi-social.mjs`) writes them to `brand/lockfi/social/` at
+2×: six 1600 × 900 posts (introduction, pools, shapes, one token in, custody,
+honest numbers) and the 1500 × 500 profile header. `COPY.md` beside them holds
+the bio and the post for each image, all under 280 characters.
+
+Each banner uses the site's tokens, Instrument Sans, and the black logo tile.
+The visuals are the site's own components drawn at banner size: the bin chart
+with the price line, the pool board, the Stake drawer's disclosure, a position
+row with Collect fees and Withdraw.
+
+Every figure is left out. The board's cells are bars rather than digits, so
+nothing on an image can be read as a price, a volume or a yield (§7). No
+handle is written on an image, because the X account is being renamed.
+LockFi has no token, and banner 6 says so. The old Balast renderer is now
+`brand:social:balast`, and its images should not be posted.
