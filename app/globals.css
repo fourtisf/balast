@@ -5,10 +5,9 @@
    colour. The names §5 introduced are kept, so components changed values,
    not variables.
 
-   Colour rule (§37, replacing §5's): one accent, periwinkle, for the brand
-   and for whatever is active. Green means a rising number and nothing else;
-   red means a falling one and nothing else. Everything else is light on
-   dark.
+   Colour rule (§40, LockFi): one accent, signal blue, for the brand and for
+   whatever is active. Green means a rising number (and a buy); red means a
+   falling one (and a sell). Everything else is light on dark.
    ========================================================================== */
 
 :root{
@@ -23,22 +22,25 @@
 
   /* borders */
   --bd:rgba(255,255,255,.10);      /* inputs, ghost buttons */
-  --bd-2:rgba(255,255,255,.34);    /* focus, active outline */
+  --bd-2:rgba(96,165,250,.55);     /* focus, active outline */
   --bd-n:rgba(255,255,255,.065);   /* hairline: rows, cards, rules */
 
   /* text */
   --fg:#EDEEF1; --fg-2:#A3A7B1; --fg-3:#7A7F8B; --fg-4:#4A4E57;
   --ink-2:#FFFFFF;
 
-  /* "accent" is white: the brand and whatever is active. On a screen of
-     figures the only colour left is the one that carries meaning. */
-  --ac:#EDEEF1;
-  --ac-2:#FFFFFF;
-  --ac-3:#FFFFFF;
-  --ac-soft:#3A3D45;               /* the quote side of the bin chart */
-  --ac-dim:rgba(255,255,255,.07);
-  --ac-glow:rgba(255,255,255,.14);
-  --on-ac:#0A0B0D;                 /* ink on an accent fill */
+  /* LockFi's signal blue: the brand and whatever is active. --ac marks
+     and draws; a filled control uses --ac-fill, a shade darker so white text
+     on it holds 5.2:1. --ac-3 is the accent as text on the dark page. */
+  --ac:#3B82F6;
+  --ac-2:#60A5FA;
+  --ac-3:#93C5FD;
+  --ac-fill:#2563EB;
+  --ac-fill-2:#3B82F6;             /* a filled control on hover */
+  --ac-soft:#26344F;               /* the quote side of the bin chart */
+  --ac-dim:rgba(59,130,246,.14);
+  --ac-glow:rgba(59,130,246,.30);
+  --on-ac:#FFFFFF;                 /* ink on an accent fill */
 
   /* a rising number, and buys */
   --pos:#1FCB7A;
@@ -85,7 +87,7 @@ a{color:inherit;text-decoration:none}
 button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 input,select{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--ac);outline-offset:2px}
-::selection{background:var(--ac);color:var(--on-ac)}
+::selection{background:var(--ac-fill);color:var(--on-ac)}
 /* Figures are set in the sans with tabular digits, so columns line up
    without the terminal look of a mono. Addresses and hashes keep the mono:
    there every character is read one by one. */
@@ -102,7 +104,7 @@ code,.mono,.btn .num,.ca .num,.wallet-addr{font-family:var(--mono);letter-spacin
 
 .side{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:18px;padding:14px 10px;background:var(--panel);border-right:1px solid var(--bd-n);z-index:30}
 .brand{display:flex;align-items:center;gap:10px;padding:4px 8px;border-radius:8px;flex:none}
-.brand-mark{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;flex:none;background:var(--ac)}
+.brand-mark{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;flex:none;background:var(--ac-fill)}
 .brand-mark svg{display:block}
 .brand-name{font-size:16.5px;font-weight:700;letter-spacing:-.03em;color:var(--fg)}
 .side-h{display:block;padding:0 10px 6px;font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-4)}
@@ -139,8 +141,8 @@ code,.mono,.btn .num,.ca .num,.wallet-addr{font-family:var(--mono);letter-spacin
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 16px;flex:none;border:1px solid transparent;border-radius:8px;font-family:var(--sans);font-size:13px;font-weight:600;white-space:nowrap;transition:.15s}
 .btn-ink{background:var(--fg);color:var(--bg)}
 .btn-ink:hover{background:var(--ink-2)}
-.btn-brand{background:var(--ac);color:var(--on-ac)}
-.btn-brand:hover{background:var(--ac-2)}
+.btn-brand{background:var(--ac-fill);color:var(--on-ac)}
+.btn-brand:hover{background:var(--ac-fill-2)}
 .btn-ghost{border-color:var(--bd);color:var(--fg);background:var(--panel-2)}
 .btn-ghost:hover{background:var(--raise);border-color:rgba(255,255,255,.16)}
 .btn-sm{height:32px;padding:0 13px;font-size:12.5px}
@@ -207,9 +209,9 @@ h1 em{font-style:normal;color:var(--fg-2)}
 .lb-chg{text-align:right}
 .lb-spark{position:relative;display:flex;justify-content:flex-end;align-items:center;min-width:0}
 .lb-spark svg{display:block;max-width:100%;height:auto}
-.stake-btn{position:absolute;right:0;top:50%;transform:translateY(-50%);opacity:0;transition:var(--t-hover);background:var(--ac);color:var(--on-ac);border-radius:6px;padding:6px 12px;font-size:12px;font-weight:700;white-space:nowrap}
+.stake-btn{position:absolute;right:0;top:50%;transform:translateY(-50%);opacity:0;transition:var(--t-hover);background:var(--ac-fill);color:var(--on-ac);border-radius:6px;padding:6px 12px;font-size:12px;font-weight:700;white-space:nowrap}
 .lb-row:hover .stake-btn,.stake-btn:focus-visible{opacity:1}
-.stake-btn:hover{background:var(--ac-2)}
+.stake-btn:hover{background:var(--ac-fill-2)}
 .lb-empty{list-style:none}
 
 /* token identity, shared by every row and card */
@@ -258,7 +260,7 @@ h1 em{font-style:normal;color:var(--fg-2)}
 .seg{display:inline-flex;border:1px solid var(--bd-n);border-radius:10px;background:var(--bg);padding:3px;gap:2px;max-width:100%}
 .seg button{padding:6px 12px;border-radius:7px;font-size:12.5px;font-weight:500;color:var(--fg-2);transition:var(--t-hover);white-space:nowrap}
 .seg button:hover{color:var(--fg);background:var(--raise-2)}
-.seg button.on{background:var(--raise);color:var(--fg);font-weight:600;box-shadow:inset 0 0 0 1px rgba(124,140,255,.28),0 1px 2px rgba(0,0,0,.4)}
+.seg button.on{background:var(--raise);color:var(--fg);font-weight:600;box-shadow:inset 0 0 0 1px rgba(59,130,246,.28),0 1px 2px rgba(0,0,0,.4)}
 /* A token can have several markets — a different quote, a different fee tier
    — and they are one row of choices, not a scrollbar. Wrapping keeps them all
    visible in a 232px panel and off the horizontal axis at 360px. */
@@ -344,7 +346,7 @@ h1 em{font-style:normal;color:var(--fg-2)}
 /* ---------- stakes ---------- */
 .vaults{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 .vault{padding:22px;display:flex;flex-direction:column;gap:16px;transition:.2s}
-.vault:hover{border-color:rgba(124,140,255,.28);box-shadow:var(--shadow-card),0 0 0 1px rgba(124,140,255,.08),0 20px 50px -30px var(--ac-glow)}
+.vault:hover{border-color:rgba(59,130,246,.28);box-shadow:var(--shadow-card),0 0 0 1px rgba(59,130,246,.08),0 20px 50px -30px var(--ac-glow)}
 .vault .top-r2{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
 .vault .apr{font-family:var(--sans);font-variant-numeric:tabular-nums;font-size:38px;font-weight:600;line-height:1;color:var(--pos);letter-spacing:-.03em}
 .vault .apr.none{color:var(--fg-3)}
@@ -357,8 +359,65 @@ h1 em{font-style:normal;color:var(--fg-2)}
 .mine table td,.mine table th{padding:12px 10px}
 
 /* ---------- positions builder ---------- */
-.builder{display:grid;grid-template-columns:380px 1fr;gap:14px}
-.panel{padding:24px}
+/* A DLMM screen (§40): the pool first, its markets, the distribution full
+   width, then strategy and deposit side by side. */
+.builder{display:flex;flex-direction:column;gap:12px}
+.panel{padding:22px}
+.panel-t{font-size:15px;font-weight:700;letter-spacing:-.01em;margin-bottom:16px}
+
+.pool-head{display:flex;align-items:center;justify-content:space-between;gap:20px 32px;padding:18px 22px;flex-wrap:wrap;
+  background:linear-gradient(90deg,var(--ac-dim),transparent 45%),var(--panel)}
+.ph-id{display:flex;align-items:center;gap:14px;min-width:0;flex:1 1 360px}
+.ph-logo{width:44px!important;height:44px!important;flex:none}
+.ph-main{display:flex;flex-direction:column;gap:6px;min-width:0}
+.ph-pick{display:flex;align-items:baseline;gap:8px;min-width:0}
+.ph-pick select{appearance:none;-webkit-appearance:none;background:transparent;border:0;outline:0;color:var(--fg);
+  font-size:22px;font-weight:700;letter-spacing:-.02em;cursor:pointer;padding-right:22px;max-width:100%;field-sizing:content;
+  background-image:linear-gradient(45deg,transparent 50%,var(--fg-3) 50%),linear-gradient(135deg,var(--fg-3) 50%,transparent 50%);
+  background-position:calc(100% - 9px) 55%,calc(100% - 4px) 55%;background-size:5px 5px;background-repeat:no-repeat}
+.ph-pick select:focus-visible{outline:2px solid var(--ac);outline-offset:4px;border-radius:4px}
+.ph-pick select option{background:var(--panel);font-size:14px}
+.ph-quote{font-size:18px;font-weight:600;color:var(--fg-3);white-space:nowrap}
+.ph-ca{flex-direction:row;align-items:center;gap:10px;padding:0;border:0;background:none;flex-wrap:wrap}
+.ph-ca code{font-size:11.5px;color:var(--fg-3)}
+.ph-ca .btn.sm{height:26px;padding:0 10px;font-size:11.5px}
+p.ph-ca{font-size:12px}
+.ph-stats{display:flex;gap:4px 28px;flex-wrap:wrap}
+.ph-stats>div{display:flex;flex-direction:column;gap:3px;min-width:84px}
+.ph-stats dt{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg-3);font-weight:600}
+.ph-stats dd{font-size:16px;font-weight:700;letter-spacing:-.01em;white-space:nowrap}
+
+.market-bar{display:flex;align-items:flex-end;gap:12px 28px;flex-wrap:wrap;padding:14px 22px}
+.market-bar .field{margin-bottom:0}
+.market-bar .field.grow{flex:1 1 320px;min-width:0}
+.market-bar .market-note{flex-basis:100%;margin-top:0}
+.market-bar .market-note:empty{display:none}
+
+.dlmm .viz{min-height:0;padding:20px 22px}
+.dlmm .bins{height:300px}
+.fullrange-note{margin:4px 0}
+.dlmm-cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:12px;align-items:start}
+
+.fr-toggle{display:flex!important;align-items:flex-start;gap:12px;padding:12px 14px;border:1px solid var(--bd-n);border-radius:var(--r);
+  background:var(--panel-2);cursor:pointer;text-transform:none!important;letter-spacing:0!important;margin:0!important;font-size:13px!important;color:var(--fg)!important}
+.fr-toggle:has(input:checked){border-color:var(--bd-2);background:var(--ac-dim)}
+.fr-toggle input{width:16px;height:16px;margin-top:2px;accent-color:var(--ac);flex:none}
+.fr-toggle b{display:block;font-weight:700}
+.fr-toggle small{display:block;color:var(--fg-3);font-size:12px;margin-top:2px;font-weight:400}
+
+.inp.big{height:58px}
+.inp.big input{font-size:22px}
+.deposit .sum{grid-template-columns:1fr;gap:10px;border-top:1px solid var(--bd-n);border-bottom:1px solid var(--bd-n);padding:14px 0;margin:4px 0 16px}
+.deposit .sum>div{display:flex;justify-content:space-between;align-items:baseline;gap:16px}
+.deposit .sum .v{margin-top:0;text-align:right;font-size:14.5px}
+.deposit .sum .est{text-align:right}
+.mint-btn{width:100%;justify-content:center;height:50px;font-size:15px!important;border-radius:10px}
+.status{text-align:center;margin-top:10px}
+.how{margin-top:14px;border-top:1px solid var(--bd-n);padding-top:12px}
+.how summary{cursor:pointer;font-size:12.5px;color:var(--fg-2);font-weight:600;list-style:none}
+.how summary::-webkit-details-marker{display:none}
+.how summary::before{content:"+";display:inline-block;width:14px;color:var(--ac-3)}
+.how[open] summary::before{content:"\2212"}
 .shape{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .shape button{border:1px solid var(--bd-n);border-radius:var(--r);padding:12px 6px;display:flex;flex-direction:column;align-items:center;gap:9px;font-size:12px;font-weight:600;color:var(--fg-2);background:var(--panel-2);transition:.18s}
 .shape button svg{width:52px;height:24px}
@@ -443,6 +502,7 @@ h1 em{font-style:normal;color:var(--fg-2)}
 @media (max-width:980px){
   .vaults{grid-template-columns:1fr 1fr}
   .builder,.router{grid-template-columns:1fr}
+  .dlmm-cols{grid-template-columns:1fr}
   .sum{grid-template-columns:1fr 1fr}
 }
 /* Below 900px the navigation takes two rows and stops being sticky — a tall
@@ -710,4 +770,27 @@ h1 em{font-style:normal;color:var(--fg-2)}
   .facts>div{border-left:0!important;border-top:1px solid var(--bd-n)}
   .facts>div:nth-child(-n+2){border-top:0}
   .facts>div:nth-child(even){border-left:1px solid var(--bd-n)!important}
+}
+
+/* ---------- LockFi pool boards (§40): a header strip, then the rows ---------- */
+.stake-board{padding:20px 22px}
+.sb-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px 32px;flex-wrap:wrap;padding-bottom:16px;margin-bottom:6px;border-bottom:1px solid var(--bd-n)}
+.stake-board .sect-h{font-size:17px;letter-spacing:-.01em;text-transform:none;color:var(--fg);font-weight:700}
+.stake-tbl .tok .n{font-size:14.5px}
+.stake-tbl .yv{font-size:15px;font-weight:700}
+.stake-tbl tbody tr:hover td{background:var(--panel-2)}
+.chips{display:flex;gap:5px;margin-top:4px}
+.chip{display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:5px;font-size:10.5px;font-weight:600;color:var(--fg-2);background:var(--raise);border:1px solid var(--bd-n)}
+
+/* The portfolio's four figures, one strip rather than four cards. */
+.grid.g4:has(>.stat){gap:0;border:1px solid var(--bd-n);border-radius:var(--r-card);overflow:hidden;background:linear-gradient(90deg,var(--ac-dim),transparent 40%),var(--panel)}
+.grid.g4:has(>.stat)>.stat{border:0;border-radius:0;background:transparent;border-left:1px solid var(--bd-n)}
+.grid.g4:has(>.stat)>.stat:first-child{border-left:0}
+@media (max-width:900px){
+  .grid.g4:has(>.stat)>.stat:nth-child(3){border-left:0}
+  .grid.g4:has(>.stat)>.stat:nth-child(n+3){border-top:1px solid var(--bd-n)}
+}
+@media (max-width:640px){
+  .grid.g4:has(>.stat)>.stat{border-left:0;border-top:1px solid var(--bd-n)}
+  .grid.g4:has(>.stat)>.stat:first-child{border-top:0}
 }

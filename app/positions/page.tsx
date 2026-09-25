@@ -10,12 +10,8 @@ export default function PositionsPage() {
     <section>
       <Masthead
         eyebrow="Positions"
-        title={
-          <>
-            Shape your liquidity <em>by hand</em>.
-          </>
-        }
-        lede="Pick a range and a shape. Uniswap mints each bin straight to your wallet, and nothing is held by LockFi."
+        title="Build a position"
+        lede="Pick a pool, choose how your liquidity is spread, and deposit. Uniswap mints it straight to your wallet."
       />
       {/* The builder reads ?pool= and ?range= from the URL, which Next renders inside a boundary. */}
       <Suspense fallback={null}>

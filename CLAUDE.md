@@ -5618,3 +5618,51 @@ alone, and it says so. Deploying again later completes the move.
 - **The X handle** is being renamed by the owner. `SOCIAL.x` in
   `lib/site.ts` is the one line to change when the new handle arrives.
 - The banners in `brand/social/` still say Balast and should not be posted.
+
+---
+
+## 40. LockFi's own look: signal blue, and a DLMM builder
+
+The owner, on the first LockFi deploy: *ubah tampilan ini dan tampilan fitur2
+lainya, intinya jangan sama kaya balast*. The site still looked like the last
+Balast version. Asked for a reference, the owner picked **Meteora's DLMM
+screen** for the feature pages and **signal blue** as the brand colour.
+
+### Colour
+
+`--ac` is `#3B82F6`: the brand, the active control, the bin chart's token side,
+charts. A filled control (the primary button, the Stake button, the logo tile)
+uses `--ac-fill` `#2563EB`, one shade darker, so white text on it holds 5.2:1
+where `#3B82F6` would be 3.7:1. `--ac-3` `#93C5FD` is the accent as text on
+the dark page. Green is still a rising number and a buy; red a falling number
+and a sell. The pool header and the portfolio strip carry a faint blue wash
+from the left, the only decoration.
+
+The favicon, the home-screen icon and the link preview card are the pin arch
+in white on the blue tile (`npm run brand:lockfi`; `brand/lockfi/icon-blue*`
+is the primary icon, the dark and light ones stay).
+
+### `/positions`, as a DLMM screen
+
+Top to bottom, in one column: the **pool header** (token picker set as a large
+title, the pair, the contract address with Copy and Explorer, and a strip of
+price, liquidity, volume 24h, fees 24h and fee tier); the **market bar**
+(currency, then that currency's fee tiers with each pool's liquidity); the
+**bin chart** full width; then **Strategy** (full-range toggle, shape, range,
+bins) beside **Deposit** (amount, slippage, the range / yield / split summary,
+the Mint button and the status line). The long explanation of the estimate
+moved into a *How the estimate is worked out* disclosure under the button.
+Nothing in the flow, the figures or the ids the tests use changed.
+
+### Everywhere else
+
+- Page headers are plain titles in LockFi's voice: *Build a position*,
+  *Stake a pool*, *Your portfolio*, *Fees into liquidity*, *How LockFi works*.
+- **Stakes** (the live list, `StakeList`) is a pool board: a header strip of
+  pools, liquidity, volume and fees summed from its rows (§12), then rows with
+  v3/v4 and tier chips, liquidity, volume 24h, fees 24h, fee yield, and a blue
+  *Stake* button. The simulated vault cards are unchanged.
+- **Portfolio**'s four figures are one strip instead of four cards.
+
+**Verified**: typecheck, lint, 566 unit tests, the production build and all
+41 Playwright tests, plus screenshots at 1440px.

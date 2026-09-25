@@ -9,12 +9,8 @@ export default function PortfolioPage() {
     <section>
       <Masthead
         eyebrow="Portfolio"
-        title={
-          <>
-            Your fees, <em>day by day</em>.
-          </>
-        }
-        lede="Every position at today's prices, with the fees it has earned and a way to collect them. Nothing here is projected."
+        title="Your portfolio"
+        lede="Every position your wallet holds, at today's prices, with the fees it has earned. Collect or withdraw any time."
       />
       <PortfolioBody />
     </section>

@@ -171,12 +171,8 @@ export default function LearnPage() {
     <section>
       <Masthead
         eyebrow="Learn"
-        title={
-          <>
-            How it works, and <em>what can go wrong</em>.
-          </>
-        }
-        lede="Twelve short answers, before you sign anything. If one of them is not what the site does, that is a bug — tell us on X."
+        title="How LockFi works"
+        lede="Twelve short answers to read before you sign anything, including what can go wrong."
       />
       <div className="card learn">
         <nav aria-label="On this page" className="learn-toc">

@@ -9,12 +9,8 @@ export default function RouterPage() {
     <section>
       <Masthead
         eyebrow="Router · for token teams"
-        title={
-          <>
-            Turn creator fees into <em>permanent liquidity</em>.
-          </>
-        }
-        lede="For token teams. Point your fee wallet at the router and it buys back liquidity on a schedule or when you hit a market-cap milestone. TWAP priced, keeper triggered, funds never leave the contract."
+        title="Fees into liquidity"
+        lede="Point your creator fees at the router and it turns them into permanent liquidity for your pool, on a schedule or at market-cap milestones."
       />
       <RouterPanel />
     </section>

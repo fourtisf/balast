@@ -10,12 +10,8 @@ export default function StakesPage() {
     <section>
       <Masthead
         eyebrow="Stakes"
-        title={
-          <>
-            Stake once. <em>Earn on every trade</em>.
-          </>
-        }
-        lede="A stake is one full-range position, minted by Uniswap straight to your wallet. Never out of range, no lockup, no LockFi fee. ETH or USDG is enough to start."
+        title="Stake a pool"
+        lede="One full-range position per stake, minted by Uniswap to your wallet. Never out of range, withdraw any time, no LockFi fee."
       />
       <VaultGrid />
       <MyStakes />

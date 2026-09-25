@@ -6,12 +6,16 @@ import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { BinChart } from '@/components/positions/BinChart';
 import { MyTokenPositions } from '@/components/positions/MyTokenPositions';
+import { TokenBadge } from '@/components/ui/TokenBadge';
 import { DEFAULT_SLIPPAGE_BPS, GAS_RESERVE_WEI, useMintFlow } from '@/components/positions/useMintFlow';
 import { CHAIN, EXPLORER_URL, NATIVE_ETH } from '@/lib/chain';
 import { DATA_SOURCE } from '@/lib/data';
 import type { Pool, ShapeId } from '@/lib/data/types';
-import { ageLabel, feeTierLabel, price as fmtPrice, quoteIsWrappedEther, quoteLabel, usd } from '@/lib/format';
+import { ageLabel, feeTierLabel, price as fmtPrice, quoteIsWrappedEther, quoteLabel, tokenPrice, usd } from '@/lib/format';
 import {
+  shownLiquidity,
+  shownPrice,
+  shownVolume,
   shownYield,
   stalenessText,
   yieldBasisShort,
@@ -466,88 +470,151 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
     (flow.step === 'zap' && (!flow.zap?.quote || Boolean(flow.zap.problem))) ||
     (flow.step === 'ready' && (!flow.plan || Boolean(flow.error))));
 
+  // The pool header's figures, from the same choices the board makes.
+  const headPrice = flow.live ? `${num(flow.live.tokenPriceInQuote)} ${quoteSymbol}` : tokenPrice(shownPrice(pool).value);
+  const headLiquidity = shownLiquidity(pool).value;
+  const headVolume = shownVolume(pool).value;
+
+  const statusLine = !valid ? (
+    <p className="hint down status" role="alert">
+      {problems[0]}
+    </p>
+  ) : flow.error ? (
+    <p className="hint down status" role="alert">
+      {flow.error}
+    </p>
+  ) : flow.liveError ? (
+    <p className="hint down status" role="alert">
+      {flow.liveError}
+    </p>
+  ) : flow.result ? (
+    <p className="hint status">
+      {flow.result.minted} position{flow.result.minted === 1 ? '' : 's'} minted to your wallet — listed below under{' '}
+      <i>Your {tokenSymbol} positions</i>, with Collect and Withdraw any time.{' '}
+      <a href={`${EXPLORER_URL}/tx/${flow.result.hash}`} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline' }}>
+        View the transaction
+      </a>
+    </p>
+  ) : (
+    <p className="hint status">
+      {onChain
+        ? flow.step === 'wrong-chain'
+          ? `The wallet is on another network. Nothing is sent until it is on ${CHAIN.name}.`
+          : flow.step === 'wrap'
+            ? `This pool holds its ether as aeWETH. One transaction wraps ${fmtAmount(flow.wrap!.shortfall, 18)} of your ETH into the same amount of it, then the mint follows.`
+            : flow.step === 'zap'
+              ? flow.zap?.quote
+                ? `Step 1 swaps ${fmtAmount(flow.zap.quote.amountIn, zapInDecimals)} ${zapIn} for about ${fmtAmount(flow.zap.quote.expectedOut, zapOutDecimals)} ${zapOut} in this pool through Uniswap (${(flow.zap.quote.lossBps / 100).toFixed(2)}% to fee and impact; reverts below ${fmtAmount(flow.zap.quote.minOut, zapOutDecimals)}). Step 2 ${wrapped && pool.protocol !== 'v3' ? 'wraps the ETH side and mints' : 'mints'}. Nothing is held by LockFi.`
+                : `The wallet holds ${zapIn} and not enough ${zapOut}: pricing a swap for the rest in this pool.`
+              : flow.step === 'approve'
+                ? `${flow.approvals.length} approval${flow.approvals.length === 1 ? '' : 's'} first, then one transaction to mint. Nothing is held by LockFi.`
+                : `${flow.fitted ? `Fitted to your balance: ${(flow.fitted.bps / 100).toFixed(1)}% of the deposit typed. ` : ''}One transaction through Uniswap's ${pool.protocol === 'v3' ? 'v3 position manager' : 'PositionManager'}${flow.plan ? `: ${flow.plan.positions.length} position${flow.plan.positions.length === 1 ? '' : 's'}, each an NFT in your wallet` : ''}.`
+        : 'One transaction. You keep the NFT.'}
+    </p>
+  );
+
   return (
     <>
-    <div className="builder">
-      <div className="card panel">
-        {wantedMissing && (
-          <div className="note" style={{ marginBottom: 16 }} role="status">
-            <b>That market is not offered here</b>
-            <p className="hint">
-              The pool the link named is not one this builder can mint into — it is a Uniswap v3
-              pool, or it no longer clears the listing bar. It is showing {pool.token.symbol} /{' '}
-              {quoteLabel(pool)} instead; pick the market you want below.
-            </p>
-          </div>
-        )}
-        <div className="field">
-          <label htmlFor="b-token">Token</label>
-          <div className="inp" style={{ height: 46 }}>
-            <select
-              id="b-token"
-              value={token.address}
-              onChange={(e) => {
-                // Its deepest market, which is the one the board's row is.
-                const picked = tokens.find((t) => t.address === e.target.value);
-                if (picked) choose(picked.markets[0].id);
-              }}
-            >
-              {tokens.map((t) => (
-                <option key={t.address} value={t.address}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          {/* Which token this is, exactly: a ticker is not unique here (two
-              CASHCATs), and a site that asks for a wallet should show the
-              contract it is about to put money next to. */}
-          {pool.token.address.toLowerCase() === NATIVE_ETH ? (
-            <p className="hint" style={{ marginTop: 8 }}>
-              Ether is the chain&rsquo;s native asset: no contract.
-            </p>
-          ) : (
-            <div className="ca" style={{ marginTop: 8 }} data-testid="token-ca">
-              <code className="num" title={pool.token.address}>
-                {pool.token.address}
-              </code>
-              <div className="ca-actions">
-                <button
-                  type="button"
-                  className="btn btn-ghost sm"
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(pool.token.address);
-                      showToast(`${pool.token.symbol} contract address copied`);
-                    } catch {
-                      showToast('Could not copy — select the address instead');
-                    }
-                  }}
-                >
-                  Copy
-                </button>
-                <a
-                  className="btn btn-ghost sm"
-                  href={`${EXPLORER_URL}/token/${pool.token.address}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Explorer
-                </a>
-              </div>
-            </div>
-          )}
+    <div className="builder dlmm">
+      {wantedMissing && (
+        <div className="note" role="status">
+          <b>That market is not offered here</b>
+          <p className="hint">
+            The pool the link named is not one this builder can mint into — it is a Uniswap v3 pool, or it no
+            longer clears the listing bar. It is showing {pool.token.symbol} / {quoteLabel(pool)} instead.
+          </p>
         </div>
+      )}
 
-        {/* This token's markets. A pair is a different pool to be in: the
-            quote currency decides whether a wallet can enter at all, and the
-            fee tier decides what the position earns. Shown even when there is
-            one, so what you are in is on screen rather than implied. */}
+      {/* The pool, first and whole: which token, which market, and its
+          figures in one strip — the way a DLMM screen opens on its pool. */}
+      <header className="card pool-head">
+        <div className="ph-id">
+          <TokenBadge token={pool.token} className="logo ph-logo" />
+          <div className="ph-main">
+            <div className="ph-pick">
+              <label htmlFor="b-token" className="sr-only">
+                Token
+              </label>
+              <select
+                id="b-token"
+                value={token.address}
+                onChange={(e) => {
+                  // Its deepest market, which is the one the board's row is.
+                  const picked = tokens.find((t) => t.address === e.target.value);
+                  if (picked) choose(picked.markets[0].id);
+                }}
+              >
+                {tokens.map((t) => (
+                  <option key={t.address} value={t.address}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+              <span className="ph-quote">/ {quoteSymbol}</span>
+            </div>
+            {/* Which token this is, exactly: a ticker is not unique here. */}
+            {pool.token.address.toLowerCase() === NATIVE_ETH ? (
+              <p className="ph-ca muted">Native asset · no contract</p>
+            ) : (
+              <div className="ca ph-ca" data-testid="token-ca">
+                <code className="num" title={pool.token.address}>
+                  {pool.token.address}
+                </code>
+                <div className="ca-actions">
+                  <button
+                    type="button"
+                    className="btn btn-ghost sm"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(pool.token.address);
+                        showToast(`${pool.token.symbol} contract address copied`);
+                      } catch {
+                        showToast('Could not copy — select the address instead');
+                      }
+                    }}
+                  >
+                    Copy
+                  </button>
+                  <a className="btn btn-ghost sm" href={`${EXPLORER_URL}/token/${pool.token.address}`} target="_blank" rel="noreferrer">
+                    Explorer
+                  </a>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        <dl className="ph-stats">
+          <div>
+            <dt>Price</dt>
+            <dd className="num">{headPrice}</dd>
+          </div>
+          <div>
+            <dt>Liquidity</dt>
+            <dd className="num">{headLiquidity === null ? '—' : usd(headLiquidity)}</dd>
+          </div>
+          <div>
+            <dt>Volume 24h</dt>
+            <dd className="num">{usd(headVolume)}</dd>
+          </div>
+          <div>
+            <dt>Fees 24h</dt>
+            <dd className="num">{todaysFees === null ? '—' : usd(todaysFees)}</dd>
+          </div>
+          <div>
+            <dt>Fee tier</dt>
+            <dd className="num">{feeTierLabel(pool.feeTierBps)}</dd>
+          </div>
+        </dl>
+      </header>
+
+      {/* This token's markets: the currency, then that currency's pools. */}
+      <div className="card market-bar">
         <div className="field">
           <span className="lbl" id="market-label">
             Market
           </span>
-          <div className="seg wrap" role="group" aria-labelledby="market-label">
+          <div className="seg" role="group" aria-labelledby="market-label">
             {groups.map((g) => (
               <button
                 key={g.label}
@@ -559,31 +626,11 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
               </button>
             ))}
           </div>
-          <p className="hint">
-            {groups.length === 1
-              ? `${token.symbol} trades against ${group.label} here, and nothing else this builder can mint into. A pool with no real money behind it is not offered.`
-              : `The currency the deposit below is counted in. A position holds both sides, so the mint takes some ${group.label} and some ${token.symbol}.`}
-            {wrapped
-              ? ` This pool holds its ether as aeWETH — one token per ether, the same asset — so the mint wraps what your wallet is short of and spends that.`
-              : ''}
-            {token.unmintable.length > 0 &&
-              ` ${token.unmintable.length} more ${token.symbol} pool${
-                token.unmintable.length === 1 ? '' : 's'
-              } (${[...new Set(token.unmintable.map((m) => quoteLabel(m)))].join(', ')}) ${
-                token.unmintable.length === 1 ? 'runs a hook' : 'run hooks'
-              } LockFi has not verified, so ${token.unmintable.length === 1 ? 'it is' : 'they are'} listed but not offered here.`}
-          </p>
         </div>
-
-        {/* Which of that currency's pools. A fee tier alone is not a choice
-            anybody can make — v4 lets a pool carry any fee its key names, so
-            on this chain a token can have six ether pools at six arbitrary
-            tiers. The pool's own liquidity is what settles it, so it is on
-            the option rather than a click away. */}
         {group.markets.length > 1 && (
-          <div className="field">
+          <div className="field grow">
             <span className="lbl" id="tier-label">
-              Fee tier
+              Fee tier · pool liquidity
             </span>
             <div className="seg wrap" role="group" aria-labelledby="tier-label">
               {group.markets.map((m) => {
@@ -596,7 +643,7 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
                     onClick={() => choose(m.id)}
                     title={
                       depth === null
-                        ? 'This pool\u2019s liquidity cannot be reconstructed from its own events yet.'
+                        ? 'This pool’s liquidity cannot be reconstructed from its own events yet.'
                         : `${usd(depth)} of liquidity in this pool`
                     }
                   >
@@ -608,235 +655,23 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
                 );
               })}
             </div>
-            <p className="hint">
-              What every trade in the pool pays, and what the position earns a share of. The figure
-              beside each is that pool&rsquo;s own liquidity — {group.markets.length} pools quote{' '}
-              {token.symbol} in {group.label} here, and the deepest is the one the board&rsquo;s row
-              is. A higher tier earns more per trade and usually sees fewer of them.
-              {group.markets.some((m) => poolLiquidityUsd(m) === null) &&
-                ' A dash means the indexer cannot reconstruct that pool\u2019s liquidity from its own events, so its depth is unknown rather than zero — the pool is listed because it has traded.'}
-            </p>
           </div>
         )}
-
-        <div className="field">
-          <label htmlFor="b-amount">Deposit</label>
-          <div className="inp">
-            <input
-              id="b-amount"
-              type="number"
-              min="0"
-              step="0.1"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
-            <span className="unit">{quoteSymbol}</span>
-            {!onChain ? (
-              <span className="max">Max {num(simMax)}</span>
-            ) : flow.balances && flow.sides ? (
-              /* One figure, because the page calls both ways of holding ether
-                 ETH and the mint wraps what is missing. A wrapped market used
-                 to show its wrapped balance alone — a zero beside a wallet
-                 full of ether, which reads as "you cannot do this". */
-              <span
-                className="max"
-                title={
-                  wrapped
-                    ? `${fmtAmount(flow.balances.quote, flow.sides.quoteDecimals)} held as aeWETH, ` +
-                      `${fmtAmount(flow.balances.native, 18)} held natively`
-                    : undefined
-                }
-              >
-                Balance {fmtAmount(flow.quoteSpendable ?? flow.balances.quote, flow.sides.quoteDecimals)}
-              </span>
-            ) : null}
-          </div>
-          <p className="hint">
-            {onChain
-              ? `Bins above the current price hold ${tokenSymbol}; bins below hold ${quoteSymbol}. Holding only one of them is fine: LockFi swaps part of it for the other in this same pool first, then mints.`
-              : `LockFi swaps part of this into ${tokenSymbol} to fill the shape you choose.`}
-          </p>
-        </div>
-
-        {onChain && (
-          <div className="field">
-            <span className="lbl" id="slippage-label">
-              Slippage
-            </span>
-            <div className="seg" role="group" aria-labelledby="slippage-label">
-              {SLIPPAGE_CHOICES.map((bps) => (
-                <button
-                  key={bps}
-                  className={slippageBps === bps ? 'on' : undefined}
-                  aria-pressed={slippageBps === bps}
-                  onClick={() => setSlippageBps(bps)}
-                >
-                  {(bps / 100).toLocaleString('en-US', { maximumFractionDigits: 1 })}%
-                </button>
-              ))}
-            </div>
-            <p className="hint">
-              How much more than the amounts shown the mint may take if the price moves before it is included.
-              Past that it reverts and nothing is taken.
-            </p>
-          </div>
-        )}
-
-        <div className="field">
-          <label className="lbl" htmlFor="b-full" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <input
-              id="b-full"
-              type="checkbox"
-              checked={fullRange}
-              onChange={(e) => setFullRange(e.target.checked)}
-              style={{ width: 16, height: 16, accentColor: 'var(--ac)' }}
-            />
-            Full range · a stake
-          </label>
-          <p className="hint">
-            {fullRange
-              ? 'One position across the whole price line: never out of range, earns this pool\u2019s fee on every trade, the least concentrated a position can be. Untick to shape it.'
-              : 'Tick to stake instead: one full-range position, no shape and no bins to choose.'}
-          </p>
-        </div>
-
-        {!fullRange && (<>
-        <div className="field">
-          <span className="lbl" id="shape-label">
-            Shape
-          </span>
-          <div className="shape" role="group" aria-labelledby="shape-label">
-            {SHAPES.map((s) => (
-              <button
-                key={s.id}
-                className={shape === s.id ? 'on' : undefined}
-                aria-pressed={shape === s.id}
-                onClick={() => setShape(s.id)}
-              >
-                <svg viewBox="0 0 52 24" aria-hidden="true">
-                  {SHAPE_ICONS[s.id].map((h, i) => (
-                    <rect key={i} x={2 + i * 6} y={24 - h} width={4} height={h} />
-                  ))}
-                </svg>
-                {s.label}
-              </button>
-            ))}
-          </div>
-          <p className="hint">{shapeMeta.hint}</p>
-          <p className="hint">
-            Across {bins} bins it holds{' '}
-            {shape === 'spot' ? (
-              <>exactly what an even spread does at the current price</>
-            ) : (
-              <>
-                <b className="num">{density >= 10 ? density.toFixed(0) : density >= 1 ? density.toFixed(2) : density.toFixed(2)}×</b>{' '}
-                an even spread at the current price
-              </>
-            )}
-            . Only the bin holding the price earns a fee, so that is the whole difference between
-            the three — and it is what scales the estimate on the right.
-          </p>
-        </div>
-
-        <div className="field">
-          <span className="lbl">Price range</span>
-          <div className="rangebox">
-            <div className="inp sm">
-              <label className="unit" htmlFor="b-min" style={{ fontSize: 12 }}>
-                Min
-              </label>
-              <input id="b-min" type="number" step="1" value={minPct} onChange={(e) => setMinPct(Number(e.target.value))} />
-              <span className="unit">%</span>
-            </div>
-            <div className="inp sm">
-              <label className="unit" htmlFor="b-max" style={{ fontSize: 12 }}>
-                Max
-              </label>
-              <input id="b-max" type="number" step="1" value={maxPct} onChange={(e) => setMaxPct(Number(e.target.value))} />
-              <span className="unit">%</span>
-            </div>
-          </div>
-          <label className="sr-only" htmlFor="b-width">
-            Symmetric range width, percent
-          </label>
-          <input
-            className="range"
-            id="b-width"
-            type="range"
-            min="2"
-            max="60"
-            value={Math.round(Math.max(Math.abs(minPct), Math.abs(maxPct)))}
-            onChange={(e) => setWidth(Number(e.target.value))}
-            style={{ marginTop: 10 }}
-          />
-          <p className="hint">
-            Tighter range earns more per dollar while price stays inside, and nothing once it leaves.
-          </p>
-        </div>
-
-        <div className="field">
-          <label htmlFor="b-bins">
-            Bins <span className="muted" style={{ fontWeight: 400 }}>· {bins}</span>
-          </label>
-          <input className="range" id="b-bins" type="range" min={MIN_BINS} max={MAX_BINS} value={bins} onChange={(e) => setBins(Number(e.target.value))} />
-          <p className="hint">
-            Up to {MAX_BINS} bins in one transaction — past that, two transactions are cheaper.
-            {flow.plan && flow.plan.positions.length < bins
-              ? ` This range fits ${flow.plan.positions.length} at the pool's tick spacing.`
-              : ''}
-          </p>
-        </div>
-        </>)}
-
-        <button
-          className="btn btn-brand"
-          style={{ width: '100%', justifyContent: 'center', height: 46 }}
-          disabled={buttonDisabled}
-          onClick={() => void flow.run()}
-        >
-          {buttonLabel}
-        </button>
-        {!valid ? (
-          <p className="hint down" style={{ textAlign: 'center', marginTop: 8 }} role="alert">
-            {problems[0]}
-          </p>
-        ) : flow.error ? (
-          <p className="hint down" style={{ textAlign: 'center', marginTop: 8 }} role="alert">
-            {flow.error}
-          </p>
-        ) : flow.liveError ? (
-          <p className="hint down" style={{ textAlign: 'center', marginTop: 8 }} role="alert">
-            {flow.liveError}
-          </p>
-        ) : flow.result ? (
-          <p className="hint" style={{ textAlign: 'center', marginTop: 8 }}>
-            {flow.result.minted} position{flow.result.minted === 1 ? '' : 's'} minted to your wallet — listed below
-            under <i>Your {tokenSymbol} positions</i>, earning while the price is in range, with Collect and Withdraw
-            any time.{' '}
-            <a href={`${EXPLORER_URL}/tx/${flow.result.hash}`} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline' }}>
-              View the transaction
-            </a>
-          </p>
-        ) : (
-          <p className="hint" style={{ textAlign: 'center', marginTop: 8 }}>
-            {onChain
-              ? flow.step === 'wrong-chain'
-                ? `The wallet is on another network. Nothing is sent until it is on ${CHAIN.name}; the price shown is read from the chain's public RPC.`
-                : flow.step === 'wrap'
-                ? `This pool holds its ether as aeWETH. One transaction wraps ${fmtAmount(flow.wrap!.shortfall, 18)} of your ETH into the same amount of it — one token per ether, no price and nothing to slip — and the mint follows.`
-              : flow.step === 'zap'
-                ? flow.zap?.quote
-                  ? `The wallet holds ${zapIn} and not enough ${zapOut}. Step 1 swaps ${fmtAmount(flow.zap.quote.amountIn, zapInDecimals)} ${zapIn} for about ${fmtAmount(flow.zap.quote.expectedOut, zapOutDecimals)} ${zapOut} in this same pool, through Uniswap's router — ${(flow.zap.quote.lossBps / 100).toFixed(2)}% to the pool's fee and price impact, and it reverts below ${fmtAmount(flow.zap.quote.minOut, zapOutDecimals)}.${flow.zap.payWithEther && pool.protocol !== 'v3' && wrapped ? ' Paid in ETH: the router wraps it in the same transaction, so no approval is needed.' : ''} Step 2 ${wrapped && pool.protocol !== 'v3' ? 'wraps the ETH side and mints' : 'mints'}, fitted to what the swap delivered. Nothing is held by LockFi.`
-                  : `The wallet holds ${zapIn} and not enough ${zapOut}: pricing a swap for the rest in this same pool.`
-              : flow.step === 'approve'
-                ? `${flow.approvals.length} approval${flow.approvals.length === 1 ? '' : 's'} first, then one transaction to mint. Nothing is held by LockFi.`
-                : `${flow.fitted ? `Fitted to your balance: ${(flow.fitted.bps / 100).toFixed(1)}% of the deposit typed, so the mint takes only what the wallet holds. ` : ''}One transaction through Uniswap's ${pool.protocol === 'v3' ? 'v3 position manager' : 'PositionManager'}${flow.plan ? `: ${flow.plan.positions.length} position${flow.plan.positions.length === 1 ? '' : 's'}, each an NFT in your wallet` : ''}. Nothing is held by LockFi.`
-              : 'One transaction. You keep the NFT.'}
-          </p>
-        )}
+        <p className="hint market-note">
+          {wrapped ? 'This pool holds its ether as aeWETH; the mint wraps what your wallet is short of. ' : ''}
+          {token.unmintable.length > 0 &&
+            `${token.unmintable.length} more ${token.symbol} pool${token.unmintable.length === 1 ? '' : 's'} (${[
+              ...new Set(token.unmintable.map((m) => quoteLabel(m))),
+            ].join(', ')}) ${token.unmintable.length === 1 ? 'runs a hook' : 'run hooks'} LockFi has not verified, so ${
+              token.unmintable.length === 1 ? 'it is' : 'they are'
+            } not offered here. `}
+          {group.markets.some((m) => poolLiquidityUsd(m) === null) &&
+            'A dash is a liquidity the indexer cannot reconstruct yet: unknown, not zero.'}
+        </p>
       </div>
 
-      <div className="card viz">
+      {/* The chart, full width: the distribution is the thing being made. */}
+      <section className="card viz">
         <div className="viz-h">
           <div>
             <span className="t">
@@ -860,25 +695,23 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
         </div>
 
         {fullRange ? (
-          <div className="note" style={{ margin: '12px 0' }}>
+          <div className="note fullrange-note">
             <b>Full range</b>
             <p className="hint">
-              The position covers every price the pool can reach, so it holds both {tokenSymbol} and{' '}
-              {quoteSymbol} at today&rsquo;s ratio and is never out of range. It earns the pool&rsquo;s
-              fee on every trade, spread over the whole line rather than concentrated around the price.
+              The position covers every price the pool can reach: it holds both {tokenSymbol} and {quoteSymbol} at
+              today&rsquo;s ratio, is never out of range, and earns the pool&rsquo;s fee on every trade, spread over
+              the whole line.
             </p>
           </div>
         ) : (
           <BinChart weights={weights} minPct={safeMin / 100} maxPct={safeMax / 100} currentPrice={priceNowUsd} shape={shape} symbol={tokenSymbol} />
         )}
 
-        {/* The legend reads the bin chart, and a full-range position draws
-            none — it was describing a picture that was not on screen. */}
         {!fullRange && (
           <div className="legend">
             <span>
               <i style={{ background: 'var(--ac)' }} />
-              Token side (above price)
+              {tokenSymbol} side (above price)
             </span>
             <span>
               <i style={{ background: 'var(--ac-soft)' }} />
@@ -890,102 +723,240 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
             </span>
           </div>
         )}
+      </section>
 
-        <div className="sum">
-          <div>
-            <div className="k">Range</div>
-            {/* A full-range position runs to the lowest and highest ticks the
-                spacing allows, which as a price is 0 and about 1e38. Printed
-                literally that was `0 – 337,815,857,900,711,430,000,000,000,
-                000,000,000,000 ETH`, four lines of a number that means "every
-                price" and reads as a fault. */}
-            <div className="v num">
-              {fullRange
-                ? '0 → ∞'
-                : liveRange
-                  ? `${num(liveRange.lo)} – ${num(liveRange.hi)} ${quoteSymbol}`
-                  : `${fmtPrice(lo)} – ${fmtPrice(hi)}`}
-            </div>
+      <div className="dlmm-cols">
+        {/* Strategy: how the liquidity is laid out. */}
+        <div className="card panel">
+          <h2 className="panel-t">Strategy</h2>
+          <div className="field">
+            <label className="fr-toggle" htmlFor="b-full">
+              <input id="b-full" type="checkbox" checked={fullRange} onChange={(e) => setFullRange(e.target.checked)} />
+              <span>
+                <b>Full range</b>
+                <small>One position across every price, never out of range. Untick to shape it.</small>
+              </span>
+            </label>
           </div>
-          <div>
-            {onChain ? (
-              <>
-                {/* This position's share of today's fees at today's price
-                    (fee-estimate.ts), full range included: a full-range
-                    position earns less than the pool's average LP when the
-                    others are concentrated, and the pool's own figure would
-                    hide that. */}
-                {/* A yearly rate, and said so on the figure itself: `365%`
-                    alone was read as 365% a day. The day's dollars sit
-                    beneath it, because a dollar a day is the figure a
-                    person can check against their own deposit. */}
-                <div className="k">Est. fee yield · per year</div>
-                <div
-                  className={`v num${chainEstimate ? ' up' : ' muted'}`}
-                  title="A yearly rate: today's fees in this pool, times the share of the liquidity at the current price this position would hold, over what you deposit, times 365. Not a forecast."
-                  data-testid="est-yield"
+
+          {!fullRange && (
+            <>
+              <div className="field">
+                <span className="lbl" id="shape-label">
+                  Shape
+                </span>
+                <div className="shape" role="group" aria-labelledby="shape-label">
+                  {SHAPES.map((s) => (
+                    <button key={s.id} className={shape === s.id ? 'on' : undefined} aria-pressed={shape === s.id} onClick={() => setShape(s.id)}>
+                      <svg viewBox="0 0 52 24" aria-hidden="true">
+                        {SHAPE_ICONS[s.id].map((h, i) => (
+                          <rect key={i} x={2 + i * 6} y={24 - h} width={4} height={h} />
+                        ))}
+                      </svg>
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="hint">{shapeMeta.hint}</p>
+                <p className="hint">
+                  Across {bins} bins it holds{' '}
+                  {shape === 'spot' ? (
+                    <>exactly what an even spread does at the current price</>
+                  ) : (
+                    <>
+                      <b className="num">{density >= 10 ? density.toFixed(0) : density.toFixed(2)}×</b> an even spread at the
+                      current price
+                    </>
+                  )}
+                  . Only the bin holding the price earns a fee.
+                </p>
+              </div>
+
+              <div className="field">
+                <span className="lbl">Price range</span>
+                <div className="rangebox">
+                  <div className="inp sm">
+                    <label className="unit" htmlFor="b-min" style={{ fontSize: 12 }}>
+                      Min
+                    </label>
+                    <input id="b-min" type="number" step="1" value={minPct} onChange={(e) => setMinPct(Number(e.target.value))} />
+                    <span className="unit">%</span>
+                  </div>
+                  <div className="inp sm">
+                    <label className="unit" htmlFor="b-max" style={{ fontSize: 12 }}>
+                      Max
+                    </label>
+                    <input id="b-max" type="number" step="1" value={maxPct} onChange={(e) => setMaxPct(Number(e.target.value))} />
+                    <span className="unit">%</span>
+                  </div>
+                </div>
+                <label className="sr-only" htmlFor="b-width">
+                  Symmetric range width, percent
+                </label>
+                <input
+                  className="range"
+                  id="b-width"
+                  type="range"
+                  min="2"
+                  max="60"
+                  value={Math.round(Math.max(Math.abs(minPct), Math.abs(maxPct)))}
+                  onChange={(e) => setWidth(Number(e.target.value))}
+                  style={{ marginTop: 10 }}
+                />
+              </div>
+
+              <div className="field">
+                <label htmlFor="b-bins">
+                  Bins <span className="muted" style={{ fontWeight: 400 }}>· {bins}</span>
+                </label>
+                <input className="range" id="b-bins" type="range" min={MIN_BINS} max={MAX_BINS} value={bins} onChange={(e) => setBins(Number(e.target.value))} />
+                <p className="hint">
+                  Up to {MAX_BINS} in one transaction.
+                  {flow.plan && flow.plan.positions.length < bins
+                    ? ` This range fits ${flow.plan.positions.length} at the pool's tick spacing.`
+                    : ''}
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Deposit: how much, what it becomes, and the one button. */}
+        <div className="card panel deposit">
+          <h2 className="panel-t">Deposit</h2>
+          <div className="field">
+            <label htmlFor="b-amount">Amount</label>
+            <div className="inp big">
+              <input id="b-amount" type="number" min="0" step="0.1" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <span className="unit">{quoteSymbol}</span>
+              {!onChain ? (
+                <span className="max">Max {num(simMax)}</span>
+              ) : flow.balances && flow.sides ? (
+                <span
+                  className="max"
+                  title={
+                    wrapped
+                      ? `${fmtAmount(flow.balances.quote, flow.sides.quoteDecimals)} held as aeWETH, ` +
+                        `${fmtAmount(flow.balances.native, 18)} held natively`
+                      : undefined
+                  }
                 >
-                  {chainEstimate ? `${pctText(chainEstimate.pct)} / yr` : '—'}
-                  <span className="est">
-                    {chainEstimate
-                      ? `≈ ${dayText(chainEstimate.dailyUsd)} a day (${pctText(chainEstimate.pct / 365)}) · ${shareText(chainEstimate.share)} of fees at the price${
-                          shownY.young ? ` · ${ageLabel(pool.ageHours)} old pool` : ''
-                        }`
-                      : chainEstimateMissing}
-                  </span>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="k">{fullRange ? 'Fee yield' : 'Est. fee yield'}</div>
-                <div className={`v num${known ? ' up' : ' muted'}`} title={yieldTitle(shownY)}>
-                  {fullRange ? yieldValue(shownY) : known ? `${simYield.toFixed(0)}%` : '—'}
-                  {(() => {
-                    const qualifier = yieldCaption(shownY, ageLabel(pool.ageHours), stalenessText(indexerLagSeconds));
-                    const text = fullRange
-                      ? (qualifier ?? yieldBasisShort(shownY))
-                      : known
-                        ? `est. · from ${trailing.toFixed(0)}% · ${yieldBasisShort(shownY)}`
-                        : qualifier;
-                    return text ? <span className="est">{text}</span> : null;
-                  })()}
-                </div>
-              </>
-            )}
+                  Balance {fmtAmount(flow.quoteSpendable ?? flow.balances.quote, flow.sides.quoteDecimals)}
+                </span>
+              ) : null}
+            </div>
+            <p className="hint">
+              {onChain
+                ? `Holding only ${quoteSymbol} is fine: LockFi swaps part of it for ${tokenSymbol} in this pool first, then mints.`
+                : `LockFi swaps part of this into ${tokenSymbol} to fill the shape you choose.`}
+            </p>
           </div>
-          <div>
-            <div className="k">{onChain ? 'You deposit' : 'Split at mint'}</div>
-            <div className="v num">
-              {flow.needs && flow.sides ? (
+
+          {onChain && (
+            <div className="field">
+              <span className="lbl" id="slippage-label">
+                Slippage
+              </span>
+              <div className="seg" role="group" aria-labelledby="slippage-label">
+                {SLIPPAGE_CHOICES.map((bps) => (
+                  <button key={bps} className={slippageBps === bps ? 'on' : undefined} aria-pressed={slippageBps === bps} onClick={() => setSlippageBps(bps)}>
+                    {(bps / 100).toLocaleString('en-US', { maximumFractionDigits: 1 })}%
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="sum">
+            <div>
+              <div className="k">Range</div>
+              {/* Full range is 0 to about 1e38 as a price; printed literally it
+                  read as a fault. */}
+              <div className="v num">
+                {fullRange
+                  ? '0 → ∞'
+                  : liveRange
+                    ? `${num(liveRange.lo)} – ${num(liveRange.hi)} ${quoteSymbol}`
+                    : `${fmtPrice(lo)} – ${fmtPrice(hi)}`}
+              </div>
+            </div>
+            <div>
+              {onChain ? (
                 <>
-                  {fmtAmount(flow.needs.quote, flow.sides.quoteDecimals)} {quoteSymbol} · {fmtAmount(flow.needs.token, flow.sides.tokenDecimals)} {tokenSymbol}
+                  {/* A yearly rate, said so on the figure itself; the day's
+                      dollars beneath it (fee-estimate.ts). */}
+                  <div className="k">Est. fee yield · per year</div>
+                  <div
+                    className={`v num${chainEstimate ? ' up' : ' muted'}`}
+                    title="A yearly rate: today's fees in this pool, times the share of the liquidity at the current price this position would hold, over what you deposit, times 365. Not a forecast."
+                    data-testid="est-yield"
+                  >
+                    {chainEstimate ? `${pctText(chainEstimate.pct)} / yr` : '—'}
+                    <span className="est">
+                      {chainEstimate
+                        ? `≈ ${dayText(chainEstimate.dailyUsd)} a day (${pctText(chainEstimate.pct / 365)}) · ${shareText(chainEstimate.share)} of fees at the price${
+                            shownY.young ? ` · ${ageLabel(pool.ageHours)} old pool` : ''
+                          }`
+                        : chainEstimateMissing}
+                    </span>
+                  </div>
                 </>
-              ) : onChain ? (
-                '—'
               ) : (
                 <>
-                  {(eth * (1 - tokenShare)).toFixed(2)} {quoteSymbol} ·{' '}
-                  {((eth * tokenShare * global.ethPriceUsd) / pool.priceUsd).toLocaleString('en-US', { maximumFractionDigits: 1 })} {tokenSymbol}
+                  <div className="k">{fullRange ? 'Fee yield' : 'Est. fee yield'}</div>
+                  <div className={`v num${known ? ' up' : ' muted'}`} title={yieldTitle(shownY)}>
+                    {fullRange ? yieldValue(shownY) : known ? `${simYield.toFixed(0)}%` : '—'}
+                    {(() => {
+                      const qualifier = yieldCaption(shownY, ageLabel(pool.ageHours), stalenessText(indexerLagSeconds));
+                      const text = fullRange
+                        ? (qualifier ?? yieldBasisShort(shownY))
+                        : known
+                          ? `est. · from ${trailing.toFixed(0)}% · ${yieldBasisShort(shownY)}`
+                          : qualifier;
+                      return text ? <span className="est">{text}</span> : null;
+                    })()}
+                  </div>
                 </>
               )}
             </div>
+            <div>
+              <div className="k">{onChain ? 'You deposit' : 'Split at mint'}</div>
+              <div className="v num">
+                {flow.needs && flow.sides ? (
+                  <>
+                    {fmtAmount(flow.needs.quote, flow.sides.quoteDecimals)} {quoteSymbol} · {fmtAmount(flow.needs.token, flow.sides.tokenDecimals)} {tokenSymbol}
+                  </>
+                ) : onChain ? (
+                  '—'
+                ) : (
+                  <>
+                    {(eth * (1 - tokenShare)).toFixed(2)} {quoteSymbol} ·{' '}
+                    {((eth * tokenShare * global.ethPriceUsd) / pool.priceUsd).toLocaleString('en-US', { maximumFractionDigits: 1 })} {tokenSymbol}
+                  </>
+                )}
+              </div>
+            </div>
           </div>
-          <div>
-            <div className="k">Fee tier</div>
-            <div className="v num">{feeTierLabel(pool.feeTierBps)}</div>
-          </div>
-        </div>
 
-        <p className="hint">
-          {onChain
-            ? chainEstimate && todaysFees !== null
-              ? `Est. fee yield is what this position would have earned from today\u2019s fees. At the current price it would hold ${shareText(chainEstimate.share)} of the liquidity trading there, so ${shareText(chainEstimate.share)} of the ${usd(todaysFees)} of fees this pool took in the last 24 hours: about ${dayText(chainEstimate.dailyUsd)} a day on ${usd(depositUsd)} deposited, which is ${pctText(chainEstimate.pct / 365)} a day or ${pctText(chainEstimate.pct)} over a full year. Only liquidity at the price earns — if the price leaves your ${fullRange ? 'range' : 'bin'} or other LPs add there, it falls. Arithmetic on fees already paid, not a forecast.`
-              : `Est. fee yield is this position\u2019s share of the fees this pool took in the last 24 hours, measured against the liquidity at the current price read from the chain. It needs both, and a deposit to size the position.`
-            : fullRange
-              ? `Fee yield is this pool\u2019s own ${yieldLabel(shownY)} figure: a full-range position concentrates nothing, so there is nothing to scale. It is arithmetic on fees already paid, not a forecast.`
-              : `Est. fee yield scales this pool\u2019s ${yieldLabel(shownY)} by how tightly your range concentrates them. It is arithmetic on fees already paid, not a forecast, and it earns nothing while price sits outside the range.`}
-          {onChain && !wallet ? ' Connect a wallet to see the exact amounts for your deposit.' : ''}
-        </p>
+          <button className="btn btn-brand mint-btn" disabled={buttonDisabled} onClick={() => void flow.run()}>
+            {buttonLabel}
+          </button>
+          {statusLine}
+
+          <details className="how">
+            <summary>How the estimate is worked out</summary>
+            <p className="hint">
+              {onChain
+                ? chainEstimate && todaysFees !== null
+                  ? `At the current price this position would hold ${shareText(chainEstimate.share)} of the liquidity trading there, so ${shareText(chainEstimate.share)} of the ${usd(todaysFees)} of fees this pool took in the last 24 hours: about ${dayText(chainEstimate.dailyUsd)} a day on ${usd(depositUsd)} deposited. Only liquidity at the price earns — if the price leaves your ${fullRange ? 'range' : 'bin'} or other LPs add there, it falls. Arithmetic on fees already paid, not a forecast.`
+                  : `This position's share of the fees this pool took in the last 24 hours, measured against the liquidity at the current price read from the chain. It needs both, and a deposit to size the position.`
+                : fullRange
+                  ? `This pool’s own ${yieldLabel(shownY)} figure: a full-range position concentrates nothing, so there is nothing to scale. Arithmetic on fees already paid, not a forecast.`
+                  : `This pool’s ${yieldLabel(shownY)} scaled by how tightly your range concentrates it. Arithmetic on fees already paid, not a forecast, and nothing while the price sits outside the range.`}
+              {onChain && !wallet ? ' Connect a wallet to see the exact amounts for your deposit.' : ''}
+            </p>
+          </details>
+        </div>
       </div>
     </div>
     <MyTokenPositions token={pool.token} />

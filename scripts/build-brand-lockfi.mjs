@@ -28,6 +28,8 @@ const FONT_URL =
 const INK = '#0A0B0D';
 const WHITE = '#EDEEF1';
 const PAPER = '#F3F3F1';
+/** Signal blue (§40): the filled shade, so the white mark on it holds 5.2:1. */
+const BLUE = '#2563EB';
 
 // ── The mark: Logo.tsx, on a 64-unit grid ─────────────────────────────────
 const SHACKLE = 'M23 53.5V22.5a9 9 0 0 1 18 0v31';
@@ -73,14 +75,16 @@ const svgs = {
   'mark-white.svg': markSvg(WHITE),
   'mark-black.svg': markSvg(INK),
   'mark-currentcolor.svg': markSvg('currentColor'),
+  'icon-blue.svg': iconSvg({ ground: BLUE, ink: '#FFFFFF' }),
+  'icon-blue-square.svg': iconSvg({ ground: BLUE, ink: '#FFFFFF', radius: 0 }),
   'icon-dark.svg': iconSvg({ ground: INK, ink: WHITE }),
   'icon-dark-square.svg': iconSvg({ ground: INK, ink: WHITE, radius: 0 }),
   'icon-light.svg': iconSvg({ ground: PAPER, ink: INK }),
   'icon-white-tile.svg': iconSvg({ ground: WHITE, ink: INK }),
 };
 for (const [name, svg] of Object.entries(svgs)) writeFileSync(join(OUT, name), svg);
-// The favicon: the dark tile, a touch larger mark so it holds at 16px.
-writeFileSync(join(ROOT, 'app', 'icon.svg'), iconSvg({ ground: INK, ink: WHITE, radius: 14, scale: 0.8 }));
+// The favicon: the blue tile, a touch larger mark so it holds at 16px.
+writeFileSync(join(ROOT, 'app', 'icon.svg'), iconSvg({ ground: BLUE, ink: '#FFFFFF', radius: 14, scale: 0.8 }));
 
 // ── The face, for the lockups and the card ────────────────────────────────
 mkdirSync(FONTS, { recursive: true });
@@ -101,7 +105,7 @@ function lockupHtml({ ground, ink, mark = 160 }) {
 const CARD = `<div class="card">
   <div class="glow"></div>
   <div class="top">
-    <div class="tile"><svg viewBox="0 0 64 64">${markShapes(INK)}</svg></div>
+    <div class="tile"><svg viewBox="0 0 64 64">${markShapes('#FFFFFF')}</svg></div>
     <span class="name">LockFi</span>
   </div>
   <div class="mid">
@@ -118,16 +122,17 @@ html,body{margin:0;padding:0;background:transparent}
 .lk{display:inline-flex;align-items:center;gap:48px;padding:72px 88px;font-family:'Instrument Sans',sans-serif;font-weight:700;letter-spacing:-.04em;line-height:1}
 .lk svg{display:block}
 .card{position:relative;width:1200px;height:630px;box-sizing:border-box;padding:72px 80px;background:${INK};color:${WHITE};font-family:'Instrument Sans',sans-serif;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between}
-.glow{position:absolute;inset:-40% -10% auto auto;width:900px;height:700px;background:radial-gradient(closest-side,rgba(237,238,241,.10),transparent);pointer-events:none}
+.glow{position:absolute;inset:-40% -10% auto auto;width:900px;height:700px;background:radial-gradient(closest-side,rgba(59,130,246,.22),transparent);pointer-events:none}
 .top{display:flex;align-items:center;gap:22px;position:relative}
-.tile{width:84px;height:84px;border-radius:20px;background:${WHITE};display:grid;place-items:center}
+.tile{width:84px;height:84px;border-radius:20px;background:${BLUE};display:grid;place-items:center}
 .tile svg{width:62px;height:62px;display:block}
 .name{font-size:56px;font-weight:700;letter-spacing:-.04em}
 .mid{position:relative}
 h1{margin:0;font-size:72px;line-height:1.02;letter-spacing:-.045em;font-weight:700}
 p{margin:22px 0 0;font-size:26px;line-height:1.35;color:#9A9EA8;max-width:760px;font-weight:500}
 .bars{position:absolute;right:80px;bottom:72px;display:flex;align-items:flex-end;gap:8px}
-.bars i{display:block;width:14px;border-radius:3px;background:#23252B}
+.bars i{display:block;width:14px;border-radius:3px;background:#1E2A44}
+.bars i:nth-child(n+5):nth-child(-n+7){background:#3B82F6}
 `;
 
 // ── Rasterise ─────────────────────────────────────────────────────────────
@@ -152,6 +157,9 @@ const svgPage = (svg, px) =>
   `<div style="width:${px}px;height:${px}px">${svg.replace('width="64" height="64"', `width="${px}" height="${px}"`)}</div>`;
 
 for (const [src, px] of [
+  ['icon-blue.svg', 1024],
+  ['icon-blue.svg', 512],
+  ['icon-blue-square.svg', 1024],
   ['icon-dark.svg', 1024],
   ['icon-dark.svg', 512],
   ['icon-dark-square.svg', 1024],
@@ -161,7 +169,7 @@ for (const [src, px] of [
 ]) {
   await shoot(svgPage(svgs[src], px), join(OUT, src.replace('.svg', `-${px}.png`)), { width: px, height: px });
 }
-await shoot(svgPage(iconSvg({ ground: INK, ink: WHITE, radius: 0, scale: 0.72 }), 180), join(ROOT, 'app', 'apple-icon.png'), {
+await shoot(svgPage(iconSvg({ ground: BLUE, ink: '#FFFFFF', radius: 0, scale: 0.72 }), 180), join(ROOT, 'app', 'apple-icon.png'), {
   width: 180,
   height: 180,
   transparent: false,
