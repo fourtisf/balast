@@ -36,7 +36,8 @@
     "brand:journal": "python3 scripts/build-brand-journal.py && node scripts/build-brand-journal-png.mjs",
     "brand:lockfi": "node scripts/build-brand-lockfi.mjs",
     "brand:ad": "node scripts/build-lockfi-ad.mjs",
-    "brand:ad:ai": "node scripts/build-lockfi-ai-ad.mjs"
+    "brand:ad:ai": "node scripts/build-lockfi-ai-ad.mjs",
+    "brand:ad:portfolio": "node scripts/build-lockfi-portfolio-ai-ad.mjs"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",

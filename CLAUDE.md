@@ -5995,3 +5995,16 @@ costs, and leaves the choice to them.
 labels and rule) and 2 Playwright tests (asking from a row sends the
 position; no button while the assistant is off). The full suites are 587 unit
 and 50 end-to-end tests, all green.
+
+### An ad for Ask AI on the portfolio
+
+`npm run brand:ad:portfolio` (`scripts/build-lockfi-portfolio-ai-ad.mjs`)
+writes `brand/lockfi/video/lockfi-portfolio-ai-ad.mp4`: 34 seconds, the same
+engine as the AI ad. It opens on *Position out of range? Don't guess. Just
+ask.* Then one narrow, tall window of `/portfolio` shows the out-of-range
+MOONCAT position: its **Ask AI** button, *Why is this position earning
+nothing?*, and a sample answer that explains waiting, rebalancing and
+withdrawing without choosing. It closes on *Your positions. Plain answers.
+Your decision.* and `lockfi.org/portfolio`. The footnote reads *illustrative
+figures · sample answer*.
+
