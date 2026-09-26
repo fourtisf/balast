@@ -204,6 +204,27 @@ export const env = {
   rateLimitWindowMs: int('RATE_LIMIT_WINDOW_MS', 60_000),
 
   /**
+   * Ask LockFi, the assistant (server/api/ask.ts). Off until `AI_API_KEY` is
+   * set, and the page hides the panel while it is off.
+   *
+   * Any OpenAI-compatible endpoint works. The default is Dualyne's gateway
+   * with its fast Claude model; for OpenRouter set
+   * `AI_BASE_URL=https://openrouter.ai/api/v1` and
+   * `AI_MODEL=anthropic/claude-haiku-4.5`.
+   */
+  ai: {
+    apiKey: process.env.AI_API_KEY?.trim() ?? '',
+    baseUrl: (process.env.AI_BASE_URL?.trim() || 'https://api.dualyne.com/v1').replace(/\/+$/, ''),
+    model: process.env.AI_MODEL?.trim() || 'claude-swift',
+    /** About 150 words of answer, with room to finish the sentence. */
+    maxTokens: int('AI_MAX_TOKENS', 450),
+    /** Questions per client per minute: a person asks a few, a loop asks hundreds. */
+    perMinute: int('AI_PER_MINUTE', 6),
+    /** Answers per UTC day across everyone: the ceiling on a day's cost. */
+    dailyLimit: int('AI_DAILY_LIMIT', 1_000),
+  },
+
+  /**
    * Lag at which the indexer counts as stalled rather than behind.
    *
    * §8's P3 criterion names the failure this exists for: a process that dies

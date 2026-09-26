@@ -42,6 +42,7 @@ Optional, and never required for mainnet:
 | A paid RPC endpoint | Only makes the backfill catch up faster. | `bash deploy/set-env.sh RPC_URLS "https://your-endpoint,https://rpc.mainnet.chain.robinhood.com"` then deploy |
 | WalletConnect project id | Phone wallets by QR. Free at cloud.reown.com. Browser wallets work without it. | `bash deploy/set-env.sh NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID <id>` then deploy |
 | `STAKEABLE_HOOKS` | v4 pools with a hook stay unoffered until their hook is looked at and allowed. Empty is the safe default; plain pools and every v3 pool work without it. | `bash deploy/set-env.sh STAKEABLE_HOOKS 0xhook1,0xhook2` |
+| `AI_API_KEY` | Turns on Ask LockFi AI in the drawer, the builder and /learn. A Dualyne key (`dly_live_…`) by default; hidden until set. `/api/health` → `ai` says whether it is on and how many answers today. | `bash deploy/set-env.sh AI_API_KEY dly_live_…` then `pm2 restart lockfi-api --update-env` |
 | `LAUNCHPAD_HOOKS` | Names launchpad pools and keeps them unstakeable before graduation. | `bash deploy/set-env.sh LAUNCHPAD_HOOKS "Pons:0x…,Bags:0x…"` |
 
 ## 3. Verify the addresses once

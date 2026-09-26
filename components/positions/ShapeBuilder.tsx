@@ -2,6 +2,7 @@
 
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import { AskPanel } from '@/components/ask/AskPanel';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { BinChart } from '@/components/positions/BinChart';
@@ -983,6 +984,22 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
               {onChain && !wallet ? ' Connect a wallet to see the exact amounts for your deposit.' : ''}
             </p>
           </details>
+          <AskPanel
+            poolId={pool.id}
+            plan={{
+              fullRange,
+              shape,
+              minPct: safeMin,
+              maxPct: safeMax,
+              bins,
+              deposit: Number.isFinite(Number(amount)) && Number(amount) > 0 ? Number(amount) : null,
+            }}
+            suggestions={[
+              fullRange ? 'Why pick full range over a shape?' : `What does the ${shapeMeta.label} shape do to my fees?`,
+              'What happens if the price leaves my range?',
+              'Kenapa estimasi yield bisa berubah?',
+            ]}
+          />
         </div>
       </div>
     </div>

@@ -32,6 +32,7 @@ import { V4TokenScanner } from './v4-scanner';
 import { ExplorerPositions, type ExplorerFetch } from './explorer-positions';
 import { LiveReserves, type ReservesReader } from './live-reserves';
 import { recentHead } from './recent';
+import { AskError, DailyCounter, answer, parseAskBody, providerName, type AskConfig, type AskFetch } from './ask';
 import { buildSnapshot, nextRevision } from './snapshot';
 import { type HistoryStore, type SerializedHistory } from './v3-history';
 import { agedSnapshot, isServable, loadPersistedSnapshot, persistSnapshot } from './snapshot-store';
@@ -231,6 +232,8 @@ export async function buildServer(
      * the chain unless `LIVE_RESERVES=false`; null turns it off (tests).
      */
     reservesReader?: ReservesReader | null;
+    /** The assistant's settings and transport; a test passes a fake fetch. Defaults to `env.ai` and `fetch`. */
+    ask?: { config?: AskConfig; fetch?: AskFetch };
   } = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
@@ -260,6 +263,9 @@ export async function buildServer(
       ? new ExplorerPositions({ base: env.explorerApiUrl, fetch: options.explorerFetch ?? undefined })
       : null;
   const startedAt = Date.now();
+  const askConfig: AskConfig = options.ask?.config ?? env.ai;
+  const askFetch: AskFetch = options.ask?.fetch ?? ((url, init) => fetch(url, init));
+  const askCounter = new DailyCounter(askConfig.dailyLimit);
   const reserves =
     options.reservesReader === null || (options.reservesReader === undefined && process.env.LIVE_RESERVES === 'false')
       ? null
@@ -672,6 +678,13 @@ export async function buildServer(
       // The listed v3 pools' balances, read for a fee yield whose liquidity is
       // as current as its fees.
       poolReserves: reserves ? reserves.status() : null,
+      ai: {
+        enabled: askConfig.apiKey !== '',
+        provider: providerName(askConfig.baseUrl),
+        model: askConfig.model,
+        answersToday: askCounter.used,
+        dailyLimit: askConfig.dailyLimit,
+      },
       // How long this process has been up, and when it last built the board:
       // right after a deploy "no snapshot yet" is the first build running,
       // not a fault, and the doctor says which.
@@ -857,6 +870,46 @@ export async function buildServer(
     }
     return reply.header('cache-control', 'no-store').send(built);
   });
+
+  /**
+   * Ask LockFi (ask.ts). GET says whether it is on, so the page can hide the
+   * panel rather than offer a box that always fails; POST answers from the
+   * snapshot's own figures for the pool named.
+   */
+  app.get('/api/ask', async (_request, reply) =>
+    reply.header('cache-control', 'no-store').send({
+      enabled: askConfig.apiKey !== '',
+      provider: providerName(askConfig.baseUrl),
+    }),
+  );
+
+  app.post(
+    '/api/ask',
+    {
+      bodyLimit: 32 * 1024,
+      config: { rateLimit: { max: env.ai.perMinute, timeWindow: 60_000 } },
+    },
+    async (request, reply) => {
+      const parsed = parseAskBody(request.body);
+      if ('error' in parsed) return reply.code(400).send({ error: 'bad-request', message: parsed.error });
+      try {
+        const value = await snapshot().catch(() => null);
+        const result = await answer({ cfg: askConfig, fetch: askFetch, counter: askCounter }, value, parsed);
+        return reply.header('cache-control', 'no-store').send(result);
+      } catch (error) {
+        if (error instanceof AskError) {
+          // The provider's own words stay in the log: they can name the account.
+          if (error.code === 'upstream' || error.code === 'misconfigured') app.log.warn(`ask: ${error.message}`);
+          const message =
+            error.code === 'upstream' || error.code === 'misconfigured'
+              ? 'The assistant could not answer just now. Try again in a moment.'
+              : error.message;
+          return reply.code(error.status).send({ error: error.code, message });
+        }
+        throw error;
+      }
+    },
+  );
 
   app.get('/api/snapshot', async (_request, reply) => {
     const problem = configurationProblem();

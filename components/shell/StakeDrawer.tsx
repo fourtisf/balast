@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef } from 'react';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
+import { AskPanel } from '@/components/ask/AskPanel';
 import { TokenBadge } from '@/components/ui/TokenBadge';
 import { EXPLORER_URL, NATIVE_ETH, isEther } from '@/lib/chain';
 import { DATA_SOURCE } from '@/lib/data';
@@ -368,6 +369,14 @@ export function StakeDrawer() {
                   </p>
                 </div>
               )}
+              <AskPanel
+                poolId={pool.id}
+                suggestions={[
+                  'What does this fee tier mean?',
+                  'What are the risks of staking here?',
+                  'Apa bedanya full range dengan curve?',
+                ]}
+              />
             </div>
 
             <div className="dr-f">

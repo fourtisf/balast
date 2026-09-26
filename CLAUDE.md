@@ -5830,3 +5830,62 @@ marks are (§21):
   on it that is not its own.
 
 `lib/own-marks.test.ts` asserts every demo logo names a file that exists.
+
+---
+
+## 45. Ask LockFi AI, through Dualyne
+
+ALFA asked whether to add AI and pointed at Dualyne (`fourtisf/dualyne`), their
+own AI gateway: an OpenAI-compatible API at `api.dualyne.com/v1` in front of
+OpenRouter, with keys prefixed `dly_live_`. So LockFi is a client of it and
+copies none of its code. `server/api/ask.ts` sends one non-streaming chat
+completion to whatever `AI_BASE_URL` names. The default is Dualyne's gateway
+with `claude-swift` (its Claude Haiku mapping). OpenRouter works by changing
+two variables.
+
+**What it is for.** It explains what is on the screen: what a fee tier means,
+what a shape does to the fees, what out of range costs, and what this pool's
+risks are. It sits in the Stake drawer (with the pool), in the builder (with
+the pool and the person's plan) and on `/learn` (general). It answers in the
+language of the question.
+
+**What keeps it inside §7:**
+
+- **The facts are the server's.** The browser sends a pool id, and the API
+  reads that pool's figures from its own snapshot. Each figure goes in with
+  its source and age (`poolFacts`), through the same `shownYield` and
+  `shownLiquidity` helpers the page uses. A browser cannot hand the model a
+  number to repeat as though LockFi had measured it. The builder's plan comes
+  from the browser and is labelled as the person's own inputs.
+- **The rules forbid a forecast**: no price prediction, no advice to buy, no
+  "APY" or "APR". Anything not in the facts is "I don't know". The question is
+  treated as a question, never as an instruction.
+- **`scrubAnswer` replaces APY and APR** in the answer whatever the model
+  writes, because a prompt is a request, not a guarantee. It also strips the
+  markdown the panel would print literally.
+- The line under the panel says it explains figures, never predicts prices,
+  and is not financial advice. The panel names its provider from the base
+  URL (`via Dualyne`), so it never claims Dualyne when it is something else.
+
+**Cost is bounded twice**: `AI_PER_MINUTE` per client (6) on the route, and
+`AI_DAILY_LIMIT` answers per UTC day across everyone (1,000). A failed call
+does not spend the day. The provider's own error goes to the log, not the
+page.
+
+**Off until `AI_API_KEY` is set, and invisible while off.** `GET /api/ask` says
+whether it is on, and the panel renders nothing otherwise. On simulated data it
+does not even ask, because there is no API and Next.js's 404 for the route
+never finishes (it held the a11y suite's `networkidle` for 90s). For a demo or
+a test, `localStorage['lockfi:ask'] = 'on'` shows it anyway.
+`/api/health` → `ai` gives whether it is on, the provider, the model and
+today's count.
+
+**Verified**: 13 unit tests in `server/api/ask.test.ts`, 3 route tests in
+`server/api/server.test.ts` (off, answering, per-minute limit) and
+5 Playwright tests in `e2e/ask.spec.ts`. The full suite is 585 unit and
+46 end-to-end tests, all green. **Unverified from here**: the sandbox cannot
+reach `api.dualyne.com`, so no real answer has come back yet, and whether
+`claude-swift` is enabled for the key's tier is Dualyne's to say. The first
+question on the box answers both. A refused key reads as "could not answer"
+on the page and as `ask: The AI provider refused LockFi's key (401)` in
+`pm2 logs lockfi-api`.

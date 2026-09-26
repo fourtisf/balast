@@ -587,3 +587,82 @@ describe('the kept snapshot', () => {
     }
   });
 });
+
+describe('/api/ask', () => {
+  const config = {
+    apiKey: 'dly_live_test',
+    baseUrl: 'https://api.dualyne.com/v1',
+    model: 'claude-swift',
+    maxTokens: 450,
+    dailyLimit: 100,
+  };
+  const provider = () => {
+    const bodies: string[] = [];
+    const fetch = async (_url: string, init: RequestInit) => {
+      bodies.push(String(init.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'An answer.' } }] }), { status: 200 });
+    };
+    return { fetch, bodies };
+  };
+
+  it('says it is off without a key, and refuses to answer', async () => {
+    const off = await buildServerWith({ ask: { config: { ...config, apiKey: '' }, fetch: provider().fetch } });
+    const status = await off.inject({ method: 'GET', url: '/api/ask' });
+    expect(status.json()).toEqual({ enabled: false, provider: 'Dualyne' });
+    const res = await off.inject({
+      method: 'POST',
+      url: '/api/ask',
+      headers: { 'x-real-ip': '10.9.0.1' },
+      payload: { question: 'hi' },
+    });
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error).toBe('off');
+    await off.close();
+  });
+
+  it('answers through the provider, and refuses a bad body with a reason', async () => {
+    const upstream = provider();
+    const on = await buildServerWith({ ask: { config, fetch: upstream.fetch } });
+    expect((await on.inject({ method: 'GET', url: '/api/ask' })).json()).toEqual({ enabled: true, provider: 'Dualyne' });
+    const ok = await on.inject({
+      method: 'POST',
+      url: '/api/ask',
+      headers: { 'x-real-ip': '10.9.0.2' },
+      payload: { question: 'What is a fee tier?', poolId: 'no-such-pool' },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toEqual({ answer: 'An answer.', poolFound: false });
+    expect(upstream.bodies[0]).toContain('What is a fee tier?');
+    const bad = await on.inject({
+      method: 'POST',
+      url: '/api/ask',
+      headers: { 'x-real-ip': '10.9.0.2' },
+      payload: { question: '' },
+    });
+    expect(bad.statusCode).toBe(400);
+    await on.close();
+  });
+
+  it('limits questions per client per minute', async () => {
+    const on = await buildServerWith({ ask: { config, fetch: provider().fetch } });
+    const statuses: number[] = [];
+    for (let i = 0; i < 8; i++) {
+      const res = await on.inject({
+        method: 'POST',
+        url: '/api/ask',
+        headers: { 'x-real-ip': '10.9.0.3' },
+        payload: { question: `q${i}` },
+      });
+      statuses.push(res.statusCode);
+    }
+    expect(statuses.slice(0, 6).every((s) => s === 200)).toBe(true);
+    expect(statuses.slice(6)).toEqual([429, 429]);
+    await on.close();
+  });
+
+  async function buildServerWith(options: Parameters<typeof import('./server')['buildServer']>[0]) {
+    const built = await (await import('./server')).buildServer({ portfolioChain: null, reservesReader: null, ...options });
+    await built.ready();
+    return built;
+  }
+});

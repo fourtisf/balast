@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { AskPanel } from '@/components/ask/AskPanel';
 import { Masthead } from '@/components/shell/Masthead';
 import { CONTRACTS, EXPLORER_URL } from '@/lib/chain';
 
@@ -189,6 +190,14 @@ export default function LearnPage() {
             <p>{s.a}</p>
           </article>
         ))}
+        <AskPanel
+          title="Still unsure? Ask LockFi AI"
+          suggestions={[
+            'How do I earn fees on LockFi?',
+            'What is price impact on holdings?',
+            'Apakah dana saya aman di LockFi?',
+          ]}
+        />
         <p className="hint" style={{ marginTop: 18 }}>
           Ready? <Link href="/stakes">Stake a pool</Link> or <Link href="/positions">shape a position</Link>.
         </p>
