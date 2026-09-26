@@ -5846,8 +5846,9 @@ two variables.
 **What it is for.** It explains what is on the screen: what a fee tier means,
 what a shape does to the fees, what out of range costs, and what this pool's
 risks are. It sits in the Stake drawer (with the pool), in the builder (with
-the pool and the person's plan) and on `/learn` (general). It answers in the
-language of the question.
+the pool and the person's plan) and on `/learn` (general). It answers in
+English only, at ALFA's request, whatever language the question is in, and the
+panel's suggestions and placeholder are English too.
 
 **What keeps it inside §7:**
 

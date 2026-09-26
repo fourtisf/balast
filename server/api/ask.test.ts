@@ -78,6 +78,7 @@ describe('systemPrompt', () => {
     expect(prompt).toMatch(/Never predict a price/);
     expect(prompt).toMatch(/Never write "APY" or "APR"/);
     expect(prompt).toContain('No pool is open');
+    expect(prompt).toContain('Always reply in English');
   });
 
   it('labels the plan as the person’s own input', () => {
@@ -116,7 +117,7 @@ describe('answer', () => {
   it('sends the snapshot’s facts, the history and the question to the provider', async () => {
     const { fetch, calls } = fakeFetch({ content: 'Every swap pays **0.3%** to LPs. No APY here.' });
     const result = await answer({ cfg: CFG, fetch, counter: new DailyCounter(3) }, snapshot, {
-      question: 'Apa itu fee tier?',
+      question: 'What is a fee tier?',
       history: [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'hello' }],
       poolId: pool.id,
       plan: null,
@@ -130,7 +131,7 @@ describe('answer', () => {
     expect(calls[0].body.stream).toBe(false);
     expect(messages.map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'user']);
     expect(messages[0].content).toContain(pool.token.symbol);
-    expect(messages[3].content).toBe('Apa itu fee tier?');
+    expect(messages[3].content).toBe('What is a fee tier?');
   });
 
   it('is off without a key, and never calls out', async () => {

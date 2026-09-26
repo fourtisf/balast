@@ -374,7 +374,7 @@ export function StakeDrawer() {
                 suggestions={[
                   'What does this fee tier mean?',
                   'What are the risks of staking here?',
-                  'Apa bedanya full range dengan curve?',
+                  'How is full range different from Curve?',
                 ]}
               />
             </div>

@@ -997,7 +997,7 @@ function Builder({ pools, stakeablePools, live }: { pools: Pool[]; stakeablePool
             suggestions={[
               fullRange ? 'Why pick full range over a shape?' : `What does the ${shapeMeta.label} shape do to my fees?`,
               'What happens if the price leaves my range?',
-              'Kenapa estimasi yield bisa berubah?',
+              'Why can the estimated yield change?',
             ]}
           />
         </div>

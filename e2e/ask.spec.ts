@@ -57,7 +57,7 @@ test.describe('Ask LockFi AI', () => {
     expect(asked[0].poolId).toBeTruthy();
 
     // A follow-up carries the conversation, typed and sent with Enter.
-    await panel.getByLabel('Your question').fill('Dan risikonya?');
+    await panel.getByLabel('Your question').fill('And the risks?');
     await panel.getByLabel('Your question').press('Enter');
     await expect.poll(() => asked.length).toBe(2);
     expect((asked[1] as unknown as { history: unknown[] }).history).toHaveLength(2);
@@ -87,9 +87,9 @@ test.describe('Ask LockFi AI', () => {
     });
     await page.goto('/learn');
     const panel = page.getByTestId('ask-panel');
-    await panel.getByLabel('Your question').fill('Apakah dana saya aman?');
+    await panel.getByLabel('Your question').fill('Are my funds safe?');
     await panel.getByRole('button', { name: 'Ask', exact: true }).click();
     await expect(panel.getByRole('alert')).toContainText('as many questions as it can today');
-    await expect(panel.getByLabel('Your question')).toHaveValue('Apakah dana saya aman?');
+    await expect(panel.getByLabel('Your question')).toHaveValue('Are my funds safe?');
   });
 });

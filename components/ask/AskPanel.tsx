@@ -129,7 +129,7 @@ export function AskPanel({
           rows={1}
           value={draft}
           maxLength={QUESTION_MAX}
-          placeholder="Ask in English or Bahasa Indonesia"
+          placeholder="Ask about this pool, a shape or a risk"
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKeyDown}
           disabled={busy}

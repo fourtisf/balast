@@ -195,7 +195,7 @@ export default function LearnPage() {
           suggestions={[
             'How do I earn fees on LockFi?',
             'What is price impact on holdings?',
-            'Apakah dana saya aman di LockFi?',
+            'Are my funds safe with LockFi?',
           ]}
         />
         <p className="hint" style={{ marginTop: 18 }}>
