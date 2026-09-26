@@ -6000,8 +6000,13 @@ and 50 end-to-end tests, all green.
 
 `npm run brand:ad:portfolio` (`scripts/build-lockfi-portfolio-ai-ad.mjs`)
 writes `brand/lockfi/video/lockfi-portfolio-ai-ad.mp4`: 34 seconds, the same
-engine as the AI ad. It opens on *Position out of range? Don't guess. Just
-ask.* Then one narrow, tall window of `/portfolio` shows the out-of-range
+engine as the AI ad. It does not open on the logo the other films share,
+at ALFA's request. It opens on its own scene: a MOONCAT / ETH position card
+whose price line leaves the shaded band of its range, and the status turns
+from *In range · earning fees* to *Out of range · earning nothing* at the
+moment it crosses. Then *Why is my position earning nothing?* is typed into
+a chat bar and sent, and *Don't guess. Just ask.* follows. After that, one
+narrow, tall window of `/portfolio` shows the out-of-range
 MOONCAT position: its **Ask AI** button, *Why is this position earning
 nothing?*, and a sample answer that explains waiting, rebalancing and
 withdrawing without choosing. It closes on *Your positions. Plain answers.

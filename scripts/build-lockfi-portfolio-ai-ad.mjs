@@ -5,7 +5,10 @@
  *   npm run brand:ad:portfolio                               (in another)
  *
  * Writes brand/lockfi/video/lockfi-portfolio-ai-ad.mp4: 1920 × 1080, 30 fps,
- * 34s. Same engine as scripts/build-lockfi-ai-ad.mjs: one window of
+ * 34s. It opens on its own scene rather than the logo the other films share:
+ * a position card whose price line leaves its range, the status flipping to
+ * "earning nothing", and the question typed out. Then, with the same engine as
+ * scripts/build-lockfi-ai-ad.mjs, one window of
  * /portfolio, an out-of-range position, its Ask AI button, and the answer.
  *
  * The simulator has no API, so /api/ask is answered here with a sample answer
@@ -58,6 +61,13 @@ const SPARK =
   '<svg viewBox="0 0 20 20"><g fill="none" stroke="#93C5FD" stroke-width="1.6" stroke-linejoin="round">' +
   '<path d="M9 3.5c.5 2.8 1.7 4 4.5 4.5-2.8.5-4 1.7-4.5 4.5-.5-2.8-1.7-4-4.5-4.5 2.8-.5 4-1.7 4.5-4.5Z"/>' +
   '<path d="M15 12c.3 1.5.9 2.1 2.5 2.5-1.6.4-2.2 1-2.5 2.5-.3-1.5-.9-2.1-2.5-2.5 1.6-.4 2.2-1 2.5-2.5Z"/></g></svg>';
+// The opening's chart: a price that wanders inside the range, then leaves it.
+const BAND = [78, 150];
+const PRICE = [
+  [0, 124], [40, 118], [80, 128], [120, 112], [160, 120], [200, 104], [240, 114], [280, 98], [320, 108],
+  [360, 94], [400, 102], [440, 86], [470, 80], [500, 66], [530, 58], [560, 44], [600, 40], [640, 30], [700, 26],
+];
+const MOONCAT = `data:image/svg+xml;base64,${readFileSync(join(ROOT, 'public', 'tokens', 'demo', 'mooncat.svg')).toString('base64')}`;
 const words = (s) =>
   s
     .split(' ')
@@ -121,6 +131,28 @@ iframe{display:block;border:0;width:1440px}
 #end .ghost{height:76px;padding:0 34px;border-radius:16px;display:flex;align-items:center;font-size:30px;font-weight:600;color:#EDEEF1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12)}
 #end .small{margin-top:40px;font-size:22px;color:#6B6F7A;font-weight:500;letter-spacing:.02em}
 #black{position:absolute;inset:0;background:#000}
+#open{gap:34px}
+.pcard{width:820px;padding:30px 34px 22px;border-radius:26px;background:linear-gradient(180deg,#121419,#0B0C10);border:1px solid rgba(255,255,255,.10);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 50px 120px -30px rgba(0,0,0,.95),0 0 140px -30px rgba(59,130,246,.45);text-align:left}
+.ph{display:flex;align-items:center;gap:18px}
+.ph img{width:64px;height:64px;border-radius:50%;background:#1b1d24}
+.ph b{display:block;font-size:34px;letter-spacing:-.03em}
+.ph span{font-size:19px;color:#8B8F99;font-weight:500}
+.pill{margin-left:auto;display:inline-flex;align-items:center;gap:10px;height:44px;padding:0 18px;border-radius:99px;font-size:19px!important;font-weight:600!important;white-space:nowrap}
+.pill i{width:9px;height:9px;border-radius:50%}
+.pill.in{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.4);color:#86EFAC!important}
+.pill.in i{background:#22C55E;box-shadow:0 0 12px #22C55E}
+.pill.out{background:rgba(229,72,77,.14);border:1px solid rgba(229,72,77,.5);color:#FCA5A5!important}
+.pill.out i{background:#E5484D;box-shadow:0 0 14px #E5484D}
+.chart{display:block;width:100%;height:auto;margin-top:18px;overflow:visible}
+.bandl{font-size:15px;fill:#93C5FD;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.chat{width:820px;height:78px;border-radius:20px;display:flex;align-items:center;gap:16px;padding:0 14px 0 22px;background:#0E1014;border:1px solid rgba(255,255,255,.12);
+  box-shadow:0 30px 80px -30px rgba(0,0,0,.9);font-size:27px;font-weight:500;color:#EDEEF1;text-align:left}
+.chat .spark{flex:none}
+#typed{white-space:pre}
+#caret{width:2px;height:32px;background:#93C5FD;margin-left:-12px}
+.send{margin-left:auto;height:52px;padding:0 26px;border-radius:14px;display:flex;align-items:center;font-size:22px;font-weight:700;background:#2563EB;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 14px 36px -12px rgba(37,99,235,.9)}
 #glow,#grid,#scrim,#tscrim,#cap,#brand,#foot,.center,#black{pointer-events:none}
 #tscrim{position:absolute;left:0;right:0;top:0;height:230px;background:linear-gradient(180deg,rgba(6,7,10,.92) 0%,rgba(6,7,10,.6) 45%,transparent 100%)}
 </style></head><body><div id="stage">
@@ -134,9 +166,23 @@ ${WINDOWS.map(
 <div id="brand"><span class="tile">${mark('#EDEEF1')}</span><b>LockFi</b></div>
 <div id="cap"><span class="eyebrow"><i></i><span id="eb"></span></span><h2 id="ch"></h2><p id="cp"></p></div>
 <div id="foot">Product preview · illustrative figures · sample answer</div>
-<div class="center" id="intro"><div class="lock"><span class="tile"><span class="ring"></span>${mark('#EDEEF1')}</span><span class="word">LockFi</span></div>
-  <div class="tag"><span class="spark">${SPARK}</span>Ask AI, now on your positions.</div></div>
-<div class="center" id="k1"><div class="kin">${words('Position out of range?')}</div></div>
+<div class="center" id="open">
+  <div class="pcard">
+    <div class="ph"><img src="${MOONCAT}" alt=""><div><b>MOONCAT / ETH</b><span>#2044 · Bid-ask · \u00b140%</span></div>
+      <span class="pill in" id="pill"><i></i><span id="pilltxt">In range \u00b7 earning fees</span></span></div>
+    <svg class="chart" viewBox="0 0 700 172">
+      <defs><clipPath id="reveal"><rect id="revealr" x="-10" y="0" width="0" height="172"/></clipPath>
+        <linearGradient id="bandg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#3B82F6" stop-opacity=".20"/><stop offset="1" stop-color="#3B82F6" stop-opacity=".08"/></linearGradient></defs>
+      <rect id="band" x="0" y="${BAND[0]}" width="700" height="${BAND[1] - BAND[0]}" fill="url(#bandg)"/>
+      <line x1="0" x2="700" y1="${BAND[0]}" y2="${BAND[0]}" stroke="#3B82F6" stroke-opacity=".55" stroke-dasharray="6 7"/>
+      <line x1="0" x2="700" y1="${BAND[1]}" y2="${BAND[1]}" stroke="#3B82F6" stroke-opacity=".55" stroke-dasharray="6 7"/>
+      <text x="690" y="${BAND[1] - 10}" text-anchor="end" class="bandl">your range</text>
+      <polyline clip-path="url(#reveal)" id="price" points="${PRICE.map(([x, y]) => x + ',' + y).join(' ')}" fill="none" stroke="#EDEEF1" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle id="head" r="7" fill="#EDEEF1"/><circle id="headring" r="16" fill="none" stroke="#EDEEF1" stroke-opacity=".35"/>
+    </svg>
+  </div>
+  <div class="chat"><span class="spark">${SPARK}</span><span id="typed"></span><span id="caret"></span><span class="send" id="send">Ask</span></div>
+</div>
 <div class="center" id="k2"><div class="kin">${words('Don\u2019t guess.')}<br><span class="blue">${words('Just ask.')}</span></div></div>
 <div class="center" id="trio"><div class="rows">
   ${['Your positions.', 'Plain answers.', 'Your decision.']
@@ -154,6 +200,8 @@ ${WINDOWS.map(
 </div>
 <script>
 const CH = ${CHROME};
+const PRICE = ${JSON.stringify(PRICE)};
+const BAND = ${JSON.stringify(BAND)};
 const $ = (s) => document.querySelector(s);
 const clamp = (x) => Math.max(0, Math.min(1, x));
 const p = (t, a, b) => clamp((t - a) / (b - a));
@@ -245,22 +293,42 @@ window.render = (t) => {
   g.style.top = (-260 + Math.cos(t * 0.17) * 120) + 'px';
   g.style.opacity = t < 30.4 ? 1 : 1.25;
 
-  // intro
-  const intro = $('#intro');
-  const iOut = eio(p(t, 3.3, 3.8));
-  show(intro, 1 - iOut);
-  intro.style.transform = 'scale(' + lerp(1, 1.06, iOut) + ')';
-  const tile = intro.querySelector('.tile'), tv = expo(p(t, 0.25, 1.3));
-  tile.style.opacity = tv; tile.style.transform = 'scale(' + lerp(0.82, 1, tv) + ')'; tile.style.filter = 'blur(' + lerp(14, 0, tv) + 'px)';
-  const ring = intro.querySelector('.ring'), rv = p(t, 0.5, 1.9);
-  ring.style.opacity = rv > 0 && rv < 1 ? 0.8 * (1 - rv) : 0; ring.style.transform = 'scale(' + lerp(1, 1.9, eo(rv)) + ')';
-  const word = intro.querySelector('.word'), wv = expo(p(t, 0.75, 1.6));
-  word.style.opacity = wv; word.style.transform = 'translateX(' + lerp(-24, 0, wv) + 'px)'; word.style.filter = 'blur(' + lerp(10, 0, wv) + 'px)';
-  const tag = intro.querySelector('.tag'), gv = eo(p(t, 1.6, 2.3));
-  tag.style.opacity = gv; tag.style.transform = 'translateY(' + lerp(14, 0, gv) + 'px)';
+  // opening: a position leaves its range, then the question is typed
+  const open = $('#open');
+  const oIn = expo(p(t, 0.3, 1.2)), oOut = eio(p(t, 5.9, 6.4));
+  show(open, t < 6.45 ? Math.min(oIn, 1 - oOut) : 0);
+  open.style.transform = 'translateY(' + lerp(50, 0, oIn) + 'px) scale(' + lerp(1, 0.94, oOut) + ')';
+  open.style.filter = 'blur(' + (lerp(12, 0, oIn) + lerp(0, 14, oOut)) + 'px)';
+  // the price draws left to right; the head is the latest price
+  const drawX = 700 * eio(p(t, 0.9, 3.4));
+  $('#revealr').setAttribute('width', drawX);
+  let hx = 0, hy = PRICE[0][1];
+  for (let i = 1; i < PRICE.length; i++) {
+    const [x0, y0] = PRICE[i - 1], [x1, y1] = PRICE[i];
+    if (drawX <= x1) { const f = (drawX - x0) / (x1 - x0); hx = drawX; hy = y0 + (y1 - y0) * Math.max(0, f); break; }
+    hx = x1; hy = y1;
+  }
+  const head = $('#head'), hr = $('#headring');
+  head.setAttribute('cx', hx); head.setAttribute('cy', hy);
+  hr.setAttribute('cx', hx); hr.setAttribute('cy', hy);
+  const out = hy < BAND[0];
+  const pill = $('#pill');
+  pill.className = 'pill ' + (out ? 'out' : 'in');
+  $('#pilltxt').textContent = out ? 'Out of range \u00b7 earning nothing' : 'In range \u00b7 earning fees';
+  head.setAttribute('fill', out ? '#E5484D' : '#EDEEF1');
+  hr.setAttribute('stroke', out ? '#E5484D' : '#EDEEF1');
+  hr.setAttribute('r', 12 + 6 * Math.sin(t * 6));
+  $('#band').setAttribute('fill-opacity', out ? 0.55 : 1);
+  // the question, typed
+  const Q = 'Why is my position earning nothing?';
+  const typed = Math.floor(Q.length * p(t, 3.8, 5.3));
+  $('#typed').textContent = Q.slice(0, typed);
+  $('#caret').style.opacity = t < 5.3 ? (Math.floor(t * 2.4) % 2 ? 0.2 : 1) : 0;
+  const press = p(t, 5.45, 5.75);
+  $('#send').style.transform = 'scale(' + (press > 0 && press < 1 ? lerp(0.92, 1, press) : 1) + ')';
+  $('#send').style.filter = press > 0 && press < 1 ? 'brightness(1.35)' : 'none';
 
-  kinetic('#k1', t, 3.9, 5.55, 0.07);
-  kinetic('#k2', t, 5.75, 7.35, 0.08);
+  kinetic('#k2', t, 6.35, 7.4, 0.08);
 
   placeWindow('port', t);
   const product = Math.min(eo(p(t, 7.9, 8.6)), 1 - eo(p(t, 25.6, 26.4)));
