@@ -6013,3 +6013,29 @@ withdrawing without choosing. It closes on *Your positions. Plain answers.
 Your decision.* and `lockfi.org/portfolio`. The footnote reads *illustrative
 figures · sample answer*.
 
+
+### A launch film for the token
+
+The owner asked for a video saying the LockFi token is live, with its
+utility, and that LockFi is a real product. `npm run brand:ad:token`
+(`scripts/build-lockfi-token-ad.mjs`) writes
+`brand/lockfi/video/lockfi-token-ad.mp4`: 38 seconds on the same engine as
+the other ads. It opens on a spinning coin with a *Live* pill, which no
+earlier film uses. Then it films the real site: the markets board, the
+shape builder minting through Uniswap, and Ask AI on an out-of-range
+position. It closes on *The LockFi token is live.*
+
+Two things it deliberately does not say:
+
+- **No token utility.** None is built. LockFi takes no fee (§20), so the
+  token has nothing to earn or share, and a film claiming staking rewards
+  or fee share would promise what the contracts cannot deliver (§1, §7).
+  The film says what is true: the product is live, it runs on Uniswap, and
+  it has no custody.
+- **No contract address.** At the owner's request the address goes in the
+  X post, not the video. The end card says *Contract address in the post ·
+  verify it on lockfi.org*, and the top bar's CA chip is hidden in every
+  frame. **Set `TOKEN_CA` in `lib/site.ts` and deploy before posting.**
+  Until then the site says *CA · coming soon* and warns that any address
+  circulating before it appears there is not ours, which would contradict
+  the post.
