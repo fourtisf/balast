@@ -6039,3 +6039,22 @@ Two things it deliberately does not say:
   Until then the site says *CA · coming soon* and warns that any address
   circulating before it appears there is not ours, which would contradict
   the post.
+
+---
+
+## 46. Telegram, back beside X
+
+The owner opened the Telegram group, **t.me/lockfiorg**, and asked for it on
+the site. §19 had removed Telegram at the owner's request when there was no
+group; now there is one. `SOCIAL.telegram` in `lib/site.ts` is a constant for
+the same reason as the X link (§19): a stale `.env` value must never point the
+page somewhere else. `Community` renders both channels, each with its own
+filled mark: in the rail as two stacked icons (labelled on the strip below
+900px), and in the footer as `X` and `Telegram`. `lib/site.test.ts` pins the
+link.
+
+The footer had carried a quiet fault since §19: it passed `className="foot"`
+to the links, and `.foot` is the footer's own class, so the links inherited
+its top border, margin and padding and sat on a line of their own under a
+stray rule. The class is `foot-soc` now, and the links sit in the footer's
+row.

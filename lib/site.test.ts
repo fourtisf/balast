@@ -27,6 +27,10 @@ describe('where the project talks', () => {
     expect(X_HANDLE).toBe('@lockfiorg');
   });
 
+  it('links the Telegram group the owner named', () => {
+    expect(SOCIAL.telegram).toBe('https://t.me/lockfiorg');
+  });
+
   it('carries a contract address only when it is a valid, checksummed one', () => {
     // null reads "CA · coming soon". A set value must be exactly what a
     // person would paste into a wallet: valid and in its checksummed case.

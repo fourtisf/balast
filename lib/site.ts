@@ -47,10 +47,10 @@ export const DEFENSIVE_DOMAINS = ['www.lockfi.org', 'balast.xyz', 'www.balast.xy
 /**
  * Where the project talks.
  *
- * X is the one channel: @lockfiorg, the account the owner named. Telegram
- * was offered as a second icon and removed at the owner's request.
+ * X, @lockfiorg, and the Telegram group, t.me/lockfiorg: the two accounts
+ * the owner named.
  *
- * The link is a constant, deliberately not an environment variable. It was
+ * Each link is a constant, deliberately not an environment variable. It was
  * one, and the live site went out pointing at `x.com/HANDLE_ANDA` — a
  * placeholder typed into the box's .env by hand — while the code carried
  * the real account as a default the placeholder overrode. A fact this
@@ -62,6 +62,7 @@ export const DEFENSIVE_DOMAINS = ['www.lockfi.org', 'balast.xyz', 'www.balast.xy
  */
 export const SOCIAL = {
   x: 'https://x.com/lockfiorg',
+  telegram: 'https://t.me/lockfiorg',
 } as const;
 
 /**

@@ -677,15 +677,15 @@ p.ph-ca{font-size:12px}
 .soc:hover{background:var(--raise-2);color:var(--fg)}
 .soc svg{width:15px;height:15px;fill:currentColor;flex:none}
 .soc.off{color:var(--fg-4);cursor:default}
-.community.foot{gap:16px}
-.community.foot .soc{width:auto;height:auto;padding:0;border:0;border-radius:0;font-size:inherit;font-weight:inherit;color:var(--fg-3)}
-.community.foot .soc:hover{background:none;color:var(--fg)}
-.community.foot .soc svg{width:14px;height:14px}
+.community.foot-soc{gap:16px}
+.community.foot-soc .soc{width:auto;height:auto;padding:0;border:0;border-radius:0;font-size:inherit;font-weight:inherit;color:var(--fg-3)}
+.community.foot-soc .soc:hover{background:none;color:var(--fg)}
+.community.foot-soc .soc svg{width:14px;height:14px}
 .facts .soon{color:var(--fg-3);font-weight:500}
 .facts .basis{margin-left:7px;font-family:var(--sans);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3)}
 .facts .ca{font:inherit;font-family:var(--mono);font-weight:600;color:var(--fg);text-decoration:underline dotted;text-underline-offset:3px;padding:0}
 @media (max-width:1400px){.search{width:220px}}
-.side-soc{display:block}
+.side-soc{display:grid;gap:6px}
 .side-soc .soc{width:100%;justify-content:flex-start;height:38px;border-radius:10px;border-color:var(--bd-n);background:var(--panel-2);color:var(--fg-2);font-size:12.5px}
 .side-soc .soc:hover{color:var(--fg);background:var(--raise)}
 /* The left side is a narrow icon rail on every desktop width, as on
@@ -707,7 +707,7 @@ p.ph-ca{font-size:12px}
   .side-net{justify-content:center;padding:10px 0}
   .side-soc .soc{justify-content:center;padding:0;height:36px}
 }
-@media (max-width:900px){.side-soc .soc{width:auto;height:34px;padding:0 12px}.side-soc .soc span{position:static;width:auto;height:auto;clip:auto;overflow:visible}}
+@media (max-width:900px){.side-soc{display:flex}.side-soc .soc{width:auto;height:34px;padding:0 12px}.side-soc .soc span{position:static;width:auto;height:auto;clip:auto;overflow:visible}}
 @media (max-width:440px){.side-soc .soc span{display:none}.side-soc .soc{width:34px;padding:0;justify-content:center}}
 
 /* ---------- wallet dialog ----------

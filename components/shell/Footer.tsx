@@ -16,7 +16,7 @@ export function Footer() {
         </span>
       </div>
       <div className="foot-r">
-        <Community className="foot" />
+        <Community className="foot-soc" />
         {/* Balast deploys no contract of its own (§20): every position is
             minted through Uniswap's PositionManager, and the audits and the
             docs are Uniswap's. A link to nowhere on a site that asks for a
