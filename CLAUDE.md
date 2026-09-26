@@ -5754,3 +5754,14 @@ running a build from before that commit. Deploying fixes it.
   said "no token", which contradicts "coming soon". Each now says the
   address appears on lockfi.org first, and any address circulating before
   that is not ours.
+
+### The X Article
+
+`brand/lockfi/social/ARTICLE.md` is a long-form introduction for an X
+Article, about 1,800 words, with a title and two alternatives. The article
+places the six post banners inline and uses `x-article-cover.png` as its
+cover, at the 5:2 ratio X asks for (1500 × 600, the `x-article-cover` job
+in the same script). `article.html` is the same text laid out for copying
+into X's editor with the headings, bold and lists intact. The article
+follows the same rules as the banners: no yield figure, no "APY", the risks
+stated plainly, and "CA coming soon" with the warning that goes with it.

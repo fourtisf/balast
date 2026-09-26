@@ -278,6 +278,26 @@ const HEADER = `<div class="art header" data-w="1500" data-h="500">
   </div>
 </div>`;
 
+/**
+ * The cover for an X Article: 5:2, the ratio X recommends (1500 × 600).
+ * X shows it cropped slightly in the feed, so everything that matters sits
+ * inside a centred safe area.
+ */
+const ARTICLE_COVER = `<div class="art cover" data-w="1500" data-h="600">
+  <div class="grid"></div><div class="glow"></div>
+  <div class="cv-copy">
+    ${brand(52)}
+    <span class="eyebrow"><i></i>Introducing LockFi</span>
+    <h1>Real swap fees on<br><span class="ac">Robinhood Chain.</span></h1>
+    <p>Liquidity through Uniswap <i>·</i> minted to your wallet <i>·</i> no emissions</p>
+  </div>
+  <div class="panel cv-chart">
+    <div class="ph"><span class="lbl">Your position</span><span class="chips"><span class="chip on">Curve</span><span class="chip">Spot</span><span class="chip">Bid-ask</span></span></div>
+    ${binChart('curve', { n: 23, height: 250, gap: 6 })}
+  </div>
+  <span class="cv-url">lockfi.org</span>
+</div>`;
+
 // ── Styles ───────────────────────────────────────────────────────────────────
 const CSS = `
 @font-face{font-family:'Instrument Sans';src:url(data:font/ttf;base64,${readFileSync(FONT_FILE).toString('base64')}) format('truetype');font-weight:400 700;font-stretch:75% 100%}
@@ -412,6 +432,18 @@ footer i{font-style:normal;margin:0 8px;opacity:.6}
 .fact p{margin:10px 0 0;font-size:18px;line-height:1.42;color:${T.fg2};font-weight:500}
 
 .header{width:1500px;height:500px}
+.cover{width:1500px;height:600px}
+.cover .glow{right:-160px;top:-380px;width:1100px;height:900px}
+.cover .grid{-webkit-mask-image:radial-gradient(ellipse 60% 80% at 75% 50%,#000 10%,transparent 75%)}
+.cv-copy{position:absolute;left:96px;top:50%;transform:translateY(-50%);width:720px}
+.cv-copy .brand{gap:16px}
+.cv-copy .eyebrow{display:flex;width:max-content;margin:40px 0 22px}
+.cv-copy h1{font-size:62px}
+.cv-copy p{margin:24px 0 0;font-size:21px;color:${T.fg2};font-weight:500;white-space:nowrap}
+.cv-copy p i{font-style:normal;margin:0 8px;opacity:.5}
+.cv-chart{position:absolute;right:96px;top:50%;transform:translateY(-54%);width:540px;padding:24px 26px 20px}
+.cv-chart .bins{margin-top:56px}
+.cv-url{position:absolute;right:96px;bottom:44px;font-size:20px;font-weight:700;letter-spacing:-.01em;color:${T.fg}}
 .header .glow{right:-120px;top:-420px;width:1100px;height:800px}
 .header .grid{-webkit-mask-image:radial-gradient(ellipse 60% 80% at 75% 50%,#000 10%,transparent 75%)}
 .hd-chart{position:absolute;right:60px;bottom:78px;width:500px}
@@ -430,7 +462,7 @@ const PREINSTALLED = [
 const browser = await chromium.launch(PREINSTALLED ? { executablePath: PREINSTALLED } : {});
 const page = await browser.newPage({ deviceScaleFactor: 2 });
 
-const jobs = { ...POSTS, 'x-header': HEADER };
+const jobs = { ...POSTS, 'x-header': HEADER, 'x-article-cover': ARTICLE_COVER };
 for (const [name, html] of Object.entries(jobs)) {
   if (only.length && !only.some((o) => name.includes(o))) continue;
   const w = Number(/data-w="(\d+)"/.exec(html)[1]);
@@ -444,7 +476,7 @@ for (const [name, html] of Object.entries(jobs)) {
   // A banner whose content spills past its artboard is a banner cut off on X.
   const spill = await page.evaluate(() => {
     const art = document.querySelector('.art').getBoundingClientRect();
-    return [...document.querySelectorAll('.art main, .art header, .art footer, .hd-copy')]
+    return [...document.querySelectorAll('.art main, .art header, .art footer, .hd-copy, .cv-copy')]
       .filter((el) => el.scrollHeight > el.clientHeight + 1 || el.getBoundingClientRect().bottom > art.bottom + 1)
       .map((el) => el.className || el.tagName);
   });
