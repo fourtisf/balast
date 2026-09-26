@@ -16,56 +16,78 @@ banners in `brand/social/` still say Balast and should not be posted.
 - **Avatar:** `../icon-black-1024.png`
 - **Header:** `x-header.png`
 
-**Bio** (131 chars)
+**Bio** (151 chars, X allows 160)
 
-> Liquidity on Robinhood Chain, through Uniswap. Real swap fees, positions minted to your wallet. No emissions, no custody, no token.
+> The liquidity layer for Robinhood Chain. Earn real swap fees through Uniswap, with positions minted to your wallet. No emissions, no custody, no token.
 
 ## The thread
 
 Post 1 first, then each later post as a reply to the one before it. Attach
-the image named on each post.
+the image named on each post. Every post is under 280 characters.
 
-**1 · `01-introduction.png`**
+**1 · `01-introduction.png`** (226 chars)
 
-> Introducing LockFi.
+> Introducing LockFi 🔒
 >
-> Provide liquidity on Robinhood Chain and earn a share of every swap in the pool. Each position is minted by Uniswap straight to your wallet.
+> The liquidity layer for Robinhood Chain.
 >
-> Real fees, real custody. lockfi.org
-
-**2 · `02-pools.png`**
-
-> Every market on Robinhood Chain, read from the chain: price, volume, buys and sells, liquidity.
+> Deposit into a pool and earn a share of every swap. Your position is minted by Uniswap, straight to your wallet.
 >
-> Every figure says where it came from. When a number is stale, the site says so.
-
-**3 · `03-shapes.png`**
-
-> Only liquidity at the current price earns a fee.
+> Real fees. No emissions. No custody.
 >
-> Spot spreads it evenly. Curve piles it at the price. Bid-ask ladders it at the edges.
+> lockfi.org
+
+**2 · `02-pools.png`** (218 chars)
+
+> Every pool on Robinhood Chain, on one board.
 >
-> Pick a range, pick a shape, mint.
-
-**4 · `04-one-token.png`**
-
-> Hold only ETH? You don't need both tokens.
+> Price, volume, buys vs sells, liquidity, all read straight from the chain, with the source on every number.
 >
-> LockFi swaps the right part of it through Uniswap, then mints the position. Every transaction is simulated before your wallet asks you to sign.
-
-**5 · `05-custody.png`**
-
-> Your position is an NFT in your wallet. There is no vault, no lockup and no admin key.
+> If a figure is stale, we say so. No guessing.
 >
-> Collect fees or withdraw whenever you like, from LockFi or straight from Uniswap.
+> lockfi.org/pools
 
-**6 · `06-honest.png`** (pin this one)
+**3 · `03-shapes.png`** (234 chars)
 
-> What LockFi is not:
+> Only liquidity at the current price earns fees.
 >
-> No emissions. Rewards are swap fees.
-> No custody. LockFi holds nothing.
-> No LockFi fee. Every fee is yours.
-> No token. Anyone selling one in our name is not us.
+> So LockFi lets you shape where yours sits:
+>
+> • Spot: spread evenly
+> • Curve: stacked at the price
+> • Bid-ask: laddered at the edges
+>
+> Pick a range. Pick a shape. Mint.
+>
+> lockfi.org/positions
+
+**4 · `04-one-token.png`** (231 chars)
+
+> Only holding ETH? That's enough.
+>
+> LockFi swaps the right amount through Uniswap, then mints your position.
+>
+> Every transaction is simulated before your wallet asks you to sign. If it would fail, you know first.
+>
+> lockfi.org/positions
+
+**5 · `05-custody.png`** (223 chars)
+
+> Your position. Your wallet. Withdraw any time.
+>
+> Every LockFi position is a Uniswap NFT minted directly to you.
+>
+> No vault. No lockup. No admin key.
+>
+> Collect fees or close it whenever you want, on LockFi or on Uniswap itself.
+
+**6 · `06-honest.png`** (pin this one) (207 chars)
+
+> What LockFi is NOT:
+>
+> ❌ No emissions. Rewards are real swap fees.
+> ❌ No custody. We never hold your funds.
+> ❌ No LockFi fee. Every fee is yours.
+> ❌ No token. Anyone selling one in our name is not us.
 >
 > lockfi.org
