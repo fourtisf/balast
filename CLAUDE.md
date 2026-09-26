@@ -5765,3 +5765,45 @@ in the same script). `article.html` is the same text laid out for copying
 into X's editor with the headings, bold and lists intact. The article
 follows the same rules as the banners: no yield figure, no "APY", the risks
 stated plainly, and "CA coming soon" with the warning that goes with it.
+
+---
+
+## 44. A product ad, filmed from the real site
+
+The owner asked for a premium startup-style ad video made from the product
+itself. `npm run brand:ad` (`scripts/build-lockfi-ad.mjs`) writes
+`brand/lockfi/video/lockfi-ad.mp4`: 1920 × 1080, 30 fps, 50 seconds, H.264
+with AAC audio, the format X accepts.
+
+**It films the live site, not mock-ups.** Three browser windows load
+`/pools`, `/positions` and `/portfolio` from a running build (simulated
+data, `AD_SITE` to point elsewhere). A script drives them: it hovers a row,
+opens the stake drawer, switches shapes from Spot to Curve to Bid-ask, and
+hovers Mint position. Meanwhile a camera frames each moment, with a logo
+intro, kinetic text, captions and an end card around them. Time is stepped
+frame by frame with Playwright's clock, and every CSS animation is seeked to
+match. So the live tick, the value flash and the row reordering play at
+their real speed however long a frame takes to capture, and a render is
+repeatable.
+
+**Two honesty rules carry into the film** (§7):
+
+- The site runs on simulated data, so every product scene carries *Product
+  preview · illustrative figures*.
+- Every fee-yield figure is blurred. A yield on screen in an ad reads as a
+  promised return.
+
+The simulator's legacy "stake · streaming" portfolio rows are hidden in the
+film, because they describe the vault LockFi does not have (§20).
+
+**The music is synthesized** by `scripts/build-lockfi-ad-audio.py`
+(numpy/scipy): a pad, a pulse under the product scenes, risers into each
+change of scene, and impacts on the logo and the end card, at the film's own
+cue times. It is normalised to -16 LUFS. It is a placeholder that needs no
+licence; for paid distribution a licensed track is better. The silent cut and
+the WAV are rebuilt by the same command and ignored by git.
+
+Needs a full ffmpeg (libx264, aac, loudnorm). The sandbox used the one
+`pip install imageio-ffmpeg` ships; `FFMPEG` points at another.
+`AD_STILLS=<dir>` saves one still a second instead of encoding, which is how
+each scene was checked before the full render.

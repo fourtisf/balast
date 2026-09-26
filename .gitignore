@@ -26,3 +26,7 @@ design/directions/*.html
 brand/journal/.fonts/
 brand/social/.fonts/
 brand/lockfi/.fonts/
+
+# The ad's intermediates: rebuilt by npm run brand:ad
+brand/lockfi/video/lockfi-ad-silent.mp4
+brand/lockfi/video/lockfi-ad-music.wav
