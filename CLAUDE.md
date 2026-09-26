@@ -5890,3 +5890,15 @@ reach `api.dualyne.com`, so no real answer has come back yet, and whether
 question on the box answers both. A refused key reads as "could not answer"
 on the page and as `ask: The AI provider refused LockFi's key (401)` in
 `pm2 logs lockfi-api`.
+
+### OpenRouter as the default
+
+ALFA then asked to use OpenRouter directly: the one-key, many-models platform
+Dualyne itself runs on. The defaults are now `AI_BASE_URL=https://openrouter.ai/api/v1`
+and `AI_MODEL=anthropic/claude-haiku-4.5`, the same model Dualyne's
+`claude-swift` maps to. So a single `sk-or-v1-…` key in `AI_API_KEY` turns the
+assistant on, and the panel reads `via OpenRouter`. Dualyne's gateway is still
+two variables away. Nothing else changed: the facts, the rules, the scrub and
+the limits sit in front of any provider. `AI_MODEL` can name any OpenRouter
+model, but anything larger than Haiku costs more per answer, and
+`AI_DAILY_LIMIT` counts answers, not dollars.

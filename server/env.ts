@@ -207,15 +207,15 @@ export const env = {
    * Ask LockFi, the assistant (server/api/ask.ts). Off until `AI_API_KEY` is
    * set, and the page hides the panel while it is off.
    *
-   * Any OpenAI-compatible endpoint works. The default is Dualyne's gateway
-   * with its fast Claude model; for OpenRouter set
-   * `AI_BASE_URL=https://openrouter.ai/api/v1` and
-   * `AI_MODEL=anthropic/claude-haiku-4.5`.
+   * Any OpenAI-compatible endpoint works. The default is OpenRouter, the
+   * same upstream Dualyne runs on, with Claude Haiku 4.5: one `sk-or-…` key
+   * is all it needs. For Dualyne's own gateway set
+   * `AI_BASE_URL=https://api.dualyne.com/v1` and `AI_MODEL=claude-swift`.
    */
   ai: {
     apiKey: process.env.AI_API_KEY?.trim() ?? '',
-    baseUrl: (process.env.AI_BASE_URL?.trim() || 'https://api.dualyne.com/v1').replace(/\/+$/, ''),
-    model: process.env.AI_MODEL?.trim() || 'claude-swift',
+    baseUrl: (process.env.AI_BASE_URL?.trim() || 'https://openrouter.ai/api/v1').replace(/\/+$/, ''),
+    model: process.env.AI_MODEL?.trim() || 'anthropic/claude-haiku-4.5',
     /** About 150 words of answer, with room to finish the sentence. */
     maxTokens: int('AI_MAX_TOKENS', 450),
     /** Questions per client per minute: a person asks a few, a loop asks hundreds. */

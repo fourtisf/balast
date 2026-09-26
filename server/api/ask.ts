@@ -2,8 +2,9 @@
  * Ask LockFi: an assistant that explains the figures on the page.
  *
  * It answers through any OpenAI-compatible chat endpoint. The default is
- * Dualyne's gateway (api.dualyne.com/v1, the owner's own product), and
- * OpenRouter works by changing `AI_BASE_URL` and `AI_MODEL`.
+ * OpenRouter with Claude Haiku 4.5; Dualyne's gateway (api.dualyne.com/v1,
+ * the owner's own product, itself built on OpenRouter) works by changing
+ * `AI_BASE_URL` and `AI_MODEL`.
  *
  * Three things keep it inside §7:
  *
@@ -51,7 +52,7 @@ const TIMEOUT_MS = 30_000;
 export interface AskConfig {
   /** Without a key the assistant is off, and the page hides it. */
   apiKey: string;
-  /** An OpenAI-compatible base, e.g. https://api.dualyne.com/v1. */
+  /** An OpenAI-compatible base, e.g. https://openrouter.ai/api/v1. */
   baseUrl: string;
   model: string;
   maxTokens: number;
