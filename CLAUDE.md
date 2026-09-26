@@ -5897,8 +5897,17 @@ ALFA then asked to use OpenRouter directly: the one-key, many-models platform
 Dualyne itself runs on. The defaults are now `AI_BASE_URL=https://openrouter.ai/api/v1`
 and `AI_MODEL=anthropic/claude-haiku-4.5`, the same model Dualyne's
 `claude-swift` maps to. So a single `sk-or-v1-…` key in `AI_API_KEY` turns the
-assistant on, and the panel reads `via OpenRouter`. Dualyne's gateway is still
+assistant on. Dualyne's gateway is still
 two variables away. Nothing else changed: the facts, the rules, the scrub and
 the limits sit in front of any provider. `AI_MODEL` can name any OpenRouter
 model, but anything larger than Haiku costs more per answer, and
 `AI_DAILY_LIMIT` counts answers, not dollars.
+
+### Live, and the provider's name off the panel
+
+The first live answer on lockfi.org (CASHCAT / ETH) quoted the pool's own
+figures with their basis and age: the market cap "from LockFi's indexer, 77
+days old", and the fee yield "trailing 7 days". That is §7 working through
+the model. ALFA then asked for the `via OpenRouter` label to be removed. The
+panel no longer names its provider. `/api/health` → `ai.provider` still does,
+for the operator.

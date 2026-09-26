@@ -47,7 +47,8 @@ test.describe('Ask LockFi AI', () => {
     await page.locator('#main .lb-row .stake-btn').first().click();
     const panel = page.getByRole('dialog').getByTestId('ask-panel');
     await expect(panel).toBeVisible();
-    await expect(panel).toContainText('via Dualyne');
+    // The owner asked for the provider's name to be off the panel; /api/health still carries it.
+    await expect(panel).not.toContainText('via ');
     await expect(panel).toContainText('never predicts prices');
 
     await panel.getByRole('button', { name: 'What does this fee tier mean?' }).click();

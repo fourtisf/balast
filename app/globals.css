@@ -425,7 +425,6 @@ p.ph-ca{font-size:12px}
 .ask{margin-top:18px;border:1px solid var(--bd-n);border-radius:10px;background:var(--panel-2);padding:14px 14px 12px}
 .ask-h{display:flex;align-items:center;gap:8px;font-size:13px}
 .ask-dot{width:7px;height:7px;border-radius:99px;background:var(--ac);flex:none}
-.ask-via{margin-left:auto;font-size:11.5px;color:var(--fg-3)}
 .ask-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .ask-chip{font:inherit;font-size:12px;line-height:1.3;text-align:left;color:var(--fg-2);background:var(--panel);border:1px solid var(--bd-n);border-radius:99px;padding:6px 11px;cursor:pointer;transition:.15s}
 .ask-chip:hover{color:var(--fg);border-color:var(--bd-2)}

@@ -92,7 +92,6 @@ export function AskPanel({
       <div className="ask-h">
         <span className="ask-dot" aria-hidden="true" />
         <b>{title}</b>
-        {status.provider && <span className="ask-via">via {status.provider}</span>}
       </div>
 
       {turns.length === 0 && !busy ? (
