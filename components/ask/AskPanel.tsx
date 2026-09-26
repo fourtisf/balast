@@ -20,11 +20,16 @@ export function AskPanel({
   plan = null,
   suggestions,
   title = 'Ask LockFi AI',
+  placeholder = 'Ask about this pool, a shape or a risk',
+  page = false,
 }: {
   poolId?: string | null;
   plan?: AskPlan | null;
   suggestions: string[];
   title?: string;
+  placeholder?: string;
+  /** The full-page version on /ask: taller, and says so when the assistant is off rather than vanishing. */
+  page?: boolean;
 }) {
   const [status, setStatus] = useState<AskStatus | null>(null);
   const [turns, setTurns] = useState<AskTurn[]>([]);
@@ -34,7 +39,10 @@ export function AskPanel({
   const logRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!askReachable(DATA_SOURCE === 'live')) return;
+    if (!askReachable(DATA_SOURCE === 'live')) {
+      setStatus({ enabled: false, provider: '' });
+      return;
+    }
     let alive = true;
     void askStatus().then((s) => alive && setStatus(s));
     return () => {
@@ -53,7 +61,22 @@ export function AskPanel({
     if (log) log.scrollTop = log.scrollHeight;
   }, [turns, busy]);
 
-  if (!status?.enabled) return null;
+  if (!status?.enabled) {
+    // Inside the drawer or the builder the panel is extra, and silence is right.
+    // On its own page it is the page, so it says what is happening.
+    if (!page) return null;
+    return (
+      <section className="ask ask-page" aria-label={title} data-testid="ask-off">
+        <div className="ask-h">
+          <span className="ask-dot" aria-hidden="true" />
+          <b>{title}</b>
+        </div>
+        <p className="ask-a" style={{ marginTop: 10 }}>
+          {status === null ? 'Connecting to the assistant…' : 'The assistant is not switched on here yet.'}
+        </p>
+      </section>
+    );
+  }
 
   const send = async (text: string) => {
     const question = text.trim().slice(0, QUESTION_MAX);
@@ -88,7 +111,7 @@ export function AskPanel({
   };
 
   return (
-    <section className="ask" aria-label={title} data-testid="ask-panel">
+    <section className={page ? 'ask ask-page' : 'ask'} aria-label={title} data-testid="ask-panel">
       <div className="ask-h">
         <span className="ask-dot" aria-hidden="true" />
         <b>{title}</b>
@@ -109,7 +132,7 @@ export function AskPanel({
               {t.content}
             </p>
           ))}
-          {busy && <p className="ask-a ask-wait">Reading this pool’s figures…</p>}
+          {busy && <p className="ask-a ask-wait">{poolId ? 'Reading this pool’s figures…' : 'Thinking…'}</p>}
         </div>
       )}
 
@@ -128,7 +151,7 @@ export function AskPanel({
           rows={1}
           value={draft}
           maxLength={QUESTION_MAX}
-          placeholder="Ask about this pool, a shape or a risk"
+          placeholder={placeholder}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKeyDown}
           disabled={busy}

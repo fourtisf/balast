@@ -5911,3 +5911,16 @@ days old", and the fee yield "trailing 7 days". That is §7 working through
 the model. ALFA then asked for the `via OpenRouter` label to be removed. The
 panel no longer names its provider. `/api/health` → `ai.provider` still does,
 for the operator.
+
+### A page of its own in the rail
+
+ALFA asked for the assistant in the navigation. `/ask` (`app/ask/page.tsx`,
+`components/ask/AskWorkspace.tsx`) is the last item in the rail, with a
+sparkle icon. It is a full-page conversation with an **About** select: LockFi
+in general, or any pool on the board. Choosing a pool starts a fresh
+conversation about it, and the server supplies that pool's figures exactly as
+it does for the drawer. Unlike the drawer and the builder, where silence is
+right, the page says *not switched on here yet* when the assistant is off,
+because there it is the whole page. `e2e/shell.spec.ts` now covers `/ask`
+(no console error, no sideways scroll at any width), and `e2e/ask.spec.ts`
+covers the page, general and per pool.

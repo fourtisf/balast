@@ -50,6 +50,11 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M3.5 4.5h4.5a2 2 0 0 1 2 2v10a1.5 1.5 0 0 0-1.5-1.5h-5V4.5Z" />
       <path d="M16.5 4.5H12a2 2 0 0 0-2 2v10a1.5 1.5 0 0 1 1.5-1.5h5V4.5Z" />
     </>
+  ),  '/ask': (
+    <>
+      <path d="M9 3.5c.5 2.8 1.7 4 4.5 4.5-2.8.5-4 1.7-4.5 4.5-.5-2.8-1.7-4-4.5-4.5 2.8-.5 4-1.7 4.5-4.5Z" />
+      <path d="M15 12c.3 1.5.9 2.1 2.5 2.5-1.6.4-2.2 1-2.5 2.5-.3-1.5-.9-2.1-2.5-2.5 1.6-.4 2.2-1 2.5-2.5Z" />
+    </>
   ),
 };
 
@@ -60,6 +65,7 @@ const NAV = [
   { href: '/portfolio', label: 'Portfolio' },
   { href: '/router', label: 'Router', later: true },
   { href: '/learn', label: 'Learn' },
+  { href: '/ask', label: 'Ask AI' },
 ];
 
 /**

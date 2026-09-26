@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const ROUTES = ['/pools', '/stakes', '/positions', '/router', '/portfolio', '/learn'];
+const ROUTES = ['/pools', '/stakes', '/positions', '/router', '/portfolio', '/learn', '/ask'];
 const WIDTHS = [1600, 1180, 760, 360];
 
 test.describe('shell', () => {

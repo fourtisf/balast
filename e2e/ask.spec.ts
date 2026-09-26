@@ -93,4 +93,36 @@ test.describe('Ask LockFi AI', () => {
     await expect(panel.getByRole('alert')).toContainText('as many questions as it can today');
     await expect(panel.getByLabel('Your question')).toHaveValue('Are my funds safe?');
   });
+
+  test('has a page of its own in the navigation, general or about one pool', async ({ page }) => {
+    const asked: { question: string; poolId: string | null }[] = [];
+    await page.route('**/api/ask', async (route) => {
+      if (route.request().method() === 'GET') return route.fulfill({ json: { enabled: true, provider: 'OpenRouter' } });
+      asked.push(route.request().postDataJSON());
+      return route.fulfill({ json: { answer: 'An explanation.', poolFound: true } });
+    });
+    await page.goto('/pools');
+    await page.locator('.nav-links a', { hasText: 'Ask AI' }).click();
+    await expect(page).toHaveURL(/\/ask$/);
+    const panel = page.getByTestId('ask-panel');
+    await panel.getByRole('button', { name: 'Are my funds safe with LockFi?' }).click();
+    await expect(panel).toContainText('An explanation.');
+    expect(asked[0].poolId).toBeNull();
+
+    // Choosing a pool starts a fresh conversation about it.
+    const select = page.getByLabel('About');
+    const second = await select.locator('option').nth(1).getAttribute('value');
+    await select.selectOption(second!);
+    await expect(panel).not.toContainText('An explanation.');
+    await panel.getByRole('button', { name: 'What does this fee tier mean?' }).click();
+    await expect.poll(() => asked.length).toBe(2);
+    expect(asked[1].poolId).toBe(second);
+  });
+
+  test('says so on its own page when the assistant is off', async ({ browser }) => {
+    const page = await browser.newPage();
+    await page.goto('/ask', { waitUntil: 'networkidle' });
+    await expect(page.getByTestId('ask-off')).toContainText('not switched on');
+    await page.close();
+  });
 });
