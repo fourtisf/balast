@@ -3,17 +3,31 @@ The score for LockFi's product ad, synthesized so the film needs no licence.
 
     python3 scripts/build-lockfi-ad-audio.py out.wav 50
 
-Cue times match scripts/build-lockfi-ad.mjs: a soft impact on the logo, a pad
-under the opening lines, a pulse under the product scenes (7.8s to 44.4s),
-risers into each scene change, and an impact on the end card. A placeholder
+Cue times come from the film: a soft impact on the logo, a pad under the
+opening lines, a pulse under the product scenes, risers into each scene
+change, and an impact on the end card. AD_PULSE ("on,off"), AD_RISERS and
+AD_BOOMS set them; the defaults are scripts/build-lockfi-ad.mjs's. A placeholder
 worth replacing with a licensed track for paid distribution.
 """
+import os
 import sys
 import numpy as np
 from scipy.signal import butter, sosfilt, fftconvolve
 
 OUT = sys.argv[1]
 DUR = float(sys.argv[2]) if len(sys.argv) > 2 else 50.0
+
+
+def cues(name, default):
+    """Cue times in seconds, from the environment, so each film sets its own."""
+    raw = os.environ.get(name)
+    return [float(x) for x in raw.split(',')] if raw else default
+
+
+# Defaults are the product ad's (scripts/build-lockfi-ad.mjs).
+PULSE_ON, PULSE_OFF = cues('AD_PULSE', [7.8, 44.4])
+RISERS = cues('AD_RISERS', [7.8, 21.6, 33.7, 39.8])
+BOOMS = cues('AD_BOOMS', [0.3, 44.45])
 SR = 48000
 N = int(SR * DUR)
 t = np.arange(N) / SR
@@ -75,7 +89,7 @@ for i in range(n_ch):
     roots[s0:min(N, s0 + int(CH_LEN * SR))] = midi(chord[0] - 12)
 
 # The filter opens as the film builds: a dark and a bright pad, crossfaded.
-bright = np.interp(t, [0, 7.8, 30, 44.4, DUR], [0.0, 0.25, 0.8, 1.0, 0.5])
+bright = np.interp(t, [0, PULSE_ON, (PULSE_ON + PULSE_OFF) / 2, PULSE_OFF, DUR], [0.0, 0.25, 0.8, 1.0, 0.5])
 padL = lp(padL, 750) * (1 - bright) + lp(padL, 2600) * bright
 padR = lp(padR, 750) * (1 - bright) + lp(padR, 2600) * bright
 
@@ -89,7 +103,6 @@ padL = padL * 0.7 + fftconvolve(padL, irL)[:N]
 padR = padR * 0.7 + fftconvolve(padR, irR)[:N]
 
 # ── Pulse: kick on the beat, bass pumped against it, hats on the off-beat ───
-PULSE_ON, PULSE_OFF = 7.8, 44.4
 kick = np.zeros(N)
 hats = np.zeros(N)
 duck = np.ones(N)
@@ -102,12 +115,12 @@ hat_one = hp(rng.standard_normal(h_len), 7500) * np.exp(-np.arange(h_len) / SR *
 beat = PULSE_ON
 while beat < PULSE_OFF:
     s0 = int(beat * SR)
-    build = np.interp(beat, [PULSE_ON, 12, 39, PULSE_OFF], [0.55, 1, 1, 0.8])
+    build = np.interp(beat, [PULSE_ON, PULSE_ON + 4.2, PULSE_OFF - 5.4, PULSE_OFF], [0.55, 1, 1, 0.8])
     kick[s0:s0 + k_len] += kick_one[: max(0, min(k_len, N - s0))] * build
     d0, d1 = s0, min(N, s0 + int(0.32 * SR))
     duck[d0:d1] = np.minimum(duck[d0:d1], 0.35 + 0.65 * np.linspace(0, 1, d1 - d0) ** 1.5)
     o0 = int((beat + BEAT / 2) * SR)
-    if beat > 11.0 and o0 + h_len < N:
+    if beat > PULSE_ON + 3.2 and o0 + h_len < N:
         hats[o0:o0 + h_len] += hat_one * 0.5 * build
     beat += BEAT
 
@@ -118,13 +131,13 @@ bass = lp(bass, 220) * duck
 
 # ── Transitions: risers into each scene change, impacts on the two reveals ──
 fx = np.zeros(N)
-for cue in [7.8, 21.6, 33.7, 39.8]:
+for cue in RISERS:
     a, b = int((cue - 1.4) * SR), int((cue + 0.25) * SR)
     seg = rng.standard_normal(b - a)
     rise = np.linspace(0, 1, b - a) ** 2.2
     rise[int(1.4 * SR):] = np.linspace(1, 0, b - a - int(1.4 * SR)) ** 2
     fx[a:b] += hp(lp(seg, 5500), 600) * rise * 0.22
-for cue, size in [(0.3, 0.8), (44.45, 1.0)]:
+for cue, size in zip(BOOMS, [0.8] + [1.0] * (len(BOOMS) - 1)):
     a = int(cue * SR)
     length = min(int(2.4 * SR), N - a)
     it = np.arange(length) / SR
@@ -133,7 +146,7 @@ for cue, size in [(0.3, 0.8), (44.45, 1.0)]:
     fx[a:a + length] += boom * 0.9 * size
 
 # ── Mix ─────────────────────────────────────────────────────────────────────
-pad_level = np.interp(t, [0, 0.4, 7.8, 44.4, DUR - 1.8, DUR], [0, 0.9, 0.75, 0.75, 0.9, 0])
+pad_level = np.interp(t, [0, 0.4, PULSE_ON, PULSE_OFF, DUR - 1.8, DUR], [0, 0.9, 0.75, 0.75, 0.9, 0])
 padL *= pad_level * (0.55 + 0.45 * duck)
 padR *= pad_level * (0.55 + 0.45 * duck)
 mono = kick * 0.85 + bass + hats * 0.35 + fx

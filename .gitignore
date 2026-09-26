@@ -30,3 +30,5 @@ brand/lockfi/.fonts/
 # The ad's intermediates: rebuilt by npm run brand:ad
 brand/lockfi/video/lockfi-ad-silent.mp4
 brand/lockfi/video/lockfi-ad-music.wav
+brand/lockfi/video/lockfi-ai-ad-silent.mp4
+brand/lockfi/video/lockfi-ai-ad-music.wav

@@ -5924,3 +5924,34 @@ right, the page says *not switched on here yet* when the assistant is off,
 because there it is the whole page. `e2e/shell.spec.ts` now covers `/ask`
 (no console error, no sideways scroll at any width), and `e2e/ask.spec.ts`
 covers the page, general and per pool.
+
+### An ad for the AI
+
+`npm run brand:ad:ai` (`scripts/build-lockfi-ai-ad.mjs`) writes
+`brand/lockfi/video/lockfi-ai-ad.mp4`: 1920 × 1080, 30 fps, 40 seconds, the
+same engine as §44's ad. The film shows:
+
+- the intro, *Now with LockFi AI*;
+- *Found a token you like? Before you stake, just ask.*;
+- the board, then a pool's Stake drawer with the AI panel: *What are the
+  risks of staking here?*, the reading state, then the answer revealed line
+  by line;
+- the Ask AI page: a pool picked in **About**, then *What does this fee tier
+  mean?*;
+- *Any pool. Plain answers. No predictions.*;
+- the end card, *Ask before you stake*, `lockfi.org/ask`.
+
+Three things differ from §44's film:
+
+- **The stage is served from the site's own origin** (`/__ad-stage`,
+  intercepted). A third-party frame is refused `localStorage`, and the
+  assistant's preview switch lives there.
+- **The simulator has no API**, so `/api/ask` is answered by the script.
+  There are two sample answers, matched by question and released at fixed
+  film times. They are written inside the assistant's own rules: no
+  forecast, no APY, and the risks stated. The footnote reads *illustrative
+  figures · sample answers*.
+- **The score takes its cues from the environment** (`AD_PULSE`,
+  `AD_RISERS`, `AD_BOOMS` in `build-lockfi-ad-audio.py`). The defaults are
+  §44's film.
+
