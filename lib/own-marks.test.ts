@@ -15,6 +15,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { OWN_STOCK_MARKS } from '../server/indexer/logo-sources';
+import { SEED_POOLS } from './data/seed';
 import { ownSitePath } from './site';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -42,6 +43,15 @@ describe('marks this site serves itself', () => {
     expect(own.length).toBeGreaterThan(0);
     for (const uri of own) {
       expect(existsSync(`${root}public${uri}`), uri).toBe(true);
+    }
+  });
+
+  it('cover the demo tokens, so the simulated board shows logos and not initials', () => {
+    const marked = SEED_POOLS.filter((p) => p.logoUrl);
+    expect(marked.length).toBeGreaterThanOrEqual(10);
+    for (const p of marked) {
+      expect(p.logoUrl, p.symbol).toMatch(/^\/tokens\/demo\/[\w.-]+\.(svg|png)$/);
+      expect(existsSync(`${root}public${p.logoUrl}`), p.symbol).toBe(true);
     }
   });
 });

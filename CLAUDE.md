@@ -5807,3 +5807,25 @@ Needs a full ffmpeg (libx264, aac, loudnorm). The sandbox used the one
 `pip install imageio-ffmpeg` ships; `FFMPEG` points at another.
 `AD_STILLS=<dir>` saves one still a second instead of encoding, which is how
 each scene was checked before the full render.
+
+### Every demo token has its logo
+
+The owner saw initials instead of logos in the film. The demo data had never
+carried any logos; on the live site logos come from the logo process (§19),
+which the simulator does not run. `SEED_POOLS` entries now carry `logoUrl`,
+a file under `public/tokens/demo/` served same-origin, as the site's own
+marks are (§21):
+
+- **NVDA, GOOGL, AAPL, TSLA** wear their companies' ticker icons, from the
+  same nvstly/icons repository the live `tickers` source uses. They are
+  padded and set on a neutral dark coin, because on the per-address coin
+  colour a green NVDA disappeared into olive.
+- **SPY and GLD** have no icon in that repository. They wear generic marks
+  (a rising chart, gold bars), not the issuer's brand.
+- **MOONCAT, HOODR, LAURA and TWINE** exist only in the demo, so they wear
+  marks drawn for it.
+- **PONS is a real project and keeps its monogram** until its own logo is
+  added. The sandbox cannot reach Pons, and inventing a real token's mark
+  would put a picture on it that is not its own.
+
+`lib/own-marks.test.ts` asserts every demo logo names a file that exists.

@@ -167,6 +167,7 @@ export class SimProvider implements DataProvider {
         name: s.name,
         decimals: 18,
         logoColor: s.logoColor,
+        logoUrl: s.logoUrl,
         launchpad: s.launchpad,
       },
       quote: quoteFor(s.kind),
