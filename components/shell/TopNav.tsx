@@ -2,12 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
 import { CHAIN } from '@/lib/chain';
 import { duration, shortWallet } from '@/lib/format';
-import { BRAND } from '@/lib/site';
+import { BRAND, TOKEN_CA } from '@/lib/site';
 import { Community } from './Community';
 import { Mark } from './Logo';
 
@@ -176,6 +176,11 @@ export function TopBar() {
           />
         </div>
 
+        {/* The token's contract address, or that it is not announced yet
+            (§43). Said on every page, because a site that asks for a wallet
+            should say which address is its own before anyone else does. */}
+        <CaChip />
+
         {/* Indexer freshness (§7: never render stale numbers as if they were
             live). Neutral by design — red is reserved for negative numbers. */}
         <span
@@ -216,5 +221,32 @@ export function TopBar() {
         </button>
       </div>
     </header>
+  );
+}
+
+/** "CA · coming soon" until TOKEN_CA is set; then the short address, copied on click. */
+function CaChip() {
+  const [copied, setCopied] = useState(false);
+  const ca = TOKEN_CA;
+  if (!ca) {
+    return (
+      <span
+        className="ca-chip"
+        title="LockFi's contract address will be announced here first. Any address circulating before it appears on this site is not ours."
+      >
+        CA <b>coming soon</b>
+      </span>
+    );
+  }
+  const copy = () => {
+    void navigator.clipboard?.writeText(ca).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <button className="ca-chip" onClick={copy} title={`${ca}: click to copy`}>
+      CA <b className="num">{copied ? 'copied' : `${ca.slice(0, 6)}…${ca.slice(-4)}`}</b>
+    </button>
   );
 }

@@ -6,7 +6,8 @@ logo tile, signal blue, Instrument Sans, and the site's components with their
 numbers left out.
 
 They follow the site's rules. No yield figure, never "APY", no handle written
-on an image, and no token. The only address anywhere is lockfi.org. The old
+on an image, and no contract address until it is announced ("CA · coming soon").
+The only address anywhere is lockfi.org. The old
 banners in `brand/social/` still say Balast and should not be posted.
 
 ## Profile
@@ -16,9 +17,9 @@ banners in `brand/social/` still say Balast and should not be posted.
 - **Avatar:** `../icon-black-1024.png`
 - **Header:** `x-header.png`
 
-**Bio** (151 chars, X allows 160)
+**Bio** (158 chars, X allows 160)
 
-> The liquidity layer for Robinhood Chain. Earn real swap fees through Uniswap, with positions minted to your wallet. No emissions, no custody, no token.
+> The liquidity layer for Robinhood Chain. Earn real swap fees through Uniswap, with positions minted to your wallet. No emissions, no custody. CA: coming soon.
 
 ## The thread
 
@@ -81,13 +82,12 @@ the image named on each post. Every post is under 280 characters.
 >
 > Collect fees or close it whenever you want, on LockFi or on Uniswap itself.
 
-**6 · `06-honest.png`** (pin this one) (207 chars)
+**6 · `06-honest.png`** (pin this one) (230 chars)
 
 > What LockFi is NOT:
 >
 > ❌ No emissions. Rewards are real swap fees.
 > ❌ No custody. We never hold your funds.
 > ❌ No LockFi fee. Every fee is yours.
-> ❌ No token. Anyone selling one in our name is not us.
 >
-> lockfi.org
+> 🔒 CA: coming soon. It appears on lockfi.org first. Any address before that is not ours.

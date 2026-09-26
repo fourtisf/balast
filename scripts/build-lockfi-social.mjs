@@ -11,7 +11,7 @@
  *
  * The site's rules apply to a banner as much as to a row (§7, §19): no figure
  * a reader could take as a yield, never "APY", no handle written on an image,
- * and no token — LockFi has none. The visuals are the site's components with
+ * and no contract address until it is announced ("CA · coming soon"). The visuals are the site's components with
  * their numbers left out: a board, a bin chart, a position row.
  */
 import { chromium } from '@playwright/test';
@@ -260,7 +260,7 @@ const POSTS = {
         ['No emissions', 'Rewards are swap fees, never a token printed to pay them.'],
         ['No custody', 'Your position is an NFT in your wallet. LockFi holds nothing.'],
         ['No LockFi fee', 'Every fee your position earns is yours.'],
-        ['No token', 'LockFi has none. Anything using our name to sell you one is not us.'],
+        ['CA · coming soon', 'Our contract address appears on lockfi.org first. Any address before that is not ours.'],
       ]
         .map(([h, p]) => `<div class="panel fact"><span class="tick">${CHECK}</span><b>${h}</b><p>${p}</p></div>`)
         .join('')}

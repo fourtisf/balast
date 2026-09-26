@@ -139,6 +139,12 @@ code,.mono,.btn .num,.ca .num,.wallet-addr{font-family:var(--mono);letter-spacin
 .lag i{width:7px;height:7px;border-radius:50%;background:var(--pos);animation:pulse 1.6s infinite;flex:none}
 .lag.behind i{background:var(--fg-3);box-shadow:none;animation:none}
 .lag .num{font-weight:600;color:var(--fg)}
+.ca-chip{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border:1px solid var(--bd-n);border-radius:8px;background:var(--panel);font:inherit;font-size:12.5px;font-weight:600;letter-spacing:.06em;color:var(--fg-3);white-space:nowrap;flex:none}
+.ca-chip b{font-weight:600;letter-spacing:0;color:var(--fg)}
+button.ca-chip{cursor:pointer}
+button.ca-chip:hover{background:var(--panel-2)}
+.foot-ca{color:var(--fg-3)}
+.foot-ca code{font-size:11.5px}
 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 16px;flex:none;border:1px solid transparent;border-radius:8px;font-family:var(--sans);font-size:13px;font-weight:600;white-space:nowrap;transition:.15s}
 .btn-ink{background:var(--fg);color:var(--bg)}
@@ -481,7 +487,7 @@ p.ph-ca{font-size:12px}
 
 /* ---------- footer, empty, toast ---------- */
 .foot{display:flex;justify-content:space-between;align-items:center;margin-top:48px;padding-top:22px;border-top:1px solid var(--bd-n);font-size:12.5px;color:var(--fg-3);flex-wrap:wrap;gap:10px}
-.foot-l{display:flex;align-items:center;gap:10px}
+.foot-l{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .foot-r{display:flex;align-items:center;gap:10px 22px;flex-wrap:wrap}
 .foot-r a:hover{color:var(--fg)}
 .empty{padding:40px 20px;text-align:center;color:var(--fg-3);font-size:13px}
@@ -535,6 +541,7 @@ p.ph-ca{font-size:12px}
   .g4{grid-template-columns:1fr 1fr}
 }
 @media (max-width:640px){
+  .ca-chip{display:none}
   .g4,.g3,.g2,.vaults{grid-template-columns:1fr}
   .facts>div{padding:12px 14px}
   .facts dd{font-size:17px}

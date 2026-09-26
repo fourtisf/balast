@@ -5730,3 +5730,27 @@ nothing on an image can be read as a price, a volume or a yield (§7). No
 handle is written on an image, because the X account is being renamed.
 LockFi has no token, and banner 6 says so. The old Balast renderer is now
 `brand:social:balast`, and its images should not be posted.
+
+---
+
+## 43. @lockfiorg, and "CA · coming soon"
+
+The owner renamed the X account to **@lockfiorg** and asked for the site to
+say the contract address is coming. The owner also asked for the logo to be
+black, not blue. It already was in the code (§41); the live site was simply
+running a build from before that commit. Deploying fixes it.
+
+- `SOCIAL.x` in `lib/site.ts` is `https://x.com/lockfiorg`, and `X_HANDLE`
+  is derived from it, so the navigation, the footer and the card metadata
+  all read `@lockfiorg`. `lib/site.test.ts` pins both.
+- `TOKEN_CA` in `lib/site.ts` is `null`. While it is, the top bar carries a
+  **CA · coming soon** chip on every page (hidden below 640px) and the footer
+  carries the same line. When it is set to the real address, the chip shows
+  the short address and copies the full one, and the footer prints it. It is
+  a constant, not an environment variable, for the reason §19 recorded: a
+  stale value in the box's `.env` must never point the site at the wrong
+  token. The test asserts a set value is valid and checksummed.
+- `/learn`, banner 6, the bio and post 6 in `brand/lockfi/social/COPY.md`
+  said "no token", which contradicts "coming soon". Each now says the
+  address appears on lockfi.org first, and any address circulating before
+  that is not ours.

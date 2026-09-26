@@ -47,7 +47,7 @@ export const DEFENSIVE_DOMAINS = ['www.lockfi.org', 'balast.xyz', 'www.balast.xy
 /**
  * Where the project talks.
  *
- * X is the one channel: @Balastdotfi, the account the owner named. Telegram
+ * X is the one channel: @lockfiorg, the account the owner named. Telegram
  * was offered as a second icon and removed at the owner's request.
  *
  * The link is a constant, deliberately not an environment variable. It was
@@ -56,13 +56,20 @@ export const DEFENSIVE_DOMAINS = ['www.lockfi.org', 'balast.xyz', 'www.balast.xy
  * the real account as a default the placeholder overrode. A fact this
  * public belongs in the repository, where a change is a reviewed commit.
  *
- * LockFi has no token (§39). The site showed $BLST's contract address
- * until the rename; the owner had it removed, and /learn says any address
- * circulating as LockFi's token is not ours.
+ * The token's contract address is not announced yet (§43). Until it is,
+ * the top bar and the footer read "CA · coming soon", and /learn says any
+ * address circulating as LockFi's before it appears on this site is not ours.
  */
 export const SOCIAL = {
-  x: 'https://x.com/Balastdotfi',
+  x: 'https://x.com/lockfiorg',
 } as const;
+
+/**
+ * LockFi's token contract address, once it is announced. A constant for the
+ * same reason as the X link: a stale value in the box's .env must never be
+ * able to point the site at the wrong token. null reads "coming soon".
+ */
+export const TOKEN_CA: `0x${string}` | null = null;
 
 /** The X handle, for the site's own metadata; derived so it cannot disagree with the link. */
 export const X_HANDLE = `@${SOCIAL.x.replace(/\/+$/, '').split('/').pop()}`;

@@ -1,5 +1,5 @@
 import { CHAIN, CONTRACTS, EXPLORER_URL } from '@/lib/chain';
-import { BRAND } from '@/lib/site';
+import { BRAND, TOKEN_CA } from '@/lib/site';
 import { Community } from './Community';
 import { Mark } from './Logo';
 
@@ -10,6 +10,9 @@ export function Footer() {
         <Mark size={16} color="var(--fg-3)" />
         <span>
           {BRAND} · {CHAIN.name} · chain {CHAIN.id}
+        </span>
+        <span className="foot-ca" title="Any address circulating as LockFi's before it appears on this site is not ours.">
+          CA · {TOKEN_CA ? <code>{TOKEN_CA}</code> : 'coming soon'}
         </span>
       </div>
       <div className="foot-r">
