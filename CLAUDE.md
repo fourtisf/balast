@@ -5824,8 +5824,9 @@ marks are (§21):
   (a rising chart, gold bars), not the issuer's brand.
 - **MOONCAT, HOODR, LAURA and TWINE** exist only in the demo, so they wear
   marks drawn for it.
-- **PONS is a real project and keeps its monogram** until its own logo is
-  added. The sandbox cannot reach Pons, and inventing a real token's mark
-  would put a picture on it that is not its own.
+- **PONS is a real project and wears its own logo.** The sandbox cannot
+  reach ponsfamily.com, so the owner supplied the image. It is cropped to
+  the badge's circle. Inventing a real token's mark would have put a picture
+  on it that is not its own.
 
 `lib/own-marks.test.ts` asserts every demo logo names a file that exists.
