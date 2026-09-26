@@ -10,14 +10,15 @@
  */
 
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { ask, askReachable, askStatus, type AskPlan, type AskStatus, type AskTurn } from '@/lib/ask';
-import { DATA_SOURCE } from '@/lib/data';
+import { ask, type AskPlan, type AskPosition, type AskTurn } from '@/lib/ask';
+import { useAskStatus } from './useAskStatus';
 
 const QUESTION_MAX = 500;
 
 export function AskPanel({
   poolId = null,
   plan = null,
+  position = null,
   suggestions,
   title = 'Ask LockFi AI',
   placeholder = 'Ask about this pool, a shape or a risk',
@@ -25,30 +26,20 @@ export function AskPanel({
 }: {
   poolId?: string | null;
   plan?: AskPlan | null;
+  /** One of the person's positions, from a portfolio row. */
+  position?: AskPosition | null;
   suggestions: string[];
   title?: string;
   placeholder?: string;
   /** The full-page version on /ask: taller, and says so when the assistant is off rather than vanishing. */
   page?: boolean;
 }) {
-  const [status, setStatus] = useState<AskStatus | null>(null);
+  const status = useAskStatus();
   const [turns, setTurns] = useState<AskTurn[]>([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!askReachable(DATA_SOURCE === 'live')) {
-      setStatus({ enabled: false, provider: '' });
-      return;
-    }
-    let alive = true;
-    void askStatus().then((s) => alive && setStatus(s));
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   // A conversation is about one pool: another pool starts a fresh one.
   useEffect(() => {
@@ -86,7 +77,7 @@ export function AskPanel({
     setDraft('');
     const history = turns;
     setTurns([...history, { role: 'user', content: question }]);
-    const result = await ask({ question, history, poolId, plan });
+    const result = await ask({ question, history, poolId, plan, position });
     if (result.ok) {
       setTurns((prev) => [...prev, { role: 'assistant', content: result.answer }]);
     } else {
@@ -132,7 +123,7 @@ export function AskPanel({
               {t.content}
             </p>
           ))}
-          {busy && <p className="ask-a ask-wait">{poolId ? 'Reading this pool’s figures…' : 'Thinking…'}</p>}
+          {busy && <p className="ask-a ask-wait">{position ? 'Reading this position…' : poolId ? 'Reading this pool’s figures…' : 'Thinking…'}</p>}
         </div>
       )}
 
@@ -143,11 +134,11 @@ export function AskPanel({
       )}
 
       <form className="ask-form" onSubmit={onSubmit}>
-        <label className="sr-only" htmlFor={`ask-${poolId ?? 'general'}`}>
+        <label className="sr-only" htmlFor={`ask-${position?.tokenId ?? poolId ?? 'general'}`}>
           Your question
         </label>
         <textarea
-          id={`ask-${poolId ?? 'general'}`}
+          id={`ask-${position?.tokenId ?? poolId ?? 'general'}`}
           rows={1}
           value={draft}
           maxLength={QUESTION_MAX}

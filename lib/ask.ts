@@ -34,6 +34,20 @@ export interface AskPlan {
   deposit: number | null;
 }
 
+/** One of the person's positions, as the portfolio row shows it (server/api/ask.ts `AskPosition`). */
+export interface AskPosition {
+  tokenId: string;
+  pair: string;
+  protocol: 'v3' | 'v4' | null;
+  range: 'full' | { minPct: number; maxPct: number } | null;
+  status: 'in-range' | 'out-of-range' | 'unknown';
+  outOfRangeHours: number | null;
+  valueUsd: number | null;
+  uncollectedFeesUsd: number | null;
+  priceImpactUsd: number | null;
+  priceImpactPct: number | null;
+}
+
 export interface AskTurn {
   role: 'user' | 'assistant';
   content: string;
@@ -59,7 +73,7 @@ export async function askStatus(fetchImpl: typeof fetch = fetch): Promise<AskSta
 }
 
 export async function ask(
-  body: { question: string; history: AskTurn[]; poolId: string | null; plan: AskPlan | null },
+  body: { question: string; history: AskTurn[]; poolId: string | null; plan: AskPlan | null; position?: AskPosition | null },
   fetchImpl: typeof fetch = fetch,
 ): Promise<AskResult> {
   try {

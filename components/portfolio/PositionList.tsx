@@ -1,11 +1,14 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { formatUnits } from 'viem';
 import { useMarket } from '@/components/providers/MarketProvider';
 import { useUi } from '@/components/providers/UiProvider';
+import { AskPanel } from '@/components/ask/AskPanel';
+import { useAskStatus } from '@/components/ask/useAskStatus';
 import { TokenBadge } from '@/components/ui/TokenBadge';
+import type { AskPosition } from '@/lib/ask';
 import { EXPLORER_URL } from '@/lib/chain';
 import { getProvider } from '@/lib/data';
 import type { TokenMeta, UserPosition } from '@/lib/data/types';
@@ -29,6 +32,24 @@ function since(hours: number): string {
   if (hours < 48) return `${Math.round(hours)}h ago`;
   return `${Math.round(hours / 24)}d ago`;
 }
+
+/** Suggested questions, by what the position is doing. */
+function positionQuestions(position: UserPosition): string[] {
+  if (position.rangeUnknown) {
+    return ['Why is the range status not known?', 'What does my price impact mean?', 'What does Withdraw do?'];
+  }
+  if (!position.inRange) {
+    return ['Why is this position earning nothing?', 'What does Rebalance do, and what does it cost?', 'What happens if I just wait?'];
+  }
+  return ['How does this position earn fees?', 'What does my price impact mean?', 'What happens when I collect fees?'];
+}
+
+const SPARK = (
+  <svg viewBox="0 0 20 20" aria-hidden="true" className="ask-spark">
+    <path d="M9 3.5c.5 2.8 1.7 4 4.5 4.5-2.8.5-4 1.7-4.5 4.5-.5-2.8-1.7-4-4.5-4.5 2.8-.5 4-1.7 4.5-4.5Z" />
+    <path d="M15 12c.3 1.5.9 2.1 2.5 2.5-1.6.4-2.2 1-2.5 2.5-.3-1.5-.9-2.1-2.5-2.5 1.6-.4 2.2-1 2.5-2.5Z" />
+  </svg>
+);
 
 /**
  * The builder, on the same pool and the same width, centred on today's price:
@@ -60,7 +81,10 @@ export function PositionList({
   tokenAddress?: string;
   title?: string;
 }) {
-  const { portfolio, pools } = useMarket();
+  const { portfolio, pools, global } = useMarket();
+  // Ask AI opens under one row at a time; the button shows only while the assistant is on.
+  const askOn = useAskStatus()?.enabled === true;
+  const [asking, setAsking] = useState<string | null>(null);
   const { query, wallet } = useUi();
   const router = useRouter();
   // Withdraw closes a position, so it asks twice: the first click says what
@@ -143,8 +167,26 @@ export function PositionList({
         const done = actions.done?.ref === ref ? actions.done : null;
         const canAct = Boolean(lp) && !actions.busy;
 
+        const askPosition: AskPosition = {
+          tokenId: position.tokenId,
+          pair: `${token.symbol} / ${quote}`,
+          protocol: lp?.protocol ?? null,
+          range:
+            position.range ?? (position.rangePct > 0 ? { minPct: -position.rangePct, maxPct: position.rangePct } : null),
+          status: position.rangeUnknown ? 'unknown' : position.inRange ? 'in-range' : 'out-of-range',
+          outOfRangeHours: position.outOfRangeSinceHours ?? null,
+          valueUsd: position.valueUnknown ? null : position.valueUsd,
+          uncollectedFeesUsd: lp ? feeUsd : position.feesWeth !== undefined ? position.feesWeth * global.ethPriceUsd : null,
+          priceImpactUsd: position.priceImpactUsd ?? null,
+          priceImpactPct:
+            position.priceImpactUsd !== undefined && lp?.holdUsd && lp.holdUsd > 0
+              ? (position.priceImpactUsd / lp.holdUsd) * 100
+              : null,
+        };
+
         return (
-          <div className="pnl-row" key={ref} data-token-id={position.tokenId} data-position={ref}>
+          <Fragment key={ref}>
+          <div className="pnl-row" data-token-id={position.tokenId} data-position={ref}>
             <div className="tok">
               <TokenBadge token={token} />
               <div>
@@ -206,8 +248,23 @@ export function PositionList({
                     : `price impact ${impactText(position.priceImpactUsd)}${impactPct ? ` (${impactPct})` : ''}`}
                 </div>
               )}
-              {lp && (
-                <div className="row" style={{ justifyContent: 'flex-end', marginTop: 8, gap: 6 }}>
+              {(lp || askOn) && (
+                <div className="row" style={{ justifyContent: 'flex-end', marginTop: 8, gap: 6, flexWrap: 'wrap' }}>
+                  {askOn && (
+                    <button
+                      className={`btn btn-ghost btn-sm ask-btn${asking === ref ? ' on' : ''}`}
+                      aria-expanded={asking === ref}
+                      aria-controls={`ask-row-${ref}`}
+                      data-testid="ask-position"
+                      title="Ask LockFi AI about this position: why it is where it is, and what each action does"
+                      onClick={() => setAsking(asking === ref ? null : ref)}
+                    >
+                      {SPARK}
+                      Ask AI
+                    </button>
+                  )}
+                  {lp && (
+                  <>
                   <button
                     className="btn btn-ghost btn-sm"
                     disabled={!canAct || (entry !== undefined && !hasFees)}
@@ -259,6 +316,8 @@ export function PositionList({
                       )}
                     </>
                   )}
+                  </>
+                  )}
                 </div>
               )}
               {confirming?.ref === ref && (
@@ -287,6 +346,18 @@ export function PositionList({
               )}
             </div>
           </div>
+          {asking === ref && (
+            <div className="pnl-ask" id={`ask-row-${ref}`}>
+              <AskPanel
+                poolId={position.poolId}
+                position={askPosition}
+                title={`Ask about ${token.symbol} / ${quote} #${position.tokenId}`}
+                placeholder="Ask about this position"
+                suggestions={positionQuestions(position)}
+              />
+            </div>
+          )}
+          </Fragment>
         );
       })}
 

@@ -5955,3 +5955,43 @@ Three things differ from §44's film:
   `AD_RISERS`, `AD_BOOMS` in `build-lockfi-ad-audio.py`). The defaults are
   §44's film.
 
+
+### Ask AI on a position
+
+ALFA picked the portfolio as the next place for the assistant. Every position
+row has an **Ask AI** button beside Collect fees and Withdraw. It opens the
+panel under that row, one row at a time, with questions that depend on what
+the position is doing:
+
+- *Why is this position earning nothing?* when it is out of range;
+- *How does this position earn fees?* when it is in range;
+- *Why is the range status not known?* when the pool has no price yet.
+
+The button shows only while the assistant is on. `useAskStatus` asks once per
+page load and shares the answer, so a portfolio of twenty positions is one
+request, not twenty.
+
+**The position's figures come from the browser, and this is the one place
+they do.** Everywhere else the facts are the server's own snapshot (§45). A
+wallet's positions are read per wallet from the chain and are not in the
+snapshot, and re-reading them for every question would cost seconds of public
+RPC each time. The trade is safe for one reason: the answer goes back only to
+the browser that sent the figures. Two things hold it in place:
+
+- `parsePosition` accepts a digit-only token id, a short pair label, clamped
+  numbers and three known statuses, and nothing else. A malformed position
+  is dropped whole, not passed on in part.
+- The prompt labels these as *the page's figures, read from their wallet;
+  not the market's*.
+
+The pool's facts still come from the snapshot by the position's pool id. A
+pool below the listing bar is said to be off the board.
+
+One rule was added for this: the assistant never tells a person whether to
+withdraw, rebalance, collect or wait. It explains what each action does and
+costs, and leaves the choice to them.
+
+**Verified**: 2 new server tests (the position read and refused, the prompt's
+labels and rule) and 2 Playwright tests (asking from a row sends the
+position; no button while the assistant is off). The full suites are 587 unit
+and 50 end-to-end tests, all green.

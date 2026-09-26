@@ -439,6 +439,11 @@ p.ph-ca{font-size:12px}
 .ask-form textarea:focus{outline:none;border-color:var(--bd-2)}
 .ask-form .btn{height:36px}
 .ask-foot{margin:8px 0 0;font-size:11.5px;color:var(--fg-3)}
+.pnl-ask{padding:0 0 14px;border-bottom:1px solid var(--bd-n)}
+.pnl-ask .ask{margin-top:4px}
+.ask-btn{gap:6px}
+.ask-btn .ask-spark{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linejoin:round}
+.ask-btn.on{border-color:var(--bd-2);color:var(--fg)}
 .ask-page{margin-top:0;padding:18px 18px 14px;background:var(--panel)}
 .ask-page .ask-log{max-height:min(62vh,640px)}
 .ask-page .ask-log p{font-size:14px}

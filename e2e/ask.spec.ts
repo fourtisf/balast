@@ -125,4 +125,40 @@ test.describe('Ask LockFi AI', () => {
     await expect(page.getByTestId('ask-off')).toContainText('not switched on');
     await page.close();
   });
+
+  test('answers about one of the person\u2019s positions from the portfolio', async ({ page }) => {
+    let body: { poolId: string | null; position: { tokenId: string; status: string; pair: string } | null } | null = null;
+    await page.route('**/api/ask', async (route) => {
+      if (route.request().method() === 'GET') return route.fulfill({ json: { enabled: true, provider: 'OpenRouter' } });
+      body = route.request().postDataJSON();
+      return route.fulfill({ json: { answer: 'This position is in range, so it earns its share of the fees.', poolFound: true } });
+    });
+    await page.goto('/portfolio');
+    const button = page.getByTestId('ask-position').first();
+    await expect(button).toBeVisible();
+    await button.click();
+    await expect(button).toHaveAttribute('aria-expanded', 'true');
+    const panel = page.locator('.pnl-ask [data-testid="ask-panel"]');
+    await expect(panel).toBeVisible();
+    await panel.locator('.ask-chip').first().click();
+    await expect(panel).toContainText('earns its share of the fees');
+    expect(body).not.toBeNull();
+    const sent = body as unknown as { poolId: string | null; position: { tokenId: string; status: string; pair: string } };
+    expect(sent.poolId).toBeTruthy();
+    expect(sent.position.tokenId).toBeTruthy();
+    expect(sent.position.pair).toMatch(/ \/ /);
+    expect(['in-range', 'out-of-range', 'unknown']).toContain(sent.position.status);
+    // One panel at a time: closing it takes it away.
+    await button.click();
+    await expect(panel).toHaveCount(0);
+  });
+
+  test('offers no Ask button on the portfolio while the assistant is off', async ({ browser }) => {
+    const page = await browser.newPage();
+    await page.goto('/portfolio', { waitUntil: 'networkidle' });
+    await expect(page.locator('.pnl-row').first()).toBeVisible();
+    await expect(page.getByTestId('ask-position')).toHaveCount(0);
+    await page.close();
+  });
 });
+
